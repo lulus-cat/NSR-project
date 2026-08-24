@@ -146,6 +146,22 @@ jobs:
       # prebuild 가 깔아 주는 gradle 래퍼(9.3.1)가 같이 딸려오는 안드로이드
       # 플러그인이 요구하는 판(9.4.1)보다 낮다. Expo 템플릿 안에서 짝이 안 맞는다.
       # android/ 는 매번 새로 만들어지므로 커밋해 둘 수 없고 여기서 손봐야 한다.
+      # 러너 디스크를 비운다.
+      #
+      # 마지막 링크에서 이렇게 죽었다.
+      #   clang++: error: unable to execute command: Bus error (core dumped)
+      # Bus error 는 링커가 mmap 한 파일을 못 늘릴 때 나온다 — 디스크가 찼다는 뜻이다.
+      # 62개 컴파일이 전부 끝나고 링크에서만 죽은 것이 그 증거다.
+      #
+      # 러너에는 우리가 안 쓰는 것이 잔뜩 깔려 있다. 지워도 이 빌드에 영향이 없다.
+      - name: 디스크 비우기
+        run: |
+          echo "지우기 전:"; df -h / | tail -1
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost \
+                      /usr/share/swift /opt/hostedtoolcache/CodeQL || true
+          docker image prune -af > /dev/null 2>&1 || true
+          echo "지운 뒤:"; df -h / | tail -1
+
       - name: 안드로이드 빌드 준비
         run: tools/prepare-android-build.sh apps/mobile/android
 
@@ -157,7 +173,12 @@ jobs:
           (cd android && ./gradlew assembleDebug --no-daemon) > build.log 2>&1
           code=$?
           tail -120 build.log
+          echo "빌드 후 디스크:"; df -h / | tail -1
           if [ $code -ne 0 ]; then
+            # 디스크가 찼는지 먼저 보여준다. Bus error 로 죽으면 원인이 여기다.
+            if grep -q "Bus error\|No space left" build.log; then
+              echo "::error::디스크가 부족해 보입니다. df 결과를 확인하세요."
+            fi
             echo "::error::gradle 실패($code) — $(tail -c 1200 build.log | tr '\n\r' '~~')"
             exit $code
           fi
