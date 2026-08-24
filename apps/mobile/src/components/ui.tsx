@@ -223,6 +223,7 @@ export function Badge({ text, tone }: { text: string; tone: "ok" | "warn" | "dan
  */
 export function HeaderScreen({
   title,
+  subtitle,
   right,
   heroLabel,
   hero,
@@ -231,6 +232,8 @@ export function HeaderScreen({
   refreshControl,
 }: {
   title: string;
+  /** 제목 아래 한 줄 — 날짜·근무처럼 브리핑의 머리말. */
+  subtitle?: string;
   right?: ReactNode;
   heroLabel?: string;
   hero?: string;
@@ -268,7 +271,12 @@ export function HeaderScreen({
               minHeight: TOUCH_MIN,
             }}
           >
-            <Text style={[type.title, { color: t.headerText }]}>{title}</Text>
+            <View style={{ gap: 2 }}>
+              <Text style={[type.title, { color: t.headerText }]}>{title}</Text>
+              {subtitle ? (
+                <Text style={[type.small, { color: t.headerTextMuted }]}>{subtitle}</Text>
+              ) : null}
+            </View>
             {right}
           </View>
 

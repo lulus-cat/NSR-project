@@ -9,6 +9,7 @@ import {
   laborStats,
   laborWarnings,
   resolveAll,
+  taeumTemperature,
   toDateString,
   type ResolvedShift,
 } from "@nsr/core";
@@ -45,11 +46,22 @@ function formatClock(epochMs: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function levelTone(level: string): "ok" | "warn" | "danger" | "muted" {
-  if (level === "severe") return "danger";
-  if (level === "caution") return "warn";
-  if (level === "watch") return "muted";
-  return "ok";
+/**
+ * 브리핑 머리말. 시각과 오늘 근무에 맞는 인사 —
+ * 나이트 출근 전의 22시에 "좋은 아침"이라고 말하는 앱은 신뢰를 잃는다.
+ */
+function greeting(hour: number, todayCode?: string): string {
+  if (todayCode === "N" && hour >= 19) return "오늘 밤도 무사히";
+  if (hour >= 5 && hour < 11) return "좋은 아침입니다";
+  if (hour >= 11 && hour < 17) return "좋은 오후입니다";
+  if (hour >= 17 && hour < 22) return "좋은 저녁입니다";
+  return "고요한 밤입니다";
+}
+
+const WEEKDAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
+
+function koreanDate(now: Date): string {
+  return `${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAYS_KO[now.getDay()]}요일`;
 }
 
 export default function Home() {
@@ -61,9 +73,7 @@ export default function Home() {
   const [weekShifts, setWeekShifts] = useState<ResolvedShift[]>([]);
   const [dueCount, setDueCount] = useState(0);
   const [totalCards, setTotalCards] = useState(0);
-  const [recentScores, setRecentScores] = useState<
-    { shiftId: string; score: number; level: string }[]
-  >([]);
+  const [latestTemp, setLatestTemp] = useState<ReturnType<typeof taeumTemperature> | null>(null);
   const [iosContinuous, setIosContinuous] = useState(false);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   /** 모델을 하나도 안 받았으면 전사가 아예 안 된다. 처음 켠 사람이 제일 잘 막히는 곳. */
@@ -83,11 +93,8 @@ export default function Home() {
     const states = await listReviewStates();
     setTotalCards(states.length);
     setDueCount(dueStates(states, Date.now(), 9999).length);
-    setRecentScores((await listTaeumScores(5)).map((s) => ({
-      shiftId: s.shiftId,
-      score: s.score,
-      level: s.level,
-    })));
+    const scores = await listTaeumScores(1);
+    setLatestTemp(scores.length > 0 ? taeumTemperature(scores[0].score) : null);
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
 
     const models = await listModels();
@@ -115,13 +122,15 @@ export default function Home() {
   const warnings = laborWarnings(weekShifts, stats);
   const capability = platformCapability(iosContinuous);
 
+  const now = new Date();
   return (
     <HeaderScreen
-      title="오늘"
-      heroLabel="이번 주 근무"
-      hero={`${stats.onSiteHours}시간`}
+      title={greeting(now.getHours(), todayShift?.code)}
+      subtitle={`${koreanDate(now)}${todayShift ? ` · ${todayShift.label} 근무` : " · 근무 없음"}`}
+      heroLabel="오늘"
+      hero={todayShift ? `${todayShift.label} ${formatClock(todayShift.startAt)}` : "오프"}
       rows={[
-        { label: "야간", value: `${stats.nightHours}시간` },
+        { label: "이번 주 근무", value: `${stats.onSiteHours}시간` },
         {
           label: "근무표 밖",
           value: `${stats.offTheBooksHours}시간`,
@@ -132,6 +141,15 @@ export default function Home() {
           value: `${stats.overtimeHours}시간`,
           tone: stats.overtimeHours > 0 ? "alert" : "default",
         },
+        ...(latestTemp
+          ? [{
+              label: "최근 근무 체온",
+              value: `${latestTemp.celsius}°C ${latestTemp.label}`,
+              tone: (latestTemp.tone === "warn" || latestTemp.tone === "danger"
+                ? "alert"
+                : "default") as "alert" | "default",
+            }]
+          : []),
       ]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
@@ -231,40 +249,43 @@ export default function Home() {
           </View>
         </Card>
 
-        {/* 오늘 근무 */}
+        {/* 출근 전 브리핑 */}
         <Card>
-          <Heading>오늘 근무</Heading>
+          <Heading>출근 전 브리핑</Heading>
           {todayShift ? (
             <>
-              <Body>
-                {todayShift.label} · {formatClock(todayShift.startAt)}~
-                {formatClock(todayShift.endAt)}
-              </Body>
-              <Small>
-                인계 포함 실제 체류 예상 {formatClock(todayShift.onSiteStartAt)}~
-                {formatClock(todayShift.onSiteEndAt)}
-              </Small>
-              <Button
-                label="이 근무 기록 보기"
+              <Row
+                label={`${todayShift.label} ${formatClock(todayShift.startAt)}~${formatClock(todayShift.endAt)}`}
+                value={`실제 체류 ${formatClock(todayShift.onSiteStartAt)}~`}
                 onPress={() => router.push(`/shift/${encodeURIComponent(todayShift.id)}`)}
               />
+              <Divider />
             </>
           ) : (
             <>
-              <Body muted>오늘은 근무가 없거나 아직 입력하지 않았습니다.</Body>
-              <Button label="듀티표 입력" onPress={() => router.push("/duty")} />
+              <Row label="오늘 근무 없음" value="듀티표 입력" onPress={() => router.push("/duty")} />
+              <Divider />
             </>
           )}
-        </Card>
-
-        {/* 빠른 이동. 듀티·용어·설정은 아래 탭에 있으니 여기 두지 않는다. */}
-        <Card>
           <Row
-            label="복습"
+            label="복습할 카드"
             value={dueCount > 0 ? `${dueCount}장` : "없음"}
             onPress={() => router.push("/study")}
           />
-          <Divider />
+          {latestTemp ? (
+            <>
+              <Divider />
+              <Row
+                label="지난 근무 체온"
+                value={`${latestTemp.celsius}°C ${latestTemp.label}`}
+                onPress={() => router.push("/care")}
+              />
+            </>
+          ) : null}
+        </Card>
+
+        {/* 빠른 이동. 듀티·마음·용어·설정은 아래 탭에 있으니 여기 두지 않는다. */}
+        <Card>
           <Row
             label="병동 사전"
             value="우리 병동 말"
@@ -284,37 +305,6 @@ export default function Home() {
           </Card>
         ) : null}
 
-        {/* 최근 근무 환경 */}
-        {recentScores.length > 0 ? (
-          <Card>
-            <Heading>최근 근무 환경 기록</Heading>
-            {recentScores.map((s) => (
-              <View key={s.shiftId}>
-                <Row
-                  label={s.shiftId.split(":")[0]}
-                  value={`${s.score}점`}
-                  onPress={() => router.push(`/shift/${encodeURIComponent(s.shiftId)}`)}
-                />
-                <Badge
-                  text={
-                    s.level === "severe"
-                      ? "심각"
-                      : s.level === "caution"
-                        ? "주의"
-                        : s.level === "watch"
-                          ? "관찰"
-                          : "특이사항 없음"
-                  }
-                  tone={levelTone(s.level)}
-                />
-                <Divider />
-              </View>
-            ))}
-            <Small>
-              점수보다 인용문을 보세요. 어조와 맥락은 텍스트에 남지 않습니다.
-            </Small>
-          </Card>
-        ) : null}
 
     </HeaderScreen>
   );
