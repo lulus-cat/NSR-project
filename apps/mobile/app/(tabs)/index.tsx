@@ -123,11 +123,15 @@ export default function Home() {
       rows={[
         { label: "야간", value: `${stats.nightHours}시간` },
         {
-          label: "초과",
+          label: "근무표 밖",
+          value: `${stats.offTheBooksHours}시간`,
+          tone: stats.offTheBooksHours > 0 ? "alert" : "default",
+        },
+        {
+          label: "주 40시간 초과",
           value: `${stats.overtimeHours}시간`,
           tone: stats.overtimeHours > 0 ? "alert" : "default",
         },
-        { label: "연속 근무", value: `${stats.longestConsecutiveDays}일` },
       ]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
@@ -253,58 +257,30 @@ export default function Home() {
           )}
         </Card>
 
-        {/* 학습 */}
+        {/* 빠른 이동. 듀티·용어·설정은 아래 탭에 있으니 여기 두지 않는다. */}
         <Card>
-          <Heading>복습</Heading>
-          {totalCards === 0 ? (
-            <Body muted>
-              아직 카드가 없습니다. 근무를 녹음하고 전사하면 그날 나온 말로 카드가 만들어집니다.
-            </Body>
-          ) : (
-            <Body>
-              오늘 볼 카드 {dueCount}장 · 전체 {totalCards}장
-            </Body>
-          )}
-          <Button
-            label={dueCount > 0 ? `${dueCount}장 복습하기` : "카드 보기"}
-            tone={dueCount > 0 ? "primary" : "default"}
+          <Row
+            label="복습"
+            value={dueCount > 0 ? `${dueCount}장` : "없음"}
             onPress={() => router.push("/study")}
+          />
+          <Divider />
+          <Row
+            label="병동 사전"
+            value="우리 병동 말"
+            onPress={() => router.push("/ward-dict")}
           />
         </Card>
 
-        {/* 근무 지표 */}
-        {weekShifts.length > 0 ? (
-          <Card>
-            <Heading>이번 주 근무</Heading>
-            <Row label="근무표상 근무시간" value={`${stats.scheduledHours}시간`} />
-            <Divider />
-            <Row
-              label="인계 포함 실제 체류"
-              value={`${stats.onSiteHours}시간`}
-            />
-            <Divider />
-            <Row
-              label="근무표에 없는 시간"
-              value={`${stats.offTheBooksHours}시간`}
-            />
-            <Small>
-              인계가 길어져 남은 시간입니다. 수당으로 안 잡히면 공짜로 일한 시간이 됩니다.
-            </Small>
-            <Divider />
-            <Row label="주 40시간 초과" value={`${stats.overtimeHours}시간`} />
-            <Divider />
-            <Row label="야간근로" value={`${stats.nightHours}시간 · ${stats.nightShiftCount}회`} />
-            {warnings.length > 0 ? (
-              <View style={{ gap: space.sm, marginTop: space.sm }}>
-                {warnings.map((w) => (
-                  <View key={w.kind} style={{ gap: 2 }}>
-                    <Badge text="확인해볼 지점" tone="warn" />
-                    <Small muted={false}>{w.message}</Small>
-                    {w.reference ? <Small>{w.reference}</Small> : null}
-                  </View>
-                ))}
+        {/* 근로 경고 — 평소엔 안 보인다. 뜨면 그때가 봐야 할 때다. */}
+        {warnings.length > 0 ? (
+          <Card tone="warn">
+            {warnings.map((w) => (
+              <View key={w.kind} style={{ gap: space.xxs }}>
+                <Small muted={false}>{w.message}</Small>
+                {w.reference ? <Small>{w.reference}</Small> : null}
               </View>
-            ) : null}
+            ))}
           </Card>
         ) : null}
 
@@ -340,23 +316,6 @@ export default function Home() {
           </Card>
         ) : null}
 
-        <Card>
-          <Row label="듀티표" onPress={() => router.push("/duty")} value="입력·수정" />
-          <Divider />
-          <Row label="용어와 자료" onPress={() => router.push("/glossary")} value="사전·공식 출처" />
-          <Divider />
-          <Row
-            label="병동 사전"
-            onPress={() => router.push("/ward-dict")}
-            value="우리 병동 말·주고받기"
-          />
-          <Divider />
-          <Row label="설정" onPress={() => router.push("/settings")} value="녹음·개인정보" />
-        </Card>
-
-        <Small>
-          이 앱을 그만 쓰고 싶으면 설정에서 모든 녹음과 기록을 한 번에 지울 수 있습니다.
-        </Small>
     </HeaderScreen>
   );
 }
