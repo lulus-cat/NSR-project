@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Platform, ScrollView, Switch, TextInput, View } from "react-native";
 import { Text } from "react-native";
+import { useRouter } from "expo-router";
 import { DEFAULT_RECORDING_POLICY, type ShiftCode } from "@nsr/core";
 import { Badge, Body, Button, Card, Divider, Heading, Row, Small } from "../src/components/ui";
 import { radius, space, type, useTheme } from "../src/theme";
@@ -9,6 +10,14 @@ import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../src
 import { SETTINGS_KEYS, platformCapability } from "../src/services/scheduler";
 import { deleteAllRecordings } from "../src/services/files";
 import { getApiKey, setApiKey, testConnection } from "../src/services/llm";
+import {
+  MASKABLE_KINDS,
+  loadPrivacySettings,
+  savePrivacySettings,
+  type PrivacySettings,
+} from "../src/services/export";
+import { activeModelId, listModels } from "../src/services/models";
+import type { PiiKind } from "@nsr/core";
 
 function Toggle({
   label,
@@ -57,6 +66,13 @@ export default function Settings() {
     enabled: false,
     endpoint: "",
   });
+  const [privacy, setPrivacy] = useState<PrivacySettings>({
+    enabled: true,
+    disabled: ["location"],
+    extraTerms: [],
+  });
+  const [newTerm, setNewTerm] = useState("");
+  const [modelSummary, setModelSummary] = useState("확인 중");
 
   const load = useCallback(async () => {
     setAppLock(await getSetting<boolean>(SETTINGS_KEYS.appLock, false));
@@ -68,14 +84,28 @@ export default function Settings() {
     );
     setHasKey((await getApiKey()) !== null);
     setStorageMb(Math.round(((await totalStorageBytes()) / (1024 * 1024)) * 10) / 10);
+    setPrivacy(await loadPrivacySettings());
+
+    const [statuses, activeId] = await Promise.all([listModels(), activeModelId()]);
+    const installed = statuses.filter((m) => m.installed);
+    const active = statuses.find((m) => m.model.id === activeId);
+    if (installed.length === 0) setModelSummary("받아 둔 모델 없음");
+    else if (active?.installed) setModelSummary(`${active.model.name} · 받아 둔 것 ${installed.length}개`);
+    else setModelSummary(`고른 모델 미설치 · 받아 둔 것 ${installed.length}개`);
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
+  const router = useRouter();
   const policy = app.policy;
   const capability = platformCapability(iosContinuous);
+
+  const updatePrivacy = useCallback(async (next: PrivacySettings) => {
+    setPrivacy(next);
+    await savePrivacySettings(next);
+  }, []);
 
   const toggleCode = useCallback(
     (code: ShiftCode) => {
@@ -237,12 +267,123 @@ export default function Settings() {
         />
       </Card>
 
+      {/* 개인정보 가리기 */}
+      <Card>
+        <Heading>환자 정보 가리기</Heading>
+        <Small>
+          전사본이 기기 밖으로 나갈 때 — 보고서를 내보내거나 공유할 때, 보조 기능으로
+          보낼 때 — 이름·전화번호·등록번호를 자동으로 가립니다.
+        </Small>
+        <Divider />
+        <Badge text="저장할 때는 가리지 않습니다" tone="muted" />
+        <Small>
+          전사본은 증거입니다. 태움 신고나 노동위원회 절차에서 쓰일 수 있고, 그때
+          누구에 대한 이야기였는지가 통째로 지워져 있으면 증거로서 값이 떨어집니다.
+          그래서 원본은 그대로 두고 나갈 때만 가립니다.
+        </Small>
+        <Divider />
+        <Toggle
+          label="내보낼 때 가리기"
+          description="꺼도 무엇이 들어 있는지는 내보내기 전에 알려 드립니다."
+          value={privacy.enabled}
+          onChange={(v) => void updatePrivacy({ ...privacy, enabled: v })}
+        />
+        {privacy.enabled ? (
+          <>
+            <Divider />
+            <Small muted={false}>무엇을 가릴지</Small>
+            {MASKABLE_KINDS.map(({ kind, label, hint }) => (
+              <Toggle
+                key={kind}
+                label={label}
+                description={hint}
+                value={!privacy.disabled.includes(kind)}
+                onChange={(v) =>
+                  void updatePrivacy({
+                    ...privacy,
+                    disabled: v
+                      ? privacy.disabled.filter((k) => k !== kind)
+                      : [...privacy.disabled, kind as PiiKind],
+                  })
+                }
+              />
+            ))}
+          </>
+        ) : null}
+        <Divider />
+        <Small muted={false}>반드시 가릴 말</Small>
+        <Small>
+          자동으로는 못 잡는 이름이 있습니다. 호칭 없이 부르는 이름(&ldquo;영희야&rdquo;)이
+          특히 그렇습니다. 여기 적어 두면 항상 가립니다.
+        </Small>
+        {privacy.extraTerms.length > 0 ? (
+          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+            {privacy.extraTerms.map((term) => (
+              <Button
+                key={term}
+                label={`${term}  ×`}
+                onPress={() =>
+                  void updatePrivacy({
+                    ...privacy,
+                    extraTerms: privacy.extraTerms.filter((x) => x !== term),
+                  })
+                }
+              />
+            ))}
+          </View>
+        ) : null}
+        <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
+          <TextInput
+            value={newTerm}
+            onChangeText={setNewTerm}
+            placeholder="가릴 말 (2글자 이상)"
+            placeholderTextColor={t.textMuted}
+            style={{
+              flex: 1,
+              color: t.text,
+              backgroundColor: t.surfaceAlt,
+              borderRadius: radius.md,
+              padding: space.md,
+              fontSize: 14,
+            }}
+          />
+          <Button
+            label="추가"
+            onPress={() => {
+              const term = newTerm.trim();
+              if (term.length < 2 || privacy.extraTerms.includes(term)) return;
+              setNewTerm("");
+              void updatePrivacy({
+                ...privacy,
+                extraTerms: [...privacy.extraTerms, term],
+              });
+            }}
+          />
+        </View>
+        <Divider />
+        <Small>
+          가리기는 완전하지 않습니다. 한국어 이름은 일반명사와 겹치고, 호칭 없이
+          이름만 부르면 잡을 방법이 사실상 없습니다. 그리고 <Text style={{ fontWeight: "700" }}>
+          음성 파일 자체는 가릴 수 없습니다</Text> — 목소리에는 이름과 진단이 그대로 담깁니다.
+        </Small>
+      </Card>
+
       {/* 전사 */}
       <Card>
         <Heading>전사</Heading>
         <Small>
           기본은 기기 안에서 처리합니다. 병동 대화에는 환자 정보가 들어 있어 외부로 보내는 것은
           의료법 제19조가 걸리는 행위입니다.
+        </Small>
+        <Divider />
+        <Row
+          label="전사 모델"
+          value={modelSummary}
+          onPress={() => router.push("/models")}
+        />
+        <Small>
+          기기 성능과 상황에 따라 골라 씁니다. 크기를 키우는 것보다 한국어로 학습된
+          모델을 쓰는 쪽이 훨씬 크게 먹힙니다.
         </Small>
         <Divider />
         <Toggle

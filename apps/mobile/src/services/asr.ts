@@ -19,7 +19,7 @@ import {
   buildInitialPrompt,
   buildLexicon,
   correctTranscript,
-  deidentify,
+  DEFAULT_MODEL_ID,
   generateCards,
   buildShiftReport,
   reportToMarkdown,
@@ -46,22 +46,22 @@ import {
 } from "../db";
 import { getSetting } from "../db";
 import { SETTINGS_KEYS } from "./scheduler";
+import { recordSpeedSample, resolveModelPath } from "./models";
 
 /**
- * 온디바이스 모델 파일 이름.
+ * 어떤 모델을 쓰는지는 이제 **사용자가 고른다.** 목록과 판단 근거는
+ * core 의 `transcription/models.ts` 에, 받고 지우는 일은 `services/models.ts` 에 있다.
+ *
+ * 여기 남은 것은 하나 — 아무것도 고르지 않았을 때의 출발점이다.
  *
  * **한국어 파인튜닝된 모델을 쓸 것.** 원본 Whisper 는 한국어에서 약하다.
  * 공개된 실측으로 whisper-small 의 한국어 CER 이 18% 수준인데,
  * 같은 크기를 한국어 데이터로 재학습하면 6% 대로 떨어진다.
  * 세 배 차이다 — 모델을 키우는 것보다 한국어로 학습시키는 쪽이 훨씬 크게 먹힌다.
  *
- * 여기 적힌 것은 파일 이름일 뿐이고, 실제 파일은 최초 실행 때 받아 기기에 둔다.
- * HuggingFace 의 한국어 파인튜닝 모델은 whisper.cpp 의
- * `models/convert-h5-to-ggml.py` 로 ggml 로 바꿔 쓸 수 있다.
- *
  * 자세한 근거: docs/03-asr-tooling-and-prior-art.md
  */
-export const DEFAULT_ON_DEVICE_MODEL = "ggml-ko-small-q5_1.bin";
+export { DEFAULT_MODEL_ID } from "@nsr/core";
 
 export interface AsrResult {
   segments: {
@@ -77,6 +77,10 @@ export interface AsrResult {
 export interface AsrProvider {
   readonly id: string;
   readonly kind: "on-device" | "self-hosted";
+  /** 어떤 모델로 돌리는가. 속도 실측을 이 id에 묶어 둔다. */
+  readonly modelId?: string;
+  /** 고른 모델이 없어 다른 것으로 대신 돌리는 중인가. 화면에서 알려야 한다. */
+  readonly fellBack?: boolean;
   transcribe(fileUri: string, options: AsrOptions): Promise<AsrResult>;
 }
 
@@ -87,7 +91,11 @@ export interface AsrProvider {
  *   npx expo install whisper.rn && npx expo prebuild
  * 모델(ggml, 양자화)은 최초 실행 시 내려받아 기기에 보관한다.
  */
-export function createOnDeviceProvider(modelPath: string): AsrProvider {
+export function createOnDeviceProvider(
+  modelPath: string,
+  modelId: string,
+  fellBack = false,
+): AsrProvider {
   let context: {
     transcribe: (
       uri: string,
@@ -98,7 +106,10 @@ export function createOnDeviceProvider(modelPath: string): AsrProvider {
   return {
     id: "whisper.cpp",
     kind: "on-device",
+    modelId,
+    fellBack,
     async transcribe(fileUri, options) {
+      const startedAt = Date.now();
       if (!context) {
         // 선택적 네이티브 의존성이다. 모듈 이름을 변수로 두어 번들러와 타입체커가
         // 정적으로 해석하지 않게 한다 (설치되지 않은 환경에서도 빌드되어야 한다).
@@ -135,6 +146,15 @@ export function createOnDeviceProvider(modelPath: string): AsrProvider {
         text: s.text.trim(),
       }));
       const durationSec = segments.length > 0 ? segments[segments.length - 1].endSec : 0;
+
+      // 이번에 걸린 시간을 남긴다. 다음부터 "이 모델이면 얼마나 걸리는지"를
+      // 이 기기의 실측으로 말할 수 있다. 별도 벤치마크를 돌릴 이유가 없다.
+      void recordSpeedSample({
+        modelId,
+        audioSeconds: durationSec,
+        elapsedSeconds: (Date.now() - startedAt) / 1000,
+      });
+
       return { segments, durationSec };
     },
   };
@@ -323,11 +343,6 @@ export async function finalizeShift(input: {
   return { cardsAdded, taeumScore: taeum.score };
 }
 
-/** 외부로 내보내기 전 비식별화. 공유·백업·LLM 전송 어디서든 먼저 통과시킨다. */
-export function redactForExport(text: string): { text: string; redactedCount: number } {
-  return deidentify(text);
-}
-
 /** 현재 설정에 맞는 provider를 만든다. */
 export async function resolveProvider(): Promise<AsrProvider> {
   const cloud = await getSetting<{ enabled: boolean; endpoint: string; apiKey?: string }>(
@@ -337,9 +352,11 @@ export async function resolveProvider(): Promise<AsrProvider> {
   if (cloud.enabled && cloud.endpoint) {
     return createSelfHostedProvider(cloud.endpoint, cloud.apiKey);
   }
-  const modelPath = await getSetting<string>(
-    "asr.modelPath",
-    DEFAULT_ON_DEVICE_MODEL,
-  );
-  return createOnDeviceProvider(modelPath);
+  const { path, model, fellBack } = await resolveModelPath();
+  if (!path) {
+    throw new Error(
+      "전사에 쓸 모델이 아직 없습니다. 설정 → 전사 모델에서 하나 받아 주세요.",
+    );
+  }
+  return createOnDeviceProvider(path, model?.id ?? DEFAULT_MODEL_ID, fellBack);
 }

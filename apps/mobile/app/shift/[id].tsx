@@ -20,6 +20,7 @@ import {
   type RecordingRow,
 } from "../../src/db";
 import { finalizeShift, processRecording, resolveProvider } from "../../src/services/asr";
+import { redactForExport, shareText, type RedactedText } from "../../src/services/export";
 
 const ROLE_OPTIONS: { role: SpeakerRole; label: string }[] = [
   { role: "self", label: "본인" },
@@ -61,6 +62,7 @@ export default function ShiftDetail() {
   const [reportMd, setReportMd] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [preview, setPreview] = useState<RedactedText | null>(null);
 
   const load = useCallback(async () => {
     const [segs, recs, score, md] = await Promise.all([
@@ -131,6 +133,38 @@ export default function ShiftDetail() {
       setBusy(null);
     }
   }, [date, durationSec, dutyLabel, load, shiftId]);
+
+  /**
+   * 내보내기는 두 걸음이다.
+   *   1) 가린 결과를 **먼저 보여준다**
+   *   2) 사용자가 눈으로 확인한 뒤에 공유 시트가 열린다
+   *
+   * 한 번에 공유 시트를 여는 편이 편하지만, 그러면 무엇이 나가는지 모르는 채로
+   * 나간다. 되돌릴 수 없는 일에는 한 걸음을 더 두는 게 맞다.
+   */
+  const prepareExport = useCallback(async () => {
+    if (!reportMd) return;
+    setError(null);
+    setPreview(await redactForExport(reportMd));
+  }, [reportMd]);
+
+  const doShare = useCallback(async () => {
+    if (!preview) return;
+    setBusy("공유 여는 중");
+    try {
+      const outcome = await shareText({
+        text: preview.text,
+        fileName: `${date ?? "근무"}-${code ?? ""}-보고서`,
+        title: `${dutyLabel} 보고서 보내기`,
+      });
+      if (!outcome.shared && outcome.message) setError(outcome.message);
+      else setPreview(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "공유하지 못했습니다.");
+    } finally {
+      setBusy(null);
+    }
+  }, [code, date, dutyLabel, preview]);
 
   const unlabeled = clusters.some(([, c]) => c.role === "unknown");
 
@@ -273,15 +307,74 @@ export default function ShiftDetail() {
       ) : null}
 
       {tab === "report" ? (
-        <Card>
-          {reportMd ? (
-            <Text style={[type.body, { color: t.text }]}>{reportMd}</Text>
-          ) : (
-            <Body muted>
-              아직 보고서가 없습니다. 전사를 마친 뒤 &lsquo;카드·보고서 만들기&rsquo;를 눌러주세요.
-            </Body>
-          )}
-        </Card>
+        <>
+          <Card>
+            {reportMd ? (
+              <Text style={[type.body, { color: t.text }]}>{reportMd}</Text>
+            ) : (
+              <Body muted>
+                아직 보고서가 없습니다. 전사를 마친 뒤 &lsquo;카드·보고서 만들기&rsquo;를 눌러주세요.
+              </Body>
+            )}
+          </Card>
+
+          {reportMd && !preview ? (
+            <Card>
+              <Heading>내보내기</Heading>
+              <Small>
+                환자 이름·전화번호·등록번호를 가린 뒤 무엇을 가렸는지 보여 드립니다.
+                확인하고 나서 보내세요.
+              </Small>
+              <Button label="내보낼 내용 확인" onPress={() => void prepareExport()} />
+            </Card>
+          ) : null}
+
+          {preview ? (
+            <Card tone={preview.masked ? "default" : "warn"}>
+              <Heading>이대로 나갑니다</Heading>
+              <Badge
+                text={preview.summary}
+                tone={preview.masked ? "ok" : "danger"}
+              />
+              {preview.warnings.map((w) => (
+                <Small key={w.reason} muted={false}>
+                  ⚠ {w.message}
+                </Small>
+              ))}
+              <Divider />
+              <View
+                style={{
+                  backgroundColor: t.surfaceAlt,
+                  borderRadius: radius.md,
+                  padding: space.md,
+                  maxHeight: 320,
+                }}
+              >
+                <ScrollView nestedScrollEnabled>
+                  <Text style={[type.small, { color: t.text }]}>{preview.text}</Text>
+                </ScrollView>
+              </View>
+              <Divider />
+              <Small>
+                받는 사람의 폰에도 남습니다. 카카오톡으로 보내면 그 서버를 거칩니다.
+                꼭 보내야 하는 것인지 한 번만 더 생각해 주세요.
+              </Small>
+              <View style={{ flexDirection: "row", gap: space.sm }}>
+                <View style={{ flex: 1 }}>
+                  <Button
+                    label="보내기"
+                    tone="primary"
+                    busy={busy === "공유 여는 중"}
+                    onPress={() => void doShare()}
+                  />
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Button label="취소" onPress={() => setPreview(null)} />
+                </View>
+              </View>
+            </Card>
+          ) : null}
+        </>
       ) : null}
 
       {tab === "environment" ? (

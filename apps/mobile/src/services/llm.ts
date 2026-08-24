@@ -20,7 +20,8 @@
  */
 
 import Anthropic from "@anthropic-ai/sdk";
-import { buildGlossaryForLLM, deidentify, type Lexicon } from "@nsr/core";
+import { buildGlossaryForLLM, type Lexicon } from "@nsr/core";
+import { redactForNetwork } from "./export";
 
 /** 기기에 저장된 사용자 키를 쓴다. 앱 번들에는 어떤 키도 들어가지 않는다. */
 const SECURE_KEY = "anthropic.apiKey";
@@ -77,7 +78,7 @@ export async function postEditTranscript(
   lexicon: Lexicon,
 ): Promise<{ text: string; redactedCount: number; cacheHit: boolean }> {
   const client = await createClient();
-  const redacted = deidentify(correctedText);
+  const redacted = await redactForNetwork(correctedText);
   const glossary = buildGlossaryForLLM(lexicon);
 
   const response = await client.messages.create({
@@ -103,7 +104,7 @@ export async function postEditTranscript(
 
   return {
     text,
-    redactedCount: redacted.redactedCount,
+    redactedCount: redacted.result.redactedCount,
     cacheHit: (response.usage.cache_read_input_tokens ?? 0) > 0,
   };
 }
@@ -134,7 +135,7 @@ export async function summarizeShift(
   lexicon: Lexicon,
 ): Promise<ShiftInsight> {
   const client = await createClient();
-  const redacted = deidentify(transcriptText);
+  const redacted = await redactForNetwork(transcriptText);
   const glossary = buildGlossaryForLLM(lexicon);
 
   const response = await client.messages.create({
