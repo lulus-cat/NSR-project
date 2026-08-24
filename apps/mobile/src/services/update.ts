@@ -13,8 +13,8 @@ import Constants from "expo-constants";
 import {
   decideUpdate,
   isCheckDue,
-  latestReleaseUrl,
-  parseRelease,
+  pickLatestRelease,
+  releaseListUrl,
   releaseHighlights,
   type ReleaseInfo,
   type UpdateDecision,
@@ -77,7 +77,7 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
     }
   }
 
-  const url = latestReleaseUrl(RELEASE_REPO);
+  const url = releaseListUrl(RELEASE_REPO);
   if (!url) return EMPTY;
 
   let release: ReleaseInfo | null = null;
@@ -94,7 +94,7 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
             : `확인하지 못했습니다 (${response.status}).`,
       };
     }
-    release = parseRelease(await response.json());
+    release = pickLatestRelease(await response.json());
   } catch {
     // 병원 와이파이에서 막히는 경우가 실제로 있다. 조용히 넘어간다 —
     // 업데이트 확인 실패로 앱이 시끄러울 이유가 없다.

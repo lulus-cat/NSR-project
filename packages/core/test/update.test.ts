@@ -5,6 +5,8 @@ import {
   isCheckDue,
   latestReleaseUrl,
   parseRelease,
+  pickLatestRelease,
+  releaseListUrl,
   releaseHighlights,
   versionParts,
 } from "../src/release/update.js";
@@ -106,6 +108,41 @@ describe("응답 읽기", () => {
     expect(parseRelease("{망가진 json")).toBeNull();
     expect(parseRelease(null)).toBeNull();
     expect(parseRelease({})).toBeNull();
+  });
+});
+
+describe("pickLatestRelease — 알파만 올리는 저장소", () => {
+  const rel = (tag: string, extra: Record<string, unknown> = {}) => ({
+    tag_name: tag,
+    prerelease: true,
+    assets: [],
+    ...extra,
+  });
+
+  it("프리릴리스뿐이어도 골라낸다 — latest API 404 버그의 회귀 테스트", () => {
+    expect(pickLatestRelease([rel("v0.1.5")])?.version).toBe("0.1.5");
+  });
+
+  it("목록 순서가 아니라 판 번호가 높은 것을 고른다", () => {
+    expect(pickLatestRelease([rel("v0.1.9"), rel("v0.1.10")])?.version).toBe("0.1.10");
+  });
+
+  it("드래프트는 건너뛴다", () => {
+    expect(pickLatestRelease([rel("v0.2.0", { draft: true }), rel("v0.1.5")])?.version).toBe(
+      "0.1.5",
+    );
+  });
+
+  it("빈 목록이나 쓰레기는 null", () => {
+    expect(pickLatestRelease([])).toBeNull();
+    expect(pickLatestRelease("{망가진")).toBeNull();
+  });
+
+  it("목록 주소는 latest 가 아니다", () => {
+    expect(releaseListUrl("lulus-cat/NSR-project")).toBe(
+      "https://api.github.com/repos/lulus-cat/NSR-project/releases?per_page=10",
+    );
+    expect(releaseListUrl("")).toBe("");
   });
 });
 

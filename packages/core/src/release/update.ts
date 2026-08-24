@@ -69,6 +69,18 @@ export function latestReleaseUrl(repo: string): string {
   return `https://api.github.com/repos/${r}/releases/latest`;
 }
 
+/**
+ * 저장소의 릴리스 **목록** 주소.
+ *
+ * `releases/latest` 는 쓰지 않는다 — GitHub 은 거기서 **프리릴리스를 뺀** 최신만
+ * 준다. 이 앱은 전부 알파(prerelease)로 올리므로 latest 가 늘 404 였고,
+ * 그래서 새 판이 나와도 앱이 "아직 올라온 판이 없습니다" 만 보여줬다.
+ */
+export function releaseListUrl(repo: string): string {
+  const base = latestReleaseUrl(repo);
+  return base ? base.replace(/\/latest$/, "?per_page=10") : "";
+}
+
 export interface ReleaseInfo {
   tag: string;
   version: string;
@@ -121,6 +133,33 @@ export function parseRelease(body: unknown): ReleaseInfo | null {
     pageUrl: String(r.html_url ?? ""),
     prerelease: r.prerelease === true,
   };
+}
+
+/**
+ * 목록에서 알릴 판을 고른다.
+ *
+ * 드래프트는 버리고, **프리릴리스는 포함한다** — 이 앱의 배포가 전부 알파다.
+ * 목록 순서를 믿지 않고 판 번호가 가장 높은 것을 고른다.
+ */
+export function pickLatestRelease(body: unknown): ReleaseInfo | null {
+  let d = body;
+  if (typeof d === "string") {
+    try {
+      d = JSON.parse(d);
+    } catch {
+      return null;
+    }
+  }
+  if (!Array.isArray(d)) return parseRelease(d);
+  let best: ReleaseInfo | null = null;
+  for (const item of d) {
+    if (item && typeof item === "object" && (item as Record<string, unknown>).draft === true) {
+      continue;
+    }
+    const r = parseRelease(item);
+    if (r && (!best || compareVersions(r.version, best.version) > 0)) best = r;
+  }
+  return best;
 }
 
 /**
