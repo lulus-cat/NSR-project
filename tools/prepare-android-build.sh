@@ -11,44 +11,26 @@
 set -euo pipefail
 
 ANDROID_DIR="${1:-apps/mobile/android}"
-WRAPPER="$ANDROID_DIR/gradle/wrapper/gradle-wrapper.properties"
 
-# ── 1. Gradle 래퍼 판 올리기 ─────────────────────────────────────────
+# ── 1. Gradle 래퍼는 건드리지 않는다 ──────────────────────────────────
 #
-# Expo SDK 57 이 깔아 주는 래퍼는 Gradle 9.3.1 인데, 같이 딸려오는
-# 안드로이드 그래들 플러그인은 9.4.1 이상을 요구한다. 짝이 안 맞아서
-# 그대로 두면 build.gradle 첫 줄에서 바로 죽는다.
+# 한때 여기서 래퍼 판을 9.3.1 → 9.4.1 로 올렸다. **그게 틀렸다.**
 #
-#   Failed to apply plugin 'com.android.internal.version-check'.
+# 처음 본 오류는 이거였다.
 #   Minimum supported Gradle version is 9.4.1. Current version is 9.3.1.
+# 그래서 래퍼를 올렸더니 다음 오류가 나왔다.
+#   kotlin-stdlib-2.3.0.jar ... 메타데이터 2.3.0 인데 컴파일러 2.1.0 은 2.2.0 까지만 읽음
 #
-# **내리지는 않는다.** 나중에 Expo 가 더 높은 판을 깔아 주면 그걸 그대로 쓴다.
-# 여기서 무조건 9.4.1 로 고정해 버리면 그때 거꾸로 깨진다.
-REQUIRED_GRADLE="9.4.1"
-
-if [ ! -f "$WRAPPER" ]; then
-  echo "gradle 래퍼 파일이 없습니다: $WRAPPER" >&2
-  echo "prebuild 를 먼저 돌렸는지 확인해 주세요." >&2
-  exit 1
-fi
-
-CURRENT="$(sed -n 's/.*gradle-\([0-9][0-9.]*\)-bin\.zip.*/\1/p' "$WRAPPER" | head -1)"
-
-if [ -z "$CURRENT" ]; then
-  echo "래퍼에서 gradle 판을 못 읽었습니다. 그대로 둡니다." >&2
-  sed -n '/distributionUrl/p' "$WRAPPER" >&2
-else
-  # 두 판을 정렬해서 가장 낮은 것이 요구 판이면, 지금 것이 요구 판 이상이다.
-  LOWEST="$(printf '%s\n%s\n' "$CURRENT" "$REQUIRED_GRADLE" | sort -V | head -1)"
-  if [ "$LOWEST" = "$REQUIRED_GRADLE" ]; then
-    echo "gradle $CURRENT — 요구 판($REQUIRED_GRADLE) 이상이라 그대로 둡니다."
-  else
-    echo "gradle $CURRENT → $REQUIRED_GRADLE 로 올립니다."
-    sed -i.bak "s/gradle-${CURRENT}-bin\.zip/gradle-${REQUIRED_GRADLE}-bin.zip/" "$WRAPPER"
-    rm -f "$WRAPPER.bak"
-    sed -n '/distributionUrl/p' "$WRAPPER"
-  fi
-fi
+# 두 오류는 같은 원인의 앞뒤였다. **react-native 판이 Expo 가 기대하는 것과 달랐다.**
+#   RN 0.87.0 → AGP 9.2.1 → Gradle 9.4.1 이상 요구
+#   Expo SDK 57 → Gradle 9.3.1 을 깔아 줌 (RN 0.86.2 기준으로 맞춰져 있음)
+#   Gradle 9.4.1 → Kotlin stdlib 2.3.0 을 싣는데 Expo 자체 플러그인이 그걸 못 읽음
+#
+# 래퍼를 올리는 것은 증상만 옮기는 일이었다. RN 을 Expo 가 기대하는 0.86.2 로
+# 맞추니 AGP 가 8.12.0 이 되고, 9.3.1 로 충분해졌다.
+#
+# 그래서 여기서는 **아무것도 안 한다.** prebuild 가 깔아 준 판을 그대로 쓴다.
+# 앞으로 또 판이 안 맞으면 래퍼를 손대지 말고 package.json 을 맞출 것.
 
 # ── 2. 메모리 ────────────────────────────────────────────────────────
 #

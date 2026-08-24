@@ -127,6 +127,19 @@ jobs:
             exit $code
           fi
 
+          # 판이 안 맞으면 여기서 멈춘다.
+          #
+          # 예전에 이 경고를 그냥 넘겼다가 gradle 단계에서 두 번 깨졌다.
+          # react-native 판이 Expo 가 기대하는 것과 다르면 AGP 판이 달라지고,
+          # 그러면 Expo 가 깔아 준 gradle 래퍼와 짝이 안 맞는다.
+          # 오류는 한참 뒤에 엉뚱한 모습(Kotlin 메타데이터 불일치)으로 나온다.
+          if grep -q "instead of recommended" prebuild.log; then
+            echo "::error::$(grep 'instead of recommended' prebuild.log | tr '\n\r' '~~')"
+            echo "Expo SDK 가 기대하는 판과 다릅니다. package.json 을 맞춰 주세요."
+            echo "gradle 래퍼를 손대서 넘기려 하지 마세요 — 증상만 옮겨갑니다."
+            exit 1
+          fi
+
       # prebuild 가 깔아 주는 gradle 래퍼(9.3.1)가 같이 딸려오는 안드로이드
       # 플러그인이 요구하는 판(9.4.1)보다 낮다. Expo 템플릿 안에서 짝이 안 맞는다.
       # android/ 는 매번 새로 만들어지므로 커밋해 둘 수 없고 여기서 손봐야 한다.
