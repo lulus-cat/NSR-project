@@ -2,24 +2,91 @@ import type { LexiconEntry, LexiconHit, TermCategory } from "./types.js";
 import { CLINICAL_TERMS } from "./terms-clinical.js";
 import { MEDICATION_TERMS } from "./terms-medication.js";
 import { SLANG_TERMS } from "./slang.js";
+import { SLANG_EXTRA_TERMS } from "./slang-extra.js";
 import { pronunciationKey, normalizeForCompare } from "../hangul/phonology.js";
-import { rankByPhoneticSimilarity } from "../hangul/similarity.js";
-import { resolveInitialism } from "../hangul/initialism.js";
+import {
+  bestPrepared,
+  prepareCandidate,
+  rankByPhoneticSimilarity,
+  type PreparedCandidate,
+} from "../hangul/similarity.js";
+import { resolveInitialism, toHangulReading } from "../hangul/initialism.js";
 import { ASR_MISHEARD } from "./misheard.js";
+import { ALL_ABBREVS, type AbbrevRow } from "./abbreviations.js";
 
 export type { LexiconEntry, LexiconHit, TermCategory };
-export { CLINICAL_TERMS, MEDICATION_TERMS, SLANG_TERMS };
+export { CLINICAL_TERMS, MEDICATION_TERMS, SLANG_TERMS, SLANG_EXTRA_TERMS };
 export { ASR_MISHEARD } from "./misheard.js";
+export { ALL_ABBREVS } from "./abbreviations.js";
+export type { AbbrevRow } from "./abbreviations.js";
 
-/** 내장 사전 전체. 오인식 표기는 여기서 각 항목에 주입된다. */
-export const BUILTIN_TERMS: readonly LexiconEntry[] = [
+/** 손으로 쓴 항목들. 정의·주의점·출처를 갖춘 것들. */
+const CURATED_TERMS: readonly LexiconEntry[] = [
   ...CLINICAL_TERMS,
   ...MEDICATION_TERMS,
   ...SLANG_TERMS,
+  ...SLANG_EXTRA_TERMS,
 ].map((entry) => {
   const misheard = ASR_MISHEARD[entry.id];
   return misheard ? { ...entry, misheard } : entry;
 });
+
+/** 약어를 비교용 키로. "V/S" → "VS" */
+function abbrKey(abbr: string): string {
+  return abbr.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+/**
+ * 약어 한 줄을 사전 항목으로 부풀린다.
+ *
+ * 한국어 발음형("에이비지에이")을 별칭에 넣는 이유는 **매칭 때문이 아니다.**
+ * 매칭은 `expandInitialism`이 반대 방향으로 이미 해낸다.
+ * 넣는 진짜 이유는 두 가지다.
+ *   - Whisper hotwords 에 한국어 발음형이 들어가야 인식률이 오른다.
+ *     한국어 오디오에 "ABGA"라는 소리는 존재하지 않는다.
+ *   - 화면에서 "이렇게 읽습니다"를 보여줄 수 있다.
+ */
+function abbrevToEntry(row: AbbrevRow): LexiconEntry {
+  const reading = toHangulReading(row.abbr);
+  const entry: LexiconEntry = {
+    id: `abbr-${abbrKey(row.abbr).toLowerCase()}`,
+    ko: row.ko,
+    en: row.en,
+    abbr: row.abbr,
+    aliases: reading ? [reading] : [],
+    category: row.category,
+    definition: row.ambiguous
+      ? `${row.ko} (${row.en}) — 문맥에 따라 뜻이 갈리는 약어입니다.`
+      : `${row.ko} (${row.en})`,
+  };
+  if (row.note) entry.pitfall = row.note;
+  return entry;
+}
+
+/**
+ * 약어 표에서 만들어진 항목들.
+ * 손으로 쓴 항목이 이미 다루는 약어는 건너뛴다 — 그쪽이 정의도 주의점도 충실하다.
+ */
+const ABBREV_TERMS: readonly LexiconEntry[] = (() => {
+  const covered = new Set<string>();
+  for (const t of CURATED_TERMS) {
+    if (t.abbr) covered.add(abbrKey(t.abbr));
+  }
+  const out: LexiconEntry[] = [];
+  for (const row of ALL_ABBREVS) {
+    const key = abbrKey(row.abbr);
+    if (!key || covered.has(key)) continue;
+    covered.add(key);
+    out.push(abbrevToEntry(row));
+  }
+  return out;
+})();
+
+/** 내장 사전 전체. */
+export const BUILTIN_TERMS: readonly LexiconEntry[] = [
+  ...CURATED_TERMS,
+  ...ABBREV_TERMS,
+];
 
 interface SurfaceRef {
   surface: string;
@@ -43,7 +110,16 @@ export class Lexicon {
   /** 오인식 표기 → 항목. exact보다 먼저 조회한다. */
   private readonly misheard = new Map<string, LexiconEntry>();
   private readonly byPronunciation = new Map<string, LexiconEntry[]>();
-  private readonly surfaces: SurfaceRef[] = [];
+  /**
+   * 퍼지 탐색용 후보. 자모 분해와 자모 다중집합을 **만들 때 한 번만** 계산해 둔다.
+   * 사전이 수백~수천 항목이 되면 이 준비 작업의 유무가 속도를 좌우한다.
+   */
+  private readonly prepared: PreparedCandidate<SurfaceRef>[] = [];
+  /**
+   * 조회 결과 메모. 교정기는 한 문장에서 같은 후보 문자열을 여러 번 던진다
+   * (어절 span × 조사 절단 조합). 같은 질문에 같은 답을 다시 계산할 이유가 없다.
+   */
+  private readonly memo = new Map<string, LexiconHit | null>();
 
   constructor(entries: readonly LexiconEntry[]) {
     this.entries = entries;
@@ -73,7 +149,7 @@ export class Lexicon {
         if (!this.exact.has(norm) && !this.misheard.has(norm)) {
           this.exact.set(norm, entry);
         }
-        this.surfaces.push({ surface, entry });
+        this.prepared.push(prepareCandidate({ surface, entry }, surface));
 
         const pk = pronunciationKey(surface);
         if (!pk) continue;
@@ -127,6 +203,25 @@ export class Lexicon {
     const norm = normalizeForCompare(surface);
     if (!norm) return null;
 
+    const memoKey = `${minPhonetic}|${norm}`;
+    const cached = this.memo.get(memoKey);
+    if (cached !== undefined) {
+      // surface 는 호출부의 원문 그대로여야 위치 계산이 맞는다.
+      return cached ? { ...cached, surface } : null;
+    }
+    const hit = this.lookupUncached(norm, surface, minPhonetic);
+    // 상한을 넘으면 통째로 비운다. LRU 를 들일 만큼 값진 캐시는 아니다.
+    if (this.memo.size >= 4000) this.memo.clear();
+    this.memo.set(memoKey, hit);
+    return hit;
+  }
+
+  private lookupUncached(
+    norm: string,
+    surface: string,
+    minPhonetic: number,
+  ): LexiconHit | null {
+
     // 오인식 표기를 먼저 본다. exact보다 우선해야 "노디"가 교정 대상이 된다.
     const mis = this.misheard.get(norm);
     if (mis) return { entry: mis, surface, via: "misheard", confidence: 1 };
@@ -153,13 +248,7 @@ export class Lexicon {
       if (entry) return { entry, surface, via: "initialism", confidence: 0.9 };
     }
 
-    const ranked = rankByPhoneticSimilarity(
-      surface,
-      this.surfaces,
-      (ref) => ref.surface,
-      { minScore: minPhonetic, limit: 1 },
-    );
-    const top = ranked[0];
+    const top = bestPrepared(surface, this.prepared, minPhonetic);
     if (top) {
       return {
         entry: top.item.entry,

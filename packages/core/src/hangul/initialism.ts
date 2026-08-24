@@ -46,6 +46,29 @@ const LETTER_READINGS: Record<string, string[]> = {
   X: ["엑스"],
   Y: ["와이"],
   Z: ["지", "제트", "지드"],
+  // 숫자는 영어식으로 읽는다. "오투"(O2), "티쓰리"(T3), "디파이브"(D5)처럼.
+  // 한자어 읽기(이·사·오·구…)는 알파벳 읽기와 충돌하므로 넣지 않는다.
+  // 예: "오"를 5로도 읽으면 "오투"가 O2와 52 둘 다로 파싱되어 후보만 늘어난다.
+  "0": ["제로", "공"],
+  "1": ["원"],
+  "2": ["투"],
+  "3": ["쓰리", "스리"],
+  "4": ["포"],
+  "5": ["파이브"],
+  "6": ["식스"],
+  "7": ["세븐"],
+  "8": ["에이트"],
+  "9": ["나인"],
+};
+
+/** 되읽기용 대표 읽기. 한 글자당 하나만. */
+const PRIMARY_READING: Record<string, string> = {
+  A: "에이", B: "비", C: "씨", D: "디", E: "이", F: "에프", G: "지",
+  H: "에이치", I: "아이", J: "제이", K: "케이", L: "엘", M: "엠", N: "엔",
+  O: "오", P: "피", Q: "큐", R: "알", S: "에스", T: "티", U: "유",
+  V: "브이", W: "더블유", X: "엑스", Y: "와이", Z: "지",
+  "0": "제로", "1": "원", "2": "투", "3": "쓰리", "4": "포",
+  "5": "파이브", "6": "식스", "7": "세븐", "8": "에이트", "9": "나인",
 };
 
 interface Reading {
@@ -126,6 +149,35 @@ export interface InitialismSpan {
   text: string;
   start: number;
   end: number;
+}
+
+/**
+ * 영문 약어를 한국어로 읽은 형태로 바꾼다. `expandInitialism`의 역방향.
+ *
+ * 쓰는 곳
+ *  - 화면에 "이렇게 읽습니다: 에이비지에이" 를 보여줄 때
+ *  - Whisper hotwords 에 한국어 발음형을 넣을 때 (약어 자체는 한국어 오디오에서 안 나온다)
+ *  - 학습카드 앞면
+ *
+ * 매칭에는 필요 없다. 매칭은 `expandInitialism`이 반대 방향으로 이미 처리하므로,
+ * 사전에 약어를 하나 추가하면 그 한국어 발음형은 **공짜로** 인식된다.
+ *
+ * @example
+ *   toHangulReading("ABGA")  // "에이비지에이"
+ *   toHangulReading("V/S")   // "브이에스"
+ *   toHangulReading("SpO2")  // "에스피오투"
+ */
+export function toHangulReading(abbr: string): string {
+  const letters = String(abbr || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  if (!letters) return "";
+  let out = "";
+  for (const ch of letters) {
+    const reading = PRIMARY_READING[ch];
+    // 읽는 법을 모르는 글자가 있으면 반쪽짜리 읽기를 만들지 않는다.
+    if (!reading) return "";
+    out += reading;
+  }
+  return out;
 }
 
 const HANGUL_RUN = /[가-힣]+/g;

@@ -128,7 +128,7 @@ export function jamoDistance(a: string[], b: string[]): number {
 const jamoCache = new Map<string, string[]>();
 const JAMO_CACHE_LIMIT = 20000;
 
-function comparableJamo(text: string): string[] {
+export function comparableJamo(text: string): string[] {
   const cached = jamoCache.get(text);
   if (cached) return cached;
   const computed = toJamo(pronounce(normalizeForCompare(text))).filter(
@@ -138,6 +138,54 @@ function comparableJamo(text: string): string[] {
   if (jamoCache.size >= JAMO_CACHE_LIMIT) jamoCache.clear();
   jamoCache.set(text, computed);
   return computed;
+}
+
+/** 자모 다중집합. 값싼 사전 거르기에 쓴다. */
+export function jamoBag(jamo: readonly string[]): Map<string, number> {
+  const bag = new Map<string, number>();
+  for (const j of jamo) bag.set(j, (bag.get(j) ?? 0) + 1);
+  return bag;
+}
+
+/** 두 다중집합의 교집합 크기. */
+function bagOverlap(a: Map<string, number>, b: Map<string, number>): number {
+  // 작은 쪽을 돌아야 빠르다.
+  const [small, large] = a.size <= b.size ? [a, b] : [b, a];
+  let common = 0;
+  for (const [j, n] of small) {
+    const m = large.get(j);
+    if (m !== undefined) common += n < m ? n : m;
+  }
+  return common;
+}
+
+/**
+ * 편집거리를 계산하기 **전에** 이 후보가 가능성이 있는지 값싸게 판정한다.
+ *
+ * 사전이 커지면 이게 전부를 좌우한다. 항목 2000개 × 표기 4개면 후보가 8000개인데,
+ * 그 전부에 대해 자모 DP를 돌리면 문장 한 줄 교정에 수 초가 걸린다.
+ * 폰에서는 아예 못 쓴다.
+ *
+ * 두 가지 하한을 쓴다. 둘 다 **참인 매칭을 절대 버리지 않는** 안전한 경계다.
+ *
+ *  1. 길이 — 길이가 1 다를 때마다 최소 0.5의 삽입/삭제 비용이 든다.
+ *     유사도 ≤ 1 - 0.5·|la-lb|/max  이므로  |la-lb| ≤ 2·max·(1-minScore).
+ *
+ *  2. 자모 구성 — 겹치지 않는 자모는 하나당 최소 0.3(가장 싼 치환)의 비용이 든다.
+ *     유사도 ≤ 1 - 0.3·(max-공통)/max  이므로  공통 ≥ max·(1 - (1-minScore)/0.3).
+ */
+export function mayReachSimilarity(
+  aLen: number,
+  bLen: number,
+  minScore: number,
+  overlap: number,
+): boolean {
+  const maxLen = aLen > bLen ? aLen : bLen;
+  if (maxLen === 0) return true;
+  const slack = 1 - minScore;
+  if (Math.abs(aLen - bLen) > 2 * maxLen * slack) return false;
+  const needed = maxLen * (1 - slack / 0.3);
+  return overlap >= needed;
 }
 
 /**
@@ -173,6 +221,8 @@ export function rankByPhoneticSimilarity<T>(
 ): RankedMatch<T>[] {
   const minScore = options.minScore ?? 0.72;
   const limit = options.limit ?? 5;
+  const qJamo = comparableJamo(query);
+  const qBag = jamoBag(qJamo);
   const out: RankedMatch<T>[] = [];
   for (const item of candidates) {
     const keys = keyOf(item);
@@ -180,7 +230,13 @@ export function rankByPhoneticSimilarity<T>(
     let best = 0;
     let bestKey = "";
     for (const k of keyList) {
-      const s = phoneticSimilarity(query, k);
+      const kJamo = comparableJamo(k);
+      // 값싼 거르기를 먼저. 여기서 대부분이 떨어진다.
+      if (!mayReachSimilarity(qJamo.length, kJamo.length, minScore, bagOverlap(qBag, jamoBag(kJamo)))) {
+        continue;
+      }
+      const maxLen = Math.max(qJamo.length, kJamo.length);
+      const s = maxLen === 0 ? 1 : Math.max(0, 1 - jamoDistance(qJamo, kJamo) / maxLen);
       if (s > best) {
         best = s;
         bestKey = k;
@@ -191,4 +247,42 @@ export function rankByPhoneticSimilarity<T>(
   }
   out.sort((x, y) => y.score - x.score);
   return out.slice(0, limit);
+}
+
+/**
+ * 미리 계산해 둔 후보에 대한 최근접 탐색.
+ * 사전처럼 후보가 고정된 경우, 자모 분해와 다중집합을 한 번만 만들어 두고 재사용한다.
+ */
+export interface PreparedCandidate<T> {
+  item: T;
+  surface: string;
+  jamo: string[];
+  bag: Map<string, number>;
+}
+
+export function prepareCandidate<T>(item: T, surface: string): PreparedCandidate<T> {
+  const jamo = comparableJamo(surface);
+  return { item, surface, jamo, bag: jamoBag(jamo) };
+}
+
+export function bestPrepared<T>(
+  query: string,
+  candidates: readonly PreparedCandidate<T>[],
+  minScore: number,
+): RankedMatch<T> | null {
+  const qJamo = comparableJamo(query);
+  const qBag = jamoBag(qJamo);
+  let best: RankedMatch<T> | null = null;
+  for (const c of candidates) {
+    if (!mayReachSimilarity(qJamo.length, c.jamo.length, minScore, bagOverlap(qBag, c.bag))) {
+      continue;
+    }
+    const maxLen = Math.max(qJamo.length, c.jamo.length);
+    const score = maxLen === 0 ? 1 : Math.max(0, 1 - jamoDistance(qJamo, c.jamo) / maxLen);
+    if (score >= minScore && (!best || score > best.score)) {
+      best = { item: c.item, score, matchedKey: c.surface };
+      if (score === 1) break;
+    }
+  }
+  return best;
 }
