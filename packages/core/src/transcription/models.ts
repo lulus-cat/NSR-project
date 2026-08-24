@@ -189,9 +189,20 @@ export const KOREAN_MODEL_GUIDE = {
       ready: true,
     },
     {
+      id: "bybb138/whisper-large-v3-turbo-korean",
+      base: "large-v3-turbo",
+      note:
+        "Zeroth Korean 206시간 학습. 모델 카드 실측 test CER 7.58% → 2.06%. " +
+        "**다만 Zeroth 는 낭독 음성이고 test 도 같은 데이터에서 쪼갠 것이라 " +
+        "병동 대화에서 2% 가 나오지는 않는다.** 절대값이 아니라 개선폭(3.7배)을 보라. " +
+        "Safetensors F32 라서 ggml 변환 + 양자화가 필요하다. " +
+        "제작자 주: 수렴 전이라 더 나아질 여지가 있다.",
+      ready: false,
+    },
+    {
       id: "ghost613/whisper-large-v3-turbo-korean",
       base: "large-v3-turbo",
-      note: "Zeroth Korean 학습. ggml 변환이 필요하다.",
+      note: "같은 Zeroth 계열. 변환 필요.",
       ready: false,
     },
     {
@@ -204,6 +215,12 @@ export const KOREAN_MODEL_GUIDE = {
   searchHint: "HuggingFace 에서 위 id 로 찾거나 'whisper korean ggml' 로 검색한다",
   convertCommand:
     "python3 whisper.cpp/models/convert-h5-to-ggml.py ./모델폴더/ ./whisper ./출력",
+  /**
+   * 변환만 하면 F32 그대로라 3GB 쯤 된다. 폰에 넣으려면 양자화까지 해야 한다.
+   * q5_0 이면 1/5 로 줄고 정확도 손실은 작은 편이다.
+   */
+  quantizeCommand:
+    "./build/bin/quantize ./출력/ggml-model.bin ./ggml-ko-turbo-q5_0.bin q5_0",
   why:
     "같은 크기에서 원본 CER 18.05% → 한국어 재학습 6.45%. " +
     "모델을 키우는 것보다 효과가 크다.",

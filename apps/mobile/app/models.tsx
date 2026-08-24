@@ -353,7 +353,7 @@ export default function Models() {
             <Small>{m.note}</Small>
           </View>
         ))}
-        <Small muted={false}>2. ggml 로 바꾸기</Small>
+        <Small muted={false}>2. ggml 로 바꾸고 양자화하기</Small>
         <View
           style={{
             backgroundColor: t.surfaceAlt,
@@ -361,8 +361,14 @@ export default function Models() {
             padding: space.md,
           }}
         >
-          <Text style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
+          <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
             {KOREAN_MODEL_GUIDE.convertCommand}
+          </Text>
+          <Text
+            selectable
+            style={{ color: t.text, fontFamily: "monospace", fontSize: 12, marginTop: 8 }}
+          >
+            {KOREAN_MODEL_GUIDE.quantizeCommand}
           </Text>
         </View>
         <Small muted={false}>3. 아래에 등록하고, 파일을 모델 폴더에 넣거나 주소로 받기</Small>
