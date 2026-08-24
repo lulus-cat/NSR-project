@@ -111,6 +111,10 @@ const PATTERNS: Pattern[] = [
   // "선생" + "님"으로 쪼개져 '선생'이 이름으로 잡힌다.
   { kind: "name", re: /([가-힣]{2,4})(?=\s*선생님)/g, group: 1 },
   // 이름 — 호칭이 뒤따르는 2~4음절 한글
+  //
+  // "환자"는 호칭으로 쓰이기도 하고("박철수 환자 어때요") 그냥 명사이기도 하다
+  // ("의사에게 환자 상태 알려"). 둘을 가르는 것은 **앞말이 조사로 끝나는가**다.
+  // 이름은 조사로 끝나지 않는다. 그 판정은 `shouldSkip`이 한다.
   {
     kind: "name",
     re: /([가-힣]{2,4})(?=\s*(?:님|씨|환자분|환자|보호자|할머니|할아버지|어머님|아버님|어머니|아버지))/g,
@@ -130,9 +134,24 @@ const NAME_EXCEPTIONS = new Set([
   "선생", "간호", "수간", "환자", "보호",
 ]);
 
+/**
+ * 이름 자리에 걸렸지만 **조사로 끝나는** 말들.
+ *
+ * 이름은 조사로 끝나지 않는다. "의사에게", "간호사한테", "병동에서"가
+ * 호칭 앞에 오면 규칙은 이름으로 보지만 사람은 그렇게 읽지 않는다.
+ * 조사 하나로 걸러지는 오탐이 생각보다 많다.
+ */
+const TRAILING_PARTICLES = [
+  "에게", "한테", "에서", "으로", "까지", "부터", "보다", "처럼",
+  "마다", "조차", "밖에", "대로", "이랑", "라고", "라는",
+  "하는", "되는", "있는", "없는", "같은",
+];
+
 function shouldSkip(kind: PiiKind, value: string): boolean {
   if (kind !== "name") return false;
-  return NAME_EXCEPTIONS.has(value);
+  if (NAME_EXCEPTIONS.has(value)) return true;
+  // 조사만 남는 경우(값 전체가 조사)는 어차피 이름이 아니다.
+  return TRAILING_PARTICLES.some((p) => value.endsWith(p));
 }
 
 /**

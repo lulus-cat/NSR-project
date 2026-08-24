@@ -21,6 +21,7 @@ export type { LexiconEntry, LexiconHit, TermCategory };
 export { CLINICAL_TERMS, MEDICATION_TERMS, SLANG_TERMS, SLANG_EXTRA_TERMS, SPECIMEN_TERMS };
 export { OR_TERMS, LTC_TERMS, OR_LTC_TERMS };
 export * from "./ward-pack.js";
+export * from "./pack-privacy.js";
 export { ASR_MISHEARD } from "./misheard.js";
 export { ALL_ABBREVS } from "./abbreviations.js";
 export type { AbbrevRow } from "./abbreviations.js";

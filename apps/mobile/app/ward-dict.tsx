@@ -25,9 +25,11 @@ import {
   type StoredPack,
 } from "../src/db";
 import {
+  checkPackBeforeShare,
   describePack,
   importWardPackFromFile,
   shareWardPack,
+  type PackExportCheck,
 } from "../src/services/ward-dict";
 import { loadLexicon } from "../src/services/asr";
 
@@ -40,6 +42,10 @@ export default function WardDict() {
   const [msg, setMsg] = useState<string | null>(null);
   const [newName, setNewName] = useState("");
   const [newHospital, setNewHospital] = useState("");
+  /** 보내기 전 개인정보 확인 화면. 어느 사전을 보려던 것인지 함께 들고 있는다. */
+  const [shareCheck, setShareCheck] = useState<
+    { pack: StoredPack; check: PackExportCheck } | null
+  >(null);
 
   const load = useCallback(async () => {
     const [stored, waiting, memory, lexicon] = await Promise.all([
@@ -163,6 +169,68 @@ export default function WardDict() {
         {msg ? <Small muted={false}>{msg}</Small> : null}
       </Card>
 
+      {/* 보내기 전 확인 */}
+      {shareCheck ? (
+        <Card tone={shareCheck.check.needsReview ? "warn" : "default"}>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <Badge
+              text={shareCheck.check.needsReview ? "확인 필요" : "확인됨"}
+              tone={shareCheck.check.needsReview ? "warn" : "ok"}
+            />
+            <Heading>{shareCheck.pack.pack.name} 보내기</Heading>
+          </View>
+          <Small muted={false}>{shareCheck.check.summary}</Small>
+          <Small>
+            사전은 전사본에서 자랍니다. 뜻을 적다가 예문에 환자 이야기가 딸려 들어가기 쉽고,
+            사전은 애초에 남에게 주려고 만드는 물건이라 전사본보다 위험이 큽니다.
+          </Small>
+
+          {shareCheck.check.findings.length > 0 ? (
+            <>
+              <Divider />
+              <Small>
+                여기서 자동으로 지우지 않습니다. 이름만 빼면 문장이 이상해지고, 그건
+                지워야 하는 게 아니라 다시 써야 하는 것입니다. 아래를 보고 직접 고쳐 주세요.
+              </Small>
+              {shareCheck.check.findings.slice(0, 20).map((f, i) => (
+                <View key={`${f.termId}-${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
+                  <Small muted={false}>{f.where}</Small>
+                  <Text style={[type.body, { color: t.text }]}>
+                    &ldquo;{f.found}&rdquo;
+                  </Text>
+                  <Small>{f.context}</Small>
+                  <Divider />
+                </View>
+              ))}
+              {shareCheck.check.findings.length > 20 ? (
+                <Small>…그 외 {shareCheck.check.findings.length - 20}군데 더</Small>
+              ) : null}
+            </>
+          ) : null}
+
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            <View style={{ flex: 1 }}>
+              <Button
+                label={shareCheck.check.needsReview ? "그래도 보내기" : "보내기"}
+                tone={shareCheck.check.needsReview ? "default" : "primary"}
+                onPress={async () => {
+                  const target = shareCheck.pack.pack;
+                  setShareCheck(null);
+                  try {
+                    await shareWardPack(target);
+                  } catch (e) {
+                    setMsg(e instanceof Error ? e.message : "보내지 못했습니다.");
+                  }
+                }}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button label="취소" onPress={() => setShareCheck(null)} />
+            </View>
+          </View>
+        </Card>
+      ) : null}
+
       {/* 확인 대기 치환 규칙 */}
       {pending.length > 0 ? (
         <Card tone="warn">
@@ -253,13 +321,9 @@ export default function WardDict() {
               <View style={{ flex: 1 }}>
                 <Button
                   label="동료에게 보내기"
-                  onPress={async () => {
-                    try {
-                      await shareWardPack(stored.pack);
-                    } catch (e) {
-                      setMsg(e instanceof Error ? e.message : "보내지 못했습니다.");
-                    }
-                  }}
+                  onPress={() =>
+                    setShareCheck({ pack: stored, check: checkPackBeforeShare(stored.pack) })
+                  }
                 />
               </View>
               <View style={{ flex: 1 }}>

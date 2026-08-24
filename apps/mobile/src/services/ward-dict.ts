@@ -22,7 +22,10 @@ import {
   exportWardPack,
   importWardPack,
   packStats,
+  scanPackForPii,
+  describePackFindings,
   type ImportResult,
+  type PackPiiFinding,
   type PackStats,
   type WardPack,
 } from "@nsr/core";
@@ -38,6 +41,8 @@ import {
 
 export type { StoredPack, WardPack, PackStats };
 export { packStats, createWardPack, setWardPackEnabled, deleteWardPack, listWardPacks };
+export { scanPackForPii, describePackFindings };
+export type { PackPiiFinding };
 
 const EXPORT_DIR = "shared";
 
@@ -52,8 +57,36 @@ function safeFileName(name: string): string {
 }
 
 /**
+ * 보내기 전 검사. 화면은 이 결과를 **반드시 보여준 뒤에** 보내야 한다.
+ *
+ * 사전은 전사본에서 자라난다. 정의를 쓰다가 예문에 환자 이름이 딸려 들어가고,
+ * 치환 규칙에는 오인식된 이름이 그대로 남는다. 전사본은 내 폰에만 있지만
+ * **사전은 남에게 주려고 만드는 물건이라** 위험은 오히려 이쪽이 크다.
+ */
+export interface PackExportCheck {
+  findings: PackPiiFinding[];
+  summary: string;
+  /** 사람이 한 번 봐야 하는가. */
+  needsReview: boolean;
+}
+
+export function checkPackBeforeShare(pack: WardPack): PackExportCheck {
+  const findings = scanPackForPii(pack);
+  return {
+    findings,
+    summary: describePackFindings(findings),
+    needsReview: findings.length > 0,
+  };
+}
+
+/**
  * 사전을 파일로 만들어 공유 시트를 연다.
  * 카카오톡·메일·에어드롭 등 기기에 있는 아무 경로로나 보낼 수 있다.
+ *
+ * **가리지 않고 그대로 내보낸다.** 사전은 사람이 손으로 쓴 물건이라 자동으로
+ * 지우면 뜻이 망가진다 — "박 선생님이 알려준 말"에서 이름만 빼면 문장이 이상해지고,
+ * 그건 지워야 하는 게 아니라 다시 써야 하는 것이다.
+ * 그래서 `checkPackBeforeShare`로 짚어주고 고치는 것은 사람이 한다.
  */
 export async function shareWardPack(pack: WardPack): Promise<void> {
   const Sharing = await import("expo-sharing");
