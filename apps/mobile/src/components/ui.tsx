@@ -9,7 +9,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { radius, space, type, useTheme } from "../theme";
+import { TOUCH_MIN, radius, space, type, useTheme } from "../theme";
 
 export function Screen({
   title,
@@ -24,9 +24,9 @@ export function Screen({
 }) {
   const t = useTheme();
   const body = (
-    <View style={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }}>
+    <View style={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
       {title ? (
-        <View style={{ gap: space.xs, marginBottom: space.sm }}>
+        <View style={{ gap: space.tight, marginBottom: space.sm }}>
           <Text style={[type.title, { color: t.text }]}>{title}</Text>
           {subtitle ? (
             <Text style={[type.small, { color: t.textMuted }]}>{subtitle}</Text>
@@ -130,7 +130,8 @@ export function Button({
       style={({ pressed }) => ({
         backgroundColor: bg,
         opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
-        borderRadius: radius.md,
+        borderRadius: radius.lg,
+        minHeight: TOUCH_MIN,
         paddingVertical: space.md,
         paddingHorizontal: space.lg,
         alignItems: "center",
@@ -140,7 +141,7 @@ export function Button({
       })}
     >
       {busy ? <ActivityIndicator size="small" color={fg} /> : null}
-      <Text style={{ color: fg, fontWeight: "600", fontSize: 15 }}>{label}</Text>
+      <Text style={[type.button, { color: fg }]}>{label}</Text>
     </Pressable>
   );
 }
@@ -161,6 +162,7 @@ export function Row({
         flexDirection: "row",
         justifyContent: "space-between",
         alignItems: "center",
+        minHeight: TOUCH_MIN,
         paddingVertical: space.md,
         gap: space.md,
       }}
@@ -202,7 +204,7 @@ export function Badge({ text, tone }: { text: string; tone: "ok" | "warn" | "dan
         paddingVertical: 2,
       }}
     >
-      <Text style={{ color, fontSize: 12, fontWeight: "600" }}>{text}</Text>
+      <Text style={[type.caption, { color }]}>{text}</Text>
     </View>
   );
 }
