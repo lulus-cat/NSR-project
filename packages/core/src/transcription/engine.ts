@@ -82,39 +82,17 @@ export interface AsrProvider {
 }
 
 /**
- * 클라우드 전사 전 비식별화.
- *
- * 완벽한 비식별화는 불가능하다는 점을 분명히 해둔다. 한국어 이름은 형태가 다양하고
- * 문맥에 따라 일반명사와 겹친다. 여기서 하는 것은 **위험을 줄이는 것**이지
- * 안전을 보장하는 것이 아니다. 그래서 앱은 클라우드 전사를 기본값으로 두지 않는다.
- *
- * 처리 대상
- *  - 등록번호로 보이는 숫자열 (6자리 이상 연속 숫자)
- *  - 주민등록번호 형태
- *  - 전화번호 형태
- *  - "OOO님", "OOO씨", "OOO 환자" 앞의 2~4음절 한글 (호칭 앞 이름)
+ * 개인정보 가리기는 `deidentify.ts`에 있다.
+ * 전사 경로뿐 아니라 내보내기·공유·LLM 전송 어디서든 쓰이므로 따로 뒀다.
  */
-export interface DeidentifyResult {
-  text: string;
-  /** 치환된 개수. UI에서 "N건 가림"으로 보여준다. */
-  redactedCount: number;
-}
-
-const PATTERNS: { re: RegExp; token: string }[] = [
-  { re: /\d{6}\s*[-]\s*\d{7}/g, token: "[주민번호]" },
-  { re: /01[016789][-\s]?\d{3,4}[-\s]?\d{4}/g, token: "[전화번호]" },
-  { re: /\b\d{6,}\b/g, token: "[등록번호]" },
-  { re: /[가-힣]{2,4}(?=\s*(?:님|씨|환자|할머니|할아버지|어머님|아버님))/g, token: "[이름]" },
-];
-
-export function deidentify(text: string): DeidentifyResult {
-  let out = text;
-  let count = 0;
-  for (const { re, token } of PATTERNS) {
-    out = out.replace(re, () => {
-      count++;
-      return token;
-    });
-  }
-  return { text: out, redactedCount: count };
-}
+export {
+  deidentify,
+  describeRedactions,
+  checkBeforeExport,
+  PII_LABELS,
+  type PiiKind,
+  type Redaction,
+  type DeidentifyOptions,
+  type DeidentifyResult,
+  type ExportWarning,
+} from "./deidentify.js";

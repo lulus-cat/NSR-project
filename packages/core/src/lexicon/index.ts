@@ -4,6 +4,7 @@ import { MEDICATION_TERMS } from "./terms-medication.js";
 import { SLANG_TERMS } from "./slang.js";
 import { SLANG_EXTRA_TERMS } from "./slang-extra.js";
 import { SPECIMEN_TERMS } from "./slang-specimen.js";
+import { OR_TERMS, LTC_TERMS, OR_LTC_TERMS } from "./terms-or-ltc.js";
 import { mergeWardPacks, type WardPack } from "./ward-pack.js";
 import { pronunciationKey, normalizeForCompare } from "../hangul/phonology.js";
 import {
@@ -18,6 +19,7 @@ import { ALL_ABBREVS, type AbbrevRow } from "./abbreviations.js";
 
 export type { LexiconEntry, LexiconHit, TermCategory };
 export { CLINICAL_TERMS, MEDICATION_TERMS, SLANG_TERMS, SLANG_EXTRA_TERMS, SPECIMEN_TERMS };
+export { OR_TERMS, LTC_TERMS, OR_LTC_TERMS };
 export * from "./ward-pack.js";
 export { ASR_MISHEARD } from "./misheard.js";
 export { ALL_ABBREVS } from "./abbreviations.js";
@@ -30,6 +32,7 @@ const CURATED_TERMS: readonly LexiconEntry[] = [
   ...SLANG_TERMS,
   ...SLANG_EXTRA_TERMS,
   ...SPECIMEN_TERMS,
+  ...OR_LTC_TERMS,
 ].map((entry) => {
   const misheard = ASR_MISHEARD[entry.id];
   return misheard ? { ...entry, misheard } : entry;
