@@ -36,6 +36,8 @@ import {
   startManual,
   stopManual,
 } from "../src/services/scheduler";
+import { checkForUpdate, type UpdateCheck } from "../src/services/update";
+import { activeModelId, listModels } from "../src/services/models";
 
 function formatClock(epochMs: number): string {
   const d = new Date(epochMs);
@@ -62,6 +64,9 @@ export default function Home() {
     { shiftId: string; score: number; level: string }[]
   >([]);
   const [iosContinuous, setIosContinuous] = useState(false);
+  const [update, setUpdate] = useState<UpdateCheck | null>(null);
+  /** 모델을 하나도 안 받았으면 전사가 아예 안 된다. 처음 켠 사람이 제일 잘 막히는 곳. */
+  const [needsModel, setNeedsModel] = useState(false);
 
   const load = useCallback(async () => {
     const today = toDateString(Date.now());
@@ -83,6 +88,16 @@ export default function Home() {
       level: s.level,
     })));
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
+
+    const models = await listModels();
+    setNeedsModel(models.every((m) => !m.installed));
+    void activeModelId();
+  }, []);
+
+  // 새 판 확인은 화면을 막지 않는다. 실패해도 조용히 넘어간다 —
+  // 업데이트 확인 실패로 앱이 시끄러울 이유가 없다.
+  useEffect(() => {
+    void checkForUpdate().then(setUpdate);
   }, []);
 
   useEffect(() => {
@@ -106,6 +121,37 @@ export default function Home() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <Text style={[type.title, { color: t.text }]}>오늘</Text>
+
+        {/* 알파 안내 — 처음 켠 사람이 무엇을 기대해야 하는지 */}
+        {needsModel ? (
+          <Card tone="warn">
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+              <Badge text="설정 필요" tone="warn" />
+              <Heading>전사 모델을 받아야 합니다</Heading>
+            </View>
+            <Body muted>
+              녹음은 지금도 되지만, 모델이 없으면 글자로 옮기지 못합니다.
+              Wi-Fi 에서 한 번만 받으면 됩니다.
+            </Body>
+            <Button
+              label="모델 받으러 가기"
+              tone="primary"
+              onPress={() => router.push("/models")}
+            />
+          </Card>
+        ) : null}
+
+        {/* 새 판 */}
+        {update?.show ? (
+          <Card tone="accent">
+            <Heading>새 판이 나왔습니다</Heading>
+            <Small muted={false}>{update.message}</Small>
+            {update.highlights.slice(0, 3).map((h, i) => (
+              <Small key={i}>· {h}</Small>
+            ))}
+            <Button label="설정에서 받기" onPress={() => router.push("/settings")} />
+          </Card>
+        ) : null}
 
         {/* 녹음 상태 — 화면에서 가장 먼저 보여야 할 것 */}
         <Card tone={app.recording ? "accent" : "default"}>

@@ -34,7 +34,12 @@ export interface AsrOptions {
    * VAD를 켜면 전사 시간과 비용이 크게 줄고 환각도 준다.
    */
   vad: boolean;
-  /** 화자분리. "누가 말했는가"는 태움 판단에 필수적이다. */
+  /**
+   * 화자분리를 **요청**한다. 해준다는 뜻이 아니다.
+   *
+   * 엔진이 실제로 할 수 있는지는 `AsrCapabilities.diarization` 을 봐야 한다.
+   * 이 값을 true 로 두고 못 하는 엔진에 넘기면 그냥 무시된다.
+   */
   diarize: boolean;
   /**
    * 0이면 결정적(greedy) 디코딩. 의료 전사에서는 창의성이 필요 없다.
@@ -72,9 +77,32 @@ export interface AsrProgress {
   totalSec: number;
 }
 
+/**
+ * 이 엔진이 실제로 할 수 있는 것.
+ *
+ * 왜 따로 두는가
+ * ------------
+ * `AsrOptions.diarize` 는 **요청**이고 이건 **능력**이다. 둘을 섞으면
+ * "화자분리 켰는데 왜 다 한 사람이지?" 라는 질문이 나오고, 답할 방법이 없다.
+ *
+ * 특히 화자분리가 그렇다. whisper.cpp 는 **화자를 나누지 못한다.**
+ * Whisper 는 음성을 글자로 옮기는 모델이지 목소리를 구별하는 모델이 아니다.
+ * 화자분리는 화자 임베딩을 뽑아 군집화하는 별개의 모델(pyannote 등)이 하는 일이고,
+ * 그 모델은 whisper.cpp 안에 없다.
+ *
+ * 그래서 화면은 이 값을 보고 말해야 한다 — 못 하면 못 한다고.
+ */
+export interface AsrCapabilities {
+  /** 목소리로 화자를 나눌 수 있는가. */
+  diarization: boolean;
+  /** 단어 단위 시각을 주는가. */
+  wordTimestamps: boolean;
+}
+
 export interface AsrProvider {
   readonly kind: AsrEngineKind;
   readonly id: string;
+  readonly capabilities: AsrCapabilities;
   transcribe(
     request: AsrRequest,
     onProgress?: (p: AsrProgress) => void,

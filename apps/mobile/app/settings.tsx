@@ -17,6 +17,16 @@ import {
   type PrivacySettings,
 } from "../src/services/export";
 import { activeModelId, listModels } from "../src/services/models";
+import {
+  RELEASE_REPO,
+  autoCheckEnabled,
+  checkForUpdate,
+  currentVersion,
+  openDownload,
+  setAutoCheck,
+  skipVersion,
+  type UpdateCheck,
+} from "../src/services/update";
 import type { PiiKind } from "@nsr/core";
 
 function Toggle({
@@ -73,6 +83,9 @@ export default function Settings() {
   });
   const [newTerm, setNewTerm] = useState("");
   const [modelSummary, setModelSummary] = useState("확인 중");
+  const [update, setUpdate] = useState<UpdateCheck | null>(null);
+  const [autoUpdate, setAutoUpdate] = useState(true);
+  const [checking, setChecking] = useState(false);
 
   const load = useCallback(async () => {
     setAppLock(await getSetting<boolean>(SETTINGS_KEYS.appLock, false));
@@ -85,6 +98,7 @@ export default function Settings() {
     setHasKey((await getApiKey()) !== null);
     setStorageMb(Math.round(((await totalStorageBytes()) / (1024 * 1024)) * 10) / 10);
     setPrivacy(await loadPrivacySettings());
+    setAutoUpdate(await autoCheckEnabled());
 
     const [statuses, activeId] = await Promise.all([listModels(), activeModelId()]);
     const installed = statuses.filter((m) => m.installed);
@@ -141,8 +155,85 @@ export default function Settings() {
     );
   }, [app, load]);
 
+  const runCheck = useCallback(async () => {
+    setChecking(true);
+    try {
+      setUpdate(await checkForUpdate(true));
+    } finally {
+      setChecking(false);
+    }
+  }, []);
+
+  const version = currentVersion();
+
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+      {/* 판 번호와 업데이트 */}
+      <Card tone={update?.show ? "accent" : "default"}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Heading>앱 버전</Heading>
+          <Badge text="알파" tone="warn" />
+        </View>
+        <Small muted={false}>{version ? `지금 ${version}` : "개발 중 실행"}</Small>
+        <Small>
+          스토어가 아니라 APK 로 나눠 쓰는 앱이라, 새 판이 나오면 여기서 알려 드립니다.
+          받은 뒤 기존 앱 위에 덮어 설치하면 녹음과 전사본이 그대로 남습니다.
+        </Small>
+
+        {update?.show && update.release ? (
+          <>
+            <Divider />
+            <Small muted={false}>{update.message}</Small>
+            {update.highlights.map((h, i) => (
+              <Small key={i}>· {h}</Small>
+            ))}
+            {update.release.apkSizeMb > 0 ? (
+              <Small>내려받을 크기 약 {update.release.apkSizeMb} MB</Small>
+            ) : null}
+            <View style={{ flexDirection: "row", gap: space.sm }}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="받으러 가기"
+                  tone="primary"
+                  onPress={async () => {
+                    if (!update.release) return;
+                    const ok = await openDownload(update.release);
+                    if (!ok) setConnectionMsg("받는 곳을 열지 못했습니다.");
+                  }}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="이 판 건너뛰기"
+                  onPress={async () => {
+                    if (!update.version) return;
+                    await skipVersion(update.version);
+                    setUpdate({ ...update, show: false, message: "건너뛰기로 해 두었습니다." });
+                  }}
+                />
+              </View>
+            </View>
+          </>
+        ) : (
+          <>
+            {update ? <Small muted={false}>{update.message}</Small> : null}
+            <Button label="지금 확인" busy={checking} onPress={() => void runCheck()} />
+          </>
+        )}
+
+        <Divider />
+        <Toggle
+          label="새 판이 나오면 알려주기"
+          description="하루에 몇 번만 확인합니다. 배터리와 데이터를 거의 쓰지 않습니다."
+          value={autoUpdate}
+          onChange={async (v) => {
+            setAutoUpdate(v);
+            await setAutoCheck(v);
+          }}
+        />
+        <Small>릴리스: github.com/{RELEASE_REPO}/releases</Small>
+      </Card>
+
       {/* 녹음 */}
       <Card>
         <Heading>자동 녹음</Heading>

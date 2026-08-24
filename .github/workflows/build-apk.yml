@@ -1,0 +1,171 @@
+# APK 를 GitHub 이 대신 빌드해 Releases 에 붙인다.
+#
+# 왜 필요한가
+# ----------
+# Expo Go 로는 이 앱이 안 돌아간다. 백그라운드 녹음·SQLite·whisper.cpp 처럼
+# 네이티브가 필요한 것들을 쓰기 때문이다. 그래서 개발 빌드가 있어야 하고,
+# 그걸 만들려면 안드로이드 스튜디오와 SDK 가 깔린 컴퓨터가 필요하다.
+#
+# 그 일을 GitHub 이 대신 한다. 올릴 때마다 돌아서, 폰에 넣을 파일이 늘 준비되어 있다.
+#
+# 페로픽스와 다른 점
+# ----------------
+# 페로픽스는 Capacitor 라 android/ 폴더가 저장소에 들어 있다. 이쪽은 Expo 라
+# **android/ 를 두지 않고 빌드할 때마다 prebuild 로 만들어 쓴다.**
+# 그래서 단계가 하나 더 있고 그만큼 느리다. 대신 저장소에 네이티브 코드가 안 쌓인다.
+#
+# 서명
+# ----
+# 디버그 서명이다. 안드로이드가 만들어 주는 열쇠로 서명하므로 곧바로 설치된다.
+# (서명 없는 release APK 는 설치 자체가 안 된다.)
+# 스토어에 올릴 것이 아니라 본인과 동료가 받아 쓰는 물건이라 이걸로 충분하다.
+#
+# API 키는 APK 에 안 들어간다 — 앱을 처음 켤 때 사람이 넣고, 기기 보안 저장소에만 있다.
+
+name: APK 빌드
+
+on:
+  push:
+    branches: [main, "claude/**"]
+  workflow_dispatch:
+
+permissions:
+  contents: write # Releases 에 파일을 붙이려면 필요하다
+
+# 같은 브랜치에 연달아 올리면 앞의 빌드는 취소한다. APK 빌드는 오래 걸려서
+# 쌓이면 큐가 막힌다. 마지막 것만 있으면 된다.
+concurrency:
+  group: apk-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 지난 판 이후 무엇이 바뀌었는지 쓰려면 역사와 태그가 다 있어야 한다.
+      # 기본값(fetch-depth: 1)이면 커밋이 하나뿐이라 릴리스 노트가 통째로 빈다.
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Node 준비
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # apps/ 는 워크스페이스가 아니다. Metro 가 호이스팅에 예민해서 앱은 자기
+      # node_modules 를 따로 갖는다. 그래서 설치도 두 번 한다.
+      #
+      # 검사가 깨지면 APK 를 만들지 않는다.
+      # 전사 교정이 틀리면 근무 기록이 틀리고, 그건 나중에 증거로 쓸 물건이다.
+      - name: core 설치·검사·빌드
+        run: |
+          npm ci
+          npm run -w @nsr/core test
+          npm run -w @nsr/core build
+
+      - name: 앱 설치·타입 검사
+        working-directory: apps/mobile
+        run: |
+          npm ci
+          npm run typecheck
+
+      - name: JDK 21 준비
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: 안드로이드 SDK 준비
+        uses: android-actions/setup-android@v3
+
+      # 판 번호를 실행 횟수에서 뽑지 않는다. 이미 붙어 있는 태그 중 제일 높은 것에서
+      # 하나 올린다. 실행 횟수는 저장소를 옮기거나 워크플로를 갈아 끼우면 어긋난다.
+      #
+      # versionCode 는 실행 횟수를 쓴다. 저장소 안에서는 늘 늘어나므로 덮어 설치가
+      # 막히지 않는다 (안드로이드는 이 숫자가 줄면 설치를 거부한다).
+      - name: 판 번호 정하기
+        run: |
+          LAST=$(git tag -l 'v*' | sed 's/^v//' | sed 's/-alpha.*$//' \
+            | awk -F. 'NF==3 && $1 ~ /^[0-9]+$/ && $2 ~ /^[0-9]+$/ && $3 ~ /^[0-9]+$/' \
+            | sort -t. -k1,1n -k2,2n -k3,3n | tail -1)
+          LAST=${LAST:-0.1.0}
+          MAJ=${LAST%%.*}; REST=${LAST#*.}; MIN=${REST%%.*}; PAT=${REST#*.}
+          NAME="$MAJ.$MIN.$((PAT + 1))"
+          echo "지난 판 $LAST → 이번 판 $NAME"
+          echo "VERSION_NAME=$NAME" >> $GITHUB_ENV
+          echo "VERSION_CODE=$(( ${{ github.run_number }} + 1 ))" >> $GITHUB_ENV
+
+      # app.json 의 version 을 이번 판으로 바꾼다. prebuild 가 이 값을 읽어
+      # versionName 에 넣는다. 앱 안의 업데이트 확인도 이 값을 기준으로 본다.
+      - name: app.json 에 판 번호 새기기
+        working-directory: apps/mobile
+        run: |
+          node -e '
+            const fs = require("fs");
+            const p = "app.json";
+            const j = JSON.parse(fs.readFileSync(p, "utf8"));
+            j.expo.version = process.env.VERSION_NAME;
+            j.expo.android = j.expo.android || {};
+            j.expo.android.versionCode = Number(process.env.VERSION_CODE);
+            fs.writeFileSync(p, JSON.stringify(j, null, 2) + "\n");
+            console.log("version", j.expo.version, "code", j.expo.android.versionCode);
+          '
+
+      # 실패하면 끝부분을 주석으로도 남긴다. 로그 전문은 로그인해야 보이는데
+      # 주석은 밖에서도 읽힌다.
+      - name: 네이티브 프로젝트 만들기 (prebuild)
+        working-directory: apps/mobile
+        run: |
+          set +e
+          npx expo prebuild --platform android --no-install > prebuild.log 2>&1
+          code=$?
+          tail -80 prebuild.log
+          if [ $code -ne 0 ]; then
+            echo "::error::prebuild 실패($code) — $(tail -c 1200 prebuild.log | tr '\n\r' '~~')"
+            exit $code
+          fi
+
+      - name: APK 빌드
+        working-directory: apps/mobile
+        run: |
+          set +e
+          chmod +x android/gradlew
+          (cd android && ./gradlew assembleDebug --no-daemon) > build.log 2>&1
+          code=$?
+          tail -120 build.log
+          if [ $code -ne 0 ]; then
+            echo "::error::gradle 실패($code) — $(tail -c 1200 build.log | tr '\n\r' '~~')"
+            exit $code
+          fi
+
+      - name: 이름 붙이기
+        run: |
+          mkdir -p out
+          cp apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+             "out/nsr-${{ env.VERSION_NAME }}-alpha.apk"
+          ls -lh out/
+
+      # Actions 탭에서도 받을 수 있게 (Release 를 안 만들더라도)
+      - name: 산출물 올리기
+        uses: actions/upload-artifact@v4
+        with:
+          name: nsr-apk
+          path: out/*.apk
+
+      - name: 이번 판에 바뀐 것 모으기
+        run: tools/release_notes.sh > out/NOTES.md
+
+      - name: Release 에 붙이기
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ env.VERSION_NAME }}
+          # 태그를 이 빌드가 만들어진 커밋에 붙인다. 이걸 빼면 GitHub 이 태그를
+          # 기본 브랜치 끝에 만들어 버려서, APK 와 태그가 다른 코드를 가리키게 된다.
+          target_commitish: ${{ github.sha }}
+          name: 근무기록 ${{ env.VERSION_NAME }} (알파)
+          body_path: out/NOTES.md
+          # 알파다. 받는 사람이 "정식판" 으로 오해하지 않도록 표시한다.
+          prerelease: true
+          files: out/*.apk

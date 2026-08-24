@@ -19,12 +19,14 @@ import {
   buildInitialPrompt,
   buildLexicon,
   correctTranscript,
+  splitAllIntoSentences,
   DEFAULT_MODEL_ID,
   generateCards,
   buildShiftReport,
   reportToMarkdown,
   scoreShift,
   type AsrOptions,
+  type AsrCapabilities,
   type Lexicon,
   type TranscriptSegment,
   type CardSourceSegment,
@@ -77,6 +79,8 @@ export interface AsrResult {
 export interface AsrProvider {
   readonly id: string;
   readonly kind: "on-device" | "self-hosted";
+  /** 이 엔진이 실제로 할 수 있는 것. 요청(AsrOptions)과 구분해서 본다. */
+  readonly capabilities: AsrCapabilities;
   /** 어떤 모델로 돌리는가. 속도 실측을 이 id에 묶어 둔다. */
   readonly modelId?: string;
   /** 고른 모델이 없어 다른 것으로 대신 돌리는 중인가. 화면에서 알려야 한다. */
@@ -106,6 +110,11 @@ export function createOnDeviceProvider(
   return {
     id: "whisper.cpp",
     kind: "on-device",
+    // whisper.cpp 는 화자를 나누지 못한다. Whisper 는 음성을 글자로 옮기는
+    // 모델이지 목소리를 구별하는 모델이 아니다. 화자분리는 화자 임베딩을 뽑아
+    // 군집화하는 별개의 모델(pyannote 등)이 하는 일이고, 그건 여기 없다.
+    // 그래서 화면은 "직접 지정해 주세요" 라고 말해야 한다.
+    capabilities: { diarization: false, wordTimestamps: true },
     modelId,
     fellBack,
     async transcribe(fileUri, options) {
@@ -171,6 +180,9 @@ export function createSelfHostedProvider(endpoint: string, apiKey?: string): Asr
   return {
     id: `self-hosted:${endpoint}`,
     kind: "self-hosted",
+    // WhisperX + pyannote 를 띄운 서버라면 화자를 나눠 준다. 서버가 speaker 를
+    // 안 주면 결과에 안 실릴 뿐이라, 여기서는 가능한 것으로 둔다.
+    capabilities: { diarization: true, wordTimestamps: true },
     async transcribe(fileUri, options) {
       const form = new FormData();
       form.append("file", {
@@ -249,20 +261,29 @@ export async function processRecording(
     const asr = await provider.transcribe(recording.file_uri, options);
     const memory = await loadCorrectionMemory();
 
+    // 1) ASR 덩어리를 문장으로 편다.
+    //
+    //    Whisper 가 주는 것은 30초짜리 덩어리이지 문장이 아니다. 문장으로 나눠야
+    //    화자를 문장별로 지정하고, 한 문장만 골라 고치고, 카드 예문이 문단째로
+    //    들어가지 않는다. **교정보다 먼저** 나눠야 교정 위치가 문장 기준으로 잡힌다.
+    const rawSegments: TranscriptSegment[] = asr.segments.map((s, i) => ({
+      id: `${recording.id}#s${i}`,
+      startSec: s.startSec,
+      endSec: s.endSec,
+      rawText: s.text,
+      text: s.text,
+      speakerId: s.speakerId,
+      asrConfidence: s.confidence,
+    }));
+    const sentences = splitAllIntoSentences(rawSegments);
+
+    // 2) 문장마다 교정한다.
     const segments: TranscriptSegment[] = [];
     const perSegment: { edits: Edit[]; annotations: TermAnnotation[] }[] = [];
 
-    for (const [i, s] of asr.segments.entries()) {
-      const corrected = correctTranscript(s.text, { lexicon, memory });
-      segments.push({
-        id: `${recording.id}#s${i}`,
-        startSec: s.startSec,
-        endSec: s.endSec,
-        rawText: s.text,
-        text: corrected.text,
-        speakerId: s.speakerId,
-        asrConfidence: s.confidence,
-      });
+    for (const sentence of sentences) {
+      const corrected = correctTranscript(sentence.text, { lexicon, memory });
+      segments.push({ ...sentence, text: corrected.text });
       perSegment.push({ edits: corrected.edits, annotations: corrected.annotations });
     }
 

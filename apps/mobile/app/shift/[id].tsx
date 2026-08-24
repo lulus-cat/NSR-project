@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { useLocalSearchParams } from "expo-router";
 import {
   DEFAULT_TEMPLATES,
+  assignSpeakerRange,
+  recordCorrection,
+  speakerCoverage,
   type SpeakerRole,
   type TaeumScore,
   type TranscriptSegment,
@@ -16,7 +19,11 @@ import {
   getTaeumScore,
   listRecordings,
   listSegments,
-  setSpeakerRoleForCluster,
+  loadCorrectionMemory,
+  saveCorrectionMemory,
+  saveUserTerm,
+  setSpeakerRole,
+  updateSegmentText,
   type RecordingRow,
 } from "../../src/db";
 import { finalizeShift, processRecording, resolveProvider } from "../../src/services/asr";
@@ -49,6 +56,77 @@ function formatTime(sec: number): string {
 
 type Tab = "transcript" | "report" | "environment";
 
+/**
+ * 문장 한 줄.
+ *
+ * 두 가지를 동시에 받아야 한다 — **문장 누르기**(화자 구간)와
+ * **단어 길게 누르기**(고치기). 그래서 어절마다 Pressable 을 두고,
+ * 짧게 누르면 문장 쪽으로 넘기고 길게 누르면 단어 쪽으로 넘긴다.
+ *
+ * 어절 단위로 자르는 이유: 한국어는 조사가 붙어 있어 "폴리를" 이 한 덩어리다.
+ * 글자 단위로 고르게 하면 폰에서 정확히 짚기가 어렵다.
+ */
+function SentenceCard({
+  segment,
+  isRangeStart,
+  onPressSentence,
+  onPressWord,
+}: {
+  segment: TranscriptSegment;
+  isRangeStart: boolean;
+  onPressSentence: () => void;
+  onPressWord: (word: string) => void;
+}) {
+  const t = useTheme();
+  const role = segment.speakerRole ?? "unknown";
+  const words = segment.text.split(/(\s+)/).filter((w) => w.length > 0);
+
+  return (
+    <Card tone={isRangeStart ? "accent" : "default"}>
+      <Pressable accessibilityRole="button" onPress={onPressSentence}>
+        <View
+          style={{
+            flexDirection: "row",
+            justifyContent: "space-between",
+            alignItems: "center",
+          }}
+        >
+          <Badge
+            text={ROLE_LABELS[role]}
+            tone={role === "self" ? "ok" : role === "unknown" ? "warn" : "muted"}
+          />
+          <Small>{formatTime(segment.startSec)}</Small>
+        </View>
+      </Pressable>
+
+      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
+        {words.map((word, i) =>
+          /^\s+$/.test(word) ? (
+            <Text key={i} style={[type.body, { color: t.text }]}>
+              {" "}
+            </Text>
+          ) : (
+            <Pressable
+              key={i}
+              accessibilityRole="button"
+              accessibilityLabel={`${word} — 길게 누르면 고칩니다`}
+              onPress={onPressSentence}
+              onLongPress={() => onPressWord(word)}
+              delayLongPress={300}
+            >
+              <Text style={[type.body, { color: t.text }]}>{word}</Text>
+            </Pressable>
+          ),
+        )}
+      </View>
+
+      {segment.text !== segment.rawText ? (
+        <Small>원문: {segment.rawText}</Small>
+      ) : null}
+    </Card>
+  );
+}
+
 export default function ShiftDetail() {
   const t = useTheme();
   const params = useLocalSearchParams<{ id: string }>();
@@ -63,6 +141,7 @@ export default function ShiftDetail() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<RedactedText | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     const [segs, recs, score, md] = await Promise.all([
@@ -81,24 +160,21 @@ export default function ShiftDetail() {
     void load();
   }, [load]);
 
-  /** 화자 클러스터 목록. 라벨은 한 번만 붙이면 클러스터 전체에 적용된다. */
-  const clusters = useMemo(() => {
-    const map = new Map<string, { count: number; role: SpeakerRole; sample: string }>();
-    for (const seg of segments) {
-      const id = seg.speakerId ?? "unknown";
-      const prev = map.get(id);
-      if (prev) {
-        prev.count += 1;
-      } else {
-        map.set(id, {
-          count: 1,
-          role: seg.speakerRole ?? "unknown",
-          sample: seg.text.slice(0, 40),
-        });
-      }
-    }
-    return [...map.entries()];
-  }, [segments]);
+  /**
+   * 화자 지정 진행 상황.
+   *
+   * 온디바이스 whisper.cpp 는 화자를 나누지 못하므로 speakerId 가 없다.
+   * 그래서 클러스터로 묶는 대신 **문장 구간**으로 지정한다.
+   */
+  const coverage = useMemo(() => speakerCoverage(segments), [segments]);
+
+  /** 구간 지정 중일 때의 시작 문장 id. 두 번째를 누르면 그 사이가 지정된다. */
+  const [rangeStart, setRangeStart] = useState<string | null>(null);
+  const [pendingRole, setPendingRole] = useState<SpeakerRole>("senior");
+  /** 단어를 눌렀을 때 뜨는 패널. */
+  const [wordTarget, setWordTarget] = useState<
+    { segmentId: string; word: string; replacement: string } | null
+  >(null);
 
   const pending = recordings.filter((r) => r.state === "recorded");
   const durationSec = recordings.reduce((sum, r) => sum + r.duration_sec, 0);
@@ -166,7 +242,85 @@ export default function ShiftDetail() {
     }
   }, [code, date, dutyLabel, preview]);
 
-  const unlabeled = clusters.some(([, c]) => c.role === "unknown");
+
+  /**
+   * 구간 지정. 첫 번째 누름은 시작점, 두 번째 누름은 끝점이다.
+   *
+   * 같은 문장을 두 번 누르면 그 한 줄만 지정된다 — 한 줄만 다른 사람인 경우가
+   * 실제로 있어서(짧은 대답) 취소가 아니라 단일 지정으로 둔다.
+   */
+  const toggleRange = useCallback(
+    async (segmentId: string) => {
+      if (!rangeStart) {
+        setRangeStart(segmentId);
+        return;
+      }
+      const next = assignSpeakerRange(segments, rangeStart, segmentId, pendingRole);
+      setRangeStart(null);
+      setSegments(next);
+      // 바뀐 것만 저장한다. 수백 줄을 매번 다 쓰면 느려진다.
+      const changed = next.filter(
+        (n, i) => n.speakerRole !== segments[i]?.speakerRole,
+      );
+      for (const seg of changed) {
+        if (seg.speakerRole) await setSpeakerRole(seg.id, seg.speakerRole);
+      }
+    },
+    [pendingRole, rangeStart, segments],
+  );
+
+  /**
+   * 단어 하나를 고친다.
+   *
+   * 본문만 바꾸고 **rawText 는 절대 안 건드린다.** 원문이 남아 있어야
+   * 나중에 "앱이 고친 것인지 내가 고친 것인지" 를 가릴 수 있다.
+   */
+  const applyWordFix = useCallback(async () => {
+    if (!wordTarget) return;
+    const { segmentId, word, replacement } = wordTarget;
+    const to = replacement.trim();
+    const seg = segments.find((x) => x.id === segmentId);
+    if (!seg || !to || to === word) return;
+
+    const nextText = seg.text.replace(word, to);
+    setSegments((prev) =>
+      prev.map((x) => (x.id === segmentId ? { ...x, text: nextText } : x)),
+    );
+    setWordTarget(null);
+
+    await updateSegmentText(segmentId, nextText);
+
+    // 교정 이력에 쌓는다. 같은 교정이 minCount(기본 2)번 넘으면 다음 전사부터
+    // 자동으로 적용된다 — 같은 병동에서 같은 말이 반복해서 틀리기 때문이다.
+    const memory = await loadCorrectionMemory();
+    await saveCorrectionMemory(recordCorrection(memory, word, to, Date.now()));
+  }, [segments, wordTarget]);
+
+  /**
+   * 이 말을 내 사전에 담는다.
+   *
+   * 뜻은 비워 둔다. 지금 채우라고 하면 흐름이 끊겨서 아무도 안 담는다.
+   * 담아만 두면 다음 전사부터 이 말을 알아듣고, 뜻은 나중에 채우면 된다.
+   */
+  const addToMyDict = useCallback(async () => {
+    if (!wordTarget) return;
+    const surface = wordTarget.word.trim();
+    if (surface.length < 2) {
+      setError("두 글자 이상만 담을 수 있습니다.");
+      return;
+    }
+    await saveUserTerm({
+      id: `user-${Date.now().toString(36)}`,
+      ko: surface,
+      aliases: [],
+      category: "workflow",
+      definition: "우리 병동에서 쓰는 말. 뜻을 채워 주세요.",
+    });
+    setWordTarget(null);
+    setError(null);
+    setBusy(null);
+    setNotice(`'${surface}'을(를) 내 사전에 담았습니다. 뜻은 병동 사전 화면에서 채우세요.`);
+  }, [wordTarget]);
 
   return (
     <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
@@ -195,51 +349,62 @@ export default function ShiftDetail() {
         ) : null}
         {busy ? <Small muted={false}>{busy}…</Small> : null}
         {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
+        {notice ? <Small muted={false}>{notice}</Small> : null}
       </Card>
 
-      {/* 화자 라벨 — 태움 판단의 전제 */}
-      {clusters.length > 0 ? (
-        <Card tone={unlabeled ? "warn" : "default"}>
+      {/* 화자 지정 — 태움 판단의 전제 */}
+      {segments.length > 0 ? (
+        <Card tone={coverage.readyForScoring ? "default" : "warn"}>
           <Heading>누가 말했나요</Heading>
+          <Badge
+            text={`${coverage.total}개 중 ${coverage.labeled}개 지정`}
+            tone={coverage.readyForScoring ? "ok" : "warn"}
+          />
+          <Small muted={false}>{coverage.message}</Small>
+          <Divider />
           <Small>
-            화자를 나눠두었지만 누구인지는 앱이 모릅니다. 한 번만 지정하면 그 화자의 모든 발화에
-            적용됩니다. 근무 환경 기록은 이 라벨이 있어야 계산됩니다.
+            기기 안에서 도는 Whisper 는{" "}
+            <Text style={{ fontWeight: "700" }}>목소리를 구별하지 못합니다.</Text> 음성을
+            글자로 옮기는 모델이지 누가 말했는지 가리는 모델이 아닙니다. 그건 별개의 모델이
+            하는 일이고 폰에 올릴 수 있는 물건이 아닙니다. 그래서 직접 지정하셔야 합니다.
           </Small>
-          {clusters.map(([speakerId, info]) => (
-            <View key={speakerId} style={{ gap: space.sm, paddingVertical: space.sm }}>
+          <Small>
+            한 줄씩 누르지 마세요. 아래에서 역할을 고른 뒤 전사 탭에서 <Text
+            style={{ fontWeight: "700" }}>시작 문장과 끝 문장</Text>을 누르면 그 사이가
+            한 번에 지정됩니다. 인계는 덩어리로 흐르니 대여섯 번이면 끝납니다.
+          </Small>
+          <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
+            {ROLE_OPTIONS.map((opt) => {
+              const on = pendingRole === opt.role;
+              return (
+                <Pressable
+                  key={opt.role}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  onPress={() => setPendingRole(opt.role)}
+                  style={{
+                    paddingVertical: space.xs,
+                    paddingHorizontal: space.md,
+                    borderRadius: radius.sm,
+                    backgroundColor: on ? t.accent : t.surfaceAlt,
+                  }}
+                >
+                  <Text style={{ color: on ? "#fff" : t.text, fontSize: 13, fontWeight: "600" }}>
+                    {opt.label}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          {rangeStart ? (
+            <>
               <Small muted={false}>
-                {speakerId} · {info.count}회 · &ldquo;{info.sample}…&rdquo;
+                시작 지점을 잡았습니다. 끝 문장을 누르면 그 사이가 &lsquo;
+                {ROLE_LABELS[pendingRole]}&rsquo;로 지정됩니다.
               </Small>
-              <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
-                {ROLE_OPTIONS.map((opt) => {
-                  const on = info.role === opt.role;
-                  return (
-                    <Pressable
-                      key={opt.role}
-                      accessibilityRole="button"
-                      onPress={async () => {
-                        await setSpeakerRoleForCluster(shiftId, speakerId, opt.role);
-                        await load();
-                      }}
-                      style={{
-                        paddingVertical: space.xs,
-                        paddingHorizontal: space.md,
-                        borderRadius: radius.sm,
-                        backgroundColor: on ? t.accent : t.surfaceAlt,
-                      }}
-                    >
-                      <Text
-                        style={{ color: on ? "#fff" : t.text, fontSize: 13, fontWeight: "600" }}
-                      >
-                        {opt.label}
-                      </Text>
-                    </Pressable>
-                  );
-                })}
-              </View>
-              <Divider />
-            </View>
-          ))}
+              <Button label="구간 지정 취소" onPress={() => setRangeStart(null)} />
+            </>
+          ) : null}
         </Card>
       ) : null}
 
@@ -282,28 +447,76 @@ export default function ShiftDetail() {
             </Body>
           </Card>
         ) : (
-          segments.map((seg) => (
-            <Card key={seg.id}>
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "space-between",
-                  alignItems: "center",
-                }}
-              >
-                <Badge
-                  text={ROLE_LABELS[seg.speakerRole ?? "unknown"]}
-                  tone={seg.speakerRole === "self" ? "ok" : "muted"}
-                />
-                <Small>{formatTime(seg.startSec)}</Small>
-              </View>
-              <Body>{seg.text}</Body>
-              {seg.text !== seg.rawText ? (
-                <Small>원문: {seg.rawText}</Small>
-              ) : null}
+          <>
+            <Card>
+              <Small>
+                문장을 누르면 화자 구간을 지정하고, <Text style={{ fontWeight: "700" }}>
+                단어를 길게 누르면</Text> 고치거나 병동 사전에 담을 수 있습니다.
+                고친 것은 다음 전사부터 자동으로 반영됩니다.
+              </Small>
             </Card>
-          ))
+            {segments.map((seg) => (
+              <SentenceCard
+                key={seg.id}
+                segment={seg}
+                isRangeStart={rangeStart === seg.id}
+                onPressSentence={() => void toggleRange(seg.id)}
+                onPressWord={(word) =>
+                  setWordTarget({ segmentId: seg.id, word, replacement: word })
+                }
+              />
+            ))}
+          </>
         )
+      ) : null}
+
+      {/* 단어 고치기 */}
+      {wordTarget ? (
+        <Card tone="accent">
+          <Heading>&ldquo;{wordTarget.word}&rdquo;</Heading>
+          <Small>
+            음성인식이 잘못 받아적었다면 고쳐 주세요. 두 번 넘게 같은 교정을 하면
+            다음 전사부터 앱이 알아서 바꿉니다.
+          </Small>
+          <TextInput
+            value={wordTarget.replacement}
+            onChangeText={(replacement) =>
+              setWordTarget((w) => (w ? { ...w, replacement } : w))
+            }
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              color: t.text,
+              backgroundColor: t.surfaceAlt,
+              borderRadius: radius.md,
+              padding: space.md,
+              fontSize: 15,
+            }}
+          />
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            <View style={{ flex: 1 }}>
+              <Button
+                label="고치기"
+                tone="primary"
+                disabled={
+                  wordTarget.replacement.trim().length === 0 ||
+                  wordTarget.replacement.trim() === wordTarget.word
+                }
+                onPress={() => void applyWordFix()}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button label="닫기" onPress={() => setWordTarget(null)} />
+            </View>
+          </View>
+          <Divider />
+          <Small muted={false}>우리 병동에서만 쓰는 말인가요?</Small>
+          <Small>
+            내 사전에 담아 두면 다음부터 이 말을 알아듣고, 학습카드에도 나옵니다.
+            뜻은 나중에 병동 사전 화면에서 채우면 됩니다.
+          </Small>
+          <Button label="내 사전에 담기" onPress={() => void addToMyDict()} />
+        </Card>
       ) : null}
 
       {tab === "report" ? (
