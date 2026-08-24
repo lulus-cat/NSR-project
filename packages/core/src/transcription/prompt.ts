@@ -24,6 +24,7 @@
  */
 
 import type { Lexicon, LexiconEntry, TermCategory } from "../lexicon/index.js";
+import { toHangulReading } from "../hangul/initialism.js";
 
 /** initial_prompt에 들어갈 수 있는 토큰 예산. Whisper의 prev 컨텍스트 상한. */
 export const WHISPER_PROMPT_TOKEN_LIMIT = 224;
@@ -143,6 +144,75 @@ export function buildHotwords(
     .sort((a, b) => b.s - a.s)
     .slice(0, limit)
     .map((r) => promptSurface(r.entry));
+}
+
+/**
+ * 상용 한국어 STT의 키워드 부스팅용 목록.
+ *
+ * Whisper와 무엇이 다른가
+ * ----------------------
+ * `initial_prompt`는 Whisper 고유의 장치다. 디코더 앞에 텍스트를 붙여 언어모델
+ * 사전확률을 바꾸는 것이고, 224토큰 상한이 있다.
+ *
+ * 국내 상용 엔진(네이버 클로바 등)은 Whisper 기반이 아니다. 대신 **키워드 부스팅**이라는
+ * 자기 장치를 갖고 있다. 특정 단어의 인식 확률에 가중치를 주는 방식이고,
+ * 상한이 훨씬 넉넉하다(클로바 기준 1,000개).
+ *
+ * 두 가지를 지켜야 한다.
+ *
+ *  1. **한글만 넣는다.** 클로바의 키워드 부스팅은 한국어만 받는다. 그리고 애초에
+ *     한국어 오디오에 "ABGA"라는 소리는 존재하지 않는다 — 사람은 "에이비지에이"라고
+ *     발음한다. 그래서 약어는 `toHangulReading`으로 읽기형을 만들어 넣는다.
+ *  2. **가중치를 함부로 높이지 않는다.** 세게 주면 없는 단어를 만들어낸다.
+ *     실제 사용 이력이 있는 용어에만 조금 더 준다.
+ */
+export interface BoostingKeyword {
+  keyword: string;
+  /** 가중치. 엔진마다 범위가 다르므로 호출부에서 매핑한다. 여기서는 1~3. */
+  weight: number;
+}
+
+export function buildKeywordBoosting(
+  lexicon: Lexicon,
+  options: PromptOptions & { limit?: number } = {},
+): BoostingKeyword[] {
+  const usage = options.usageCounts ?? {};
+  const excluded = new Set(options.excludeCategories ?? []);
+  const limit = options.limit ?? 1000;
+
+  const seen = new Set<string>();
+  const out: BoostingKeyword[] = [];
+
+  const ranked = lexicon.entries
+    .filter((e) => !excluded.has(e.category))
+    .map((e) => ({ entry: e, s: score(e, usage) }))
+    .sort((a, b) => b.s - a.s);
+
+  for (const { entry } of ranked) {
+    if (out.length >= limit) break;
+    // 실제로 소리 나는 형태만. 한글이 아닌 것은 오디오에 존재하지 않는다.
+    const forms: string[] = [];
+    if (/[가-힣]/.test(entry.ko)) forms.push(entry.ko);
+    for (const alias of entry.aliases) {
+      if (/[가-힣]/.test(alias)) forms.push(alias);
+    }
+    if (entry.abbr) {
+      const reading = toHangulReading(entry.abbr);
+      if (reading) forms.push(reading);
+    }
+
+    // 사용 이력이 쌓인 용어에만 가중치를 올린다. 기본은 1.
+    const used = usage[entry.id] ?? 0;
+    const weight = used >= 10 ? 3 : used >= 3 ? 2 : 1;
+
+    for (const form of forms) {
+      if (out.length >= limit) break;
+      if (seen.has(form)) continue;
+      seen.add(form);
+      out.push({ keyword: form, weight });
+    }
+  }
+  return out;
 }
 
 /**

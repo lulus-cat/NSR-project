@@ -109,12 +109,55 @@ GPU 클러스터가 필요하다.
 **상용 API로 보내는 경로는 일부러 안 만들었다.** 병동 녹음을 제3자 서버에 올리는 건
 개인정보보호법상 민감정보의 제3자 제공이고, 앱이 그 길을 기본으로 열어 두면 안 된다.
 
-### (C) 상용 한국어 STT
+### (C) 상용 한국어 STT — Whisper 기반이 아니다
 
-한국어 정확도만 보면 이쪽이 앞선다.
+한국어 정확도만 보면 이쪽이 앞선다. 그리고 **이들은 Whisper를 한국어로 학습시킨 것이 아니다.**
+각자 자기 엔진을 갖고 있다.
 
-- **네이버 클로바 스피치(CSR)** — 한국어 인식률이 높고 의료·법률 등 **도메인별 모델**을 따로 제공한다
-- **다글로** — 이미 쓰고 계신 것. 회의·인터뷰 전사에 특화
+| | 엔진 | 만든 곳 | Whisper 기반? |
+| --- | --- | --- | --- |
+| 네이버 클로바 스피치 | **NEST** (Neural End-to-end Speech Transcriber) | 네이버 클라우드 | 아니오 |
+| 다글로 | 자체 E2E 음성인식 엔진 | 액션파워 (2016년 창업) | 아니오 |
+
+근거가 세 가지다.
+
+1. **시점이 안 맞는다.** Whisper 공개는 2022년 9월이다. 클로바는 2017년부터,
+   액션파워는 2016년 창업 때부터 자체 엔진을 만들어 왔다. 나중에 나온 것을 기반으로 삼을 수 없다.
+2. **본인들이 아니라고 한다.** 액션파워는 빅테크 API를 쓸 수 있었지만 자체 E2E 엔진 개발을
+   택했다고 밝히고 있고, Whisper와 성능을 비교하는 자료를 내놓는다 — 기반으로 삼았다면 할 수 없는 비교다.
+3. **구조가 다르다.** 클로바는 실시간 스트리밍 API(gRPC)를 제공한다.
+   Whisper는 30초 고정 창을 통째로 인코딩하는 attention encoder-decoder라
+   **원리상 스트리밍이 안 된다.** WhisperLive 같은 구현체는 창을 겹쳐가며 반복 추론해
+   흉내를 낼 뿐이다. 실시간이 되는 상용 엔진은 대개 CTC나 RNN-T(transducer) 계열이다.
+
+"Whisper에 한국어를 더 학습시킨다"는 접근 자체는 실재한다. 다만 그건 자기 엔진을 못 만드는
+쪽이 택하는 길이고, 위 두 곳은 거기 해당하지 않는다.
+
+**그래서 코드에서 갈라진다.**
+
+`initial_prompt`는 Whisper 고유의 장치다. 디코더 앞에 텍스트를 붙여 언어모델 사전확률을
+바꾸는 것이라, 다른 엔진에는 그런 입구가 없다. 대신 상용 엔진은 **키워드 부스팅**을 준다.
+
+| | Whisper `initial_prompt` | 클로바 키워드 부스팅 |
+| --- | --- | --- |
+| 방식 | 디코더 앞 문맥 주입 | 단어별 인식 확률 가중 |
+| 상한 | 224 토큰 (≈ 100~140 단어) | **1,000 단어** |
+| 언어 | 제한 없음 | 한국어만 |
+| 넣을 형태 | "브이에스" 또는 "V/S" | **"브이에스"만** |
+
+마지막 줄이 중요하다. 한국어 오디오에 "ABGA"라는 소리는 존재하지 않는다 —
+사람은 "에이비지에이"라고 발음한다. 그래서 `buildKeywordBoosting()`은
+`toHangulReading()`으로 약어를 읽기형으로 바꿔 넣고, 한글이 아닌 표기는 아예 뺀다.
+
+```ts
+buildInitialPrompt(lexicon)      // Whisper 계열   — 224토큰 예산
+buildHotwords(lexicon)           // faster-whisper — shallow fusion
+buildKeywordBoosting(lexicon)    // 클로바 등      — 한글만, 1,000개, 가중치
+```
+
+**후처리 교정은 엔진과 무관하게 그대로 쓴다.** 어떤 엔진을 쓰든 출력은 한국어 텍스트이고,
+"카데타 → 카테터", "에이비지에이 → ABGA"는 텍스트 단계의 일이다.
+`AsrProvider` 인터페이스를 둔 이유가 이것이다 — 엔진을 갈아도 `packages/core`는 안 바뀐다.
 
 다만 셋 다 오디오를 외부로 보낸다. 쓰려면 앱이 아니라 **본인 판단으로, 비식별화를 거쳐** 쓰는 게 맞다.
 `deidentify()`가 그 단계를 맡는다(등록번호·전화번호·호칭 앞 이름 마스킹).
@@ -205,4 +248,5 @@ Capacitor 쪽에는 마땅한 것이 없어 JNI 브릿지를 직접 써야 한�
 - [Cap-go/capacitor-audio-recorder](https://github.com/Cap-go/capacitor-audio-recorder) · [urbandroid-team/android-audio-recorder-foreground-service](https://github.com/urbandroid-team/android-audio-recorder-foreground-service)
 - [clinical-abbreviations (Meta-Inventory)](https://github.com/lisavirginia/clinical-abbreviations) · [MeDAL](https://github.com/McGill-NLP/medal)
 - [open-spaced-repetition (FSRS)](https://github.com/open-spaced-repetition)
-- [네이버 클라우드 CLOVA Speech Recognition](https://www.ncloud.com/product/aiService/csr)
+- [네이버 클라우드 CLOVA Speech](https://www.ncloud.com/product/aiService/clovaSpeech) · [CLOVA Speech 개요(NEST)](https://guide.ncloud-docs.com/docs/clovaspeech-overview) · [실시간 스트리밍 API](https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-grpc)
+- [액션파워 — 다글로 STT 성능 비교](https://actionpower.kr/en/article/17) · [액션파워 기술 블로그](https://actionpower.medium.com/)

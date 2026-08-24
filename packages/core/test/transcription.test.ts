@@ -3,6 +3,7 @@ import {
   correctTranscript,
   buildInitialPrompt,
   buildHotwords,
+  buildKeywordBoosting,
   estimateWhisperTokens,
   WHISPER_PROMPT_TOKEN_LIMIT,
   createMemory,
@@ -160,5 +161,35 @@ describe("비식별화", () => {
     expect(r.text).toContain("[등록번호]");
     expect(r.text).toContain("[전화번호]");
     expect(r.redactedCount).toBeGreaterThanOrEqual(3);
+  });
+});
+
+describe("상용 엔진 키워드 부스팅", () => {
+  it("한글 형태만 내보낸다", () => {
+    // 상용 엔진의 부스팅은 한국어만 받고, 애초에 오디오에 영문 약어 소리는 없다.
+    for (const k of buildKeywordBoosting(defaultLexicon, { limit: 300 })) {
+      expect(/[가-힣]/.test(k.keyword), `한글 아님: ${k.keyword}`).toBe(true);
+    }
+  });
+
+  it("약어는 한국어 읽기형으로 바꿔 넣는다", () => {
+    const keywords = buildKeywordBoosting(defaultLexicon).map((k) => k.keyword);
+    expect(keywords).toContain("에이비지에이");
+    expect(keywords).not.toContain("ABGA");
+  });
+
+  it("중복 없이 상한을 지킨다", () => {
+    const k = buildKeywordBoosting(defaultLexicon, { limit: 50 });
+    expect(k).toHaveLength(50);
+    expect(new Set(k.map((x) => x.keyword)).size).toBe(50);
+  });
+
+  it("자주 나온 용어에만 가중치를 올린다", () => {
+    const k = buildKeywordBoosting(defaultLexicon, {
+      usageCounts: { "night-shift": 20 },
+    });
+    expect(k.find((x) => x.keyword === "나이트")?.weight).toBe(3);
+    // 이력이 없는 것은 기본 가중치 그대로. 세게 주면 없는 말을 만들어낸다.
+    expect(k.find((x) => x.keyword === "브레이든")?.weight).toBe(1);
   });
 });
