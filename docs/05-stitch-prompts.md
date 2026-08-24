@@ -1,13 +1,31 @@
 # Google Stitch 프롬프트
 
-디자인 시안을 뽑기 위한 프롬프트 모음. 화면마다 따로 돌린다 —
-"앱 전체를 디자인해줘"로 한 번에 시키면 화면끼리 따로 놀고 우리 기능과 안 맞는 것이 나온다.
+디자인 시안용 프롬프트. **화면 하나씩** 돌린다 — 한 번에 전체를 시키면 화면끼리 톤이 어긋난다.
 
-**스티치 결과물로 기대할 것**: 레이아웃과 정보 위계의 참고 이미지. 코드는 React Native가
-아니므로 그대로 못 쓴다. 보고 우리 `theme.ts`·`ui.tsx`에 옮겨 적는 용도다.
+**결과물로 기대할 것**: 레이아웃과 정보 위계의 참고 이미지. 코드는 React Native가
+아니라 그대로 못 쓴다. 보고 `theme.ts`·`ui.tsx`에 옮겨 적는 용도다.
 
-**한국어 문구**: 스티치는 영어 위주라 한글이 깨지거나 다른 말로 바뀔 수 있다.
-프롬프트에는 한글 문구를 그대로 적되, **결과에서 볼 것은 글자가 아니라 배치**다.
+**한글 문구**: 스티치는 영어 위주라 한글이 깨지거나 바뀔 수 있다.
+프롬프트에는 한글을 그대로 적되, 결과에서 볼 것은 **글자가 아니라 배치**다.
+
+---
+
+## 구조 레퍼런스: ShopBack
+
+레이아웃 문법을 여기서 가져왔다. 색은 안 가져온다 — 쇼핑 앱의 주황·분홍은
+새벽에 보는 업무 도구에 안 맞는다. **가져오는 건 뼈대뿐이다.**
+
+훔칠 동작 다섯 가지:
+
+1. **컬러 헤더 + 흰 시트 오버랩** — 화면 위쪽이 색면이고, 콘텐츠 패널이
+   그 위로 둥근 모서리를 물고 올라온다. 이 하나가 화면을 완성돼 보이게 만든다.
+2. **헤더에 그 화면의 대표 숫자를 크게** — 그 아래에 label 왼쪽 / value 오른쪽
+   breakdown 행 2~3개.
+3. **시작 체크리스트 카드** — 컬러 제목띠 + 흰 목록 행 + 점선 구분선 + 화살표.
+   처음 켠 사람이 뭘 해야 하는지 한 장으로.
+4. **필터 칩 가로 행** — 목록 위에 얹는다. 활성 칩만 채운 색.
+5. **밀도 있는 리스트 행** — 왼쪽 아이콘 사각형 + 제목 + 파란 보조문 + 오른쪽 값 +
+   상태 pill. 그리고 **날짜 그룹 헤더**로 묶는다.
 
 ---
 
@@ -16,33 +34,51 @@
 ```
 Android mobile app, portrait, 393×852.
 
-Product: a private work-journal app for a first-year Korean hospital nurse.
-It records her shift, transcribes it on-device, turns it into study cards,
-and tracks her working hours. It is a personal tool, not a hospital system.
-Nobody else sees this screen. She opens it in a dim nurses' station at 3am,
-often one-handed, often in a hurry.
+Product: a private work journal for a first-year Korean hospital nurse.
+It auto-records her shift, transcribes it on-device, turns it into study
+cards, and tracks her working hours. Personal tool, nobody else sees it.
+She opens it in a dim nurses' station at 3am, one-handed, in a hurry.
 
-Design direction:
-- Dense productivity tool, NOT a wellness or medical-consumer app.
-  Think a note-taking or time-tracking app, not a hospital dashboard.
-- No stock medical imagery. No stethoscopes, no crosses, no heartbeat lines,
-  no illustrations of nurses, no gradients, no glassmorphism.
-- Muted, low-chroma palette. Dark mode is the primary mode.
-  Dark: background #131312, card surface #1C1C1A, raised surface #2B2B28,
-  hairline border #383733, body text #EAE7E1, secondary text #9A968E,
-  single accent #6FBFA4 (desaturated green), alert #E08268.
-  Never pure black background with pure white text.
-  Depth comes from surfaces getting lighter, not from drop shadows.
-- Typography: system sans (Roboto). Letter-spacing 0 everywhere.
-  Screen title 24/32 bold, section heading 18/24 bold,
-  card title 16/22 medium, body 16/24 regular, meta 13/18 regular,
-  caption 12/16 semibold. Only three weights: 400 / 500 / 700.
-- 16px screen side padding, 12px card radius, 8px between related items,
-  24px between sections. Minimum touch target 48px.
-- Bottom tab bar, 5 tabs, text labels only, no icons:
-  홈 · 듀티 · 학습 · 용어 · 설정
-- All UI text in Korean, polite informal register (해요체).
-  Buttons are verbs, never "확인"/"취소". No trailing periods on buttons or labels.
+LAYOUT SYSTEM — follow this structure closely:
+- Each screen has a COLORED HEADER ZONE at the top (roughly 180-260px tall)
+  that bleeds under the status bar, containing the screen's single most
+  important number in very large bold type, plus 2-3 breakdown rows
+  (label left, value right) in the same colored zone.
+- A WHITE/SURFACE CONTENT PANEL with large top corner radius (20-24px)
+  overlaps upward into that colored zone and holds everything else.
+  This overlap is essential — it is what makes the screen feel finished.
+- Inside the panel: optional tab switcher with an underline indicator,
+  then a horizontal row of FILTER CHIPS, then a dense list.
+- Lists are grouped under DATE HEADERS (small, secondary color, left aligned).
+- List rows are: small rounded icon square on the left, title, one-line
+  secondary text, right-aligned value, and a small status pill.
+  Hairline dividers between rows, not card gaps.
+- Bottom tab bar, 5 tabs, icon + label: 홈 · 듀티 · 학습 · 용어 · 설정
+
+COLOR — muted, dark-first. NOT a bright commercial palette.
+- Dark mode is primary. Background #131312, surface panel #1C1C1A,
+  raised #2B2B28, hairline #383733, body text #EAE7E1, secondary #9A968E.
+- The colored header zone is a deep desaturated green (#1E332C to #2A4A3E,
+  soft vertical gradient), NOT orange, NOT pink, NOT a bright gradient.
+- One accent: #6FBFA4. One alert: #E08268. Nothing else carries color.
+- Never pure black background with pure white text.
+- Depth comes from surfaces getting lighter, never from drop shadows.
+
+TYPOGRAPHY — system sans (Roboto). Letter-spacing 0 everywhere.
+Hero number 40-48 bold tabular. Screen title 24/32 bold.
+Section heading 18/24 bold. Row title 16/22 medium. Body 16/24 regular.
+Meta 13/18 regular. Caption/pill 12/16 semibold.
+Only three weights: 400 / 500 / 700.
+
+SPACING — 16px screen side padding, 12px card radius, 8px between related
+items, 24px between sections, 48px minimum touch target.
+
+COPY — all Korean, 해요체. Buttons are verbs, never "확인"/"취소".
+No trailing periods on buttons or labels.
+
+FORBIDDEN: stock medical imagery, stethoscopes, crosses, heartbeat lines,
+nurse illustrations, 3D coins, emoji, glassmorphism, bright gradients,
+promotional banners, mascots.
 ```
 
 ---
@@ -52,69 +88,88 @@ Design direction:
 ```
 [공통 스타일 블록]
 
-Screen: Home tab, titled "오늘".
+Screen: Home tab.
 
-Top to bottom:
+COLORED HEADER ZONE (deep desaturated green, soft gradient):
+- Top row: "오늘" as a large title on the left, a small circular icon
+  button on the right.
+- The hero block, centered:
+    label "이번 주 근무" small and muted
+    value "38.5시간" at 44px bold, tabular figures
+- Three breakdown rows underneath, label left / value right,
+  separated by nothing (just 8px gaps):
+    야간              16시간
+    초과              2.5시간      ← this value only, in the alert color
+    연속 근무          4일
 
-1. RECORDING STATUS — the single most prominent element on the screen.
-   A card that must be readable at a glance from arm's length.
-   Two states, design both:
-   (a) Idle: small grey dot, "녹음 대기", one line of secondary text
-       "다음 근무 · 8월 25일 데이 07:00 시작", and a full-width
-       primary button "지금 녹음 시작".
-   (b) Recording: the accent color as the card background tint,
-       a filled dot, "녹음 중", elapsed time in large tabular figures
-       "02:14:37", secondary line "데이 근무 · 07:00 시작",
-       and a full-width destructive button "녹음 정지".
-   The recording state should be unmistakable from across a room.
+SURFACE PANEL overlapping upward into the header, 24px top radius:
 
-2. TODAY'S SHIFT — compact row block, not a big card.
-   "오늘 근무" heading, then "데이 07:00–15:00" as the primary line and
-   "인계 포함 06:20–15:30" as a secondary line, with a chevron to open details.
+1. RECORDING STATUS — the first block inside the panel and the loudest
+   thing on the screen. Design BOTH states:
+   (a) Idle — a filled row: small hollow dot, "녹음 대기" as the title,
+       "다음 근무 · 8월 25일 데이 07:00" as secondary, and a full-width
+       button "지금 녹음 시작".
+   (b) Recording — the block is tinted with the accent color, a solid dot,
+       "녹음 중", the elapsed time "02:14:37" at 32px bold tabular,
+       "데이 근무 · 07:00 시작" secondary, and a destructive-tone
+       full-width button "녹음 정지".
+   Must be identifiable from across a dim room.
 
-3. STUDY — one row: "복습" heading, "오늘 볼 카드 12장" and a chevron.
-   If the count is zero, the row reads "복습할 카드 없음" in secondary color.
+2. GETTING-STARTED CHECKLIST — only when setup is incomplete.
+   A card with a tinted title strip reading "시작하기" and three rows
+   under it separated by dashed dividers, each with a small icon square,
+   a label, and a chevron:
+      전사 모델 받기        (with a "필요" pill)
+      듀티표 입력
+      첫 근무 녹음하기
+   Completed rows are dimmed with a check instead of a chevron.
 
-4. THIS WEEK — a compact 4-up stat strip, NOT four separate cards.
-   Labels tiny, numbers large and tabular:
-   근무 38.5시간 · 야간 16시간 · 초과 2.5시간 · 연속 4일
-   If 초과 is above zero, tint just that number with the alert color.
+3. "최근 근무" section header, then a DENSE LIST grouped by date header:
+      8월 24일
+      [icon] 데이 07:00–15:00   ·  전사 완료      2시간 12분   [카드 8장]
+      [icon] 나이트 23:00–07:00 ·  전사 대기      7시간 40분   [대기]
+   Row = icon square, title, secondary line, right-aligned duration,
+   status pill. Hairline dividers.
 
-Rules for this screen:
-- No explanatory paragraphs anywhere. Every line is either a value or a control.
-- The whole screen fits on one phone screen without scrolling in the common case.
-- Total of at most 4 visual blocks. Do not turn each item into its own large card.
+Rules: no explanatory paragraphs anywhere. Every line is a value or a control.
 ```
 
 ---
 
-## 2. 근무 기록 — 전사본 보기
+## 2. 근무 기록 — 전사본
 
 ```
 [공통 스타일 블록]
 
-Screen: shift detail, header "8월 24일 데이".
-Three segmented tabs at the top: 전사 · 보고서 · 근무 환경. Show the 전사 tab.
+Screen: shift detail, opened from the home list.
 
-Above the list, a slim status bar showing speaker-labelling progress:
-"32개 중 12개 지정" with a thin progress bar and one line of secondary text.
+COLORED HEADER ZONE:
+- Back chevron left, "8월 24일 데이" centered, small icon button right.
+- Hero: label "녹음" small, value "7시간 40분" at 40px bold.
+- Breakdown rows:
+    전사된 문장         324개
+    화자 지정          12 / 324     ← alert color while incomplete
 
-Then a vertical list of TRANSCRIPT SENTENCES. Each sentence is one row:
-- a small speaker chip on the left edge (본인 / 선배 / 의사 / 환자 / 미확인),
-  color-coded but muted — 본인 in accent, 미확인 in a warning tone, others neutral
-- the sentence text, 16/24, wrapping to at most 3 lines
-- timestamp "01:14" small, right-aligned, secondary color
-- rows are separated by hairlines, not by card gaps — this is a dense reading list
+SURFACE PANEL overlapping upward:
 
-Show one row in a selected state (it is the start of a speaker range being assigned):
-outlined with the accent color.
+- A three-tab switcher with an underline indicator: 전사 · 보고서 · 근무 환경.
+  Show the 전사 tab active.
+- A horizontal FILTER CHIP row directly under it:
+    전체 · 본인 · 선배 · 의사 · 미확인
+  with 미확인 active (filled with the accent color).
+- Then the TRANSCRIPT LIST, grouped by a time header ("07:12"):
+  each row is a sentence —
+    a narrow colored speaker bar on the left edge,
+    a small speaker pill (본인 / 선배 / 미확인),
+    the sentence text at 16/24 wrapping to at most 3 lines,
+    a timestamp small and right-aligned.
+  Hairline dividers, no card gaps. This must read like a transcript,
+  long and scannable.
+- Show one row in a "range start selected" state, outlined in the accent color.
 
-At the bottom, a floating action bar that appears while assigning speakers:
-role chips 본인 · 선배 · 의사 · 환자 · 보호자 · 기타 in a horizontal row,
-with 선배 selected, and a text hint "시작 문장과 끝 문장을 누르세요".
-
-This must read like a transcript reader — long, scannable, dense —
-not like a feed of cards.
+- A floating bar pinned above the bottom tab bar while assigning speakers:
+  role chips 본인 · 선배 · 의사 · 환자 · 보호자 · 기타 in one horizontal row
+  with 선배 selected, plus a small hint line "시작 문장과 끝 문장을 누르세요".
 ```
 
 ---
@@ -124,23 +179,32 @@ not like a feed of cards.
 ```
 [공통 스타일 블록]
 
-Screen: Duty tab, header "듀티표".
+Screen: Duty tab.
 
-1. A paste box at the top: a multiline text field with placeholder
-   "DDEENNOO 또는 데데이이나나오오", label "듀티표 붙여넣기",
-   and a button "적용" aligned to the right below it.
-   One line of secondary help text under it.
+COLORED HEADER ZONE:
+- Title "듀티표" left, month stepper "2026년 8월" with ‹ › on the right.
+- Hero: label "이번 달" small, value "18일 근무" at 40px bold.
+- Breakdown rows:
+    데이 · 이브닝 · 나이트      7 · 6 · 5
+    오프                      13일
 
-2. A MONTH CALENDAR GRID, 7 columns.
-   Each day cell is compact: the date number small in the corner, and the
-   shift code as a filled rounded chip filling most of the cell —
-   D / E / N / OFF / EDU. Each code has its own muted color;
-   OFF is just an outline, not filled. Today's cell has a ring.
-   The grid is the main content of this screen and should dominate it.
+SURFACE PANEL overlapping upward:
 
-3. Below the grid, a compact legend row and a "근무 시간 설정" row with a chevron.
+1. A MONTH CALENDAR GRID, 7 columns, the dominant element of this screen.
+   Each day cell is compact: the date number small in the top-left corner,
+   and the shift code as a filled rounded chip filling the rest of the cell —
+   D / E / N / OFF / EDU. Each code has its own muted tone;
+   OFF is an outline only, not filled. Today's cell carries a ring.
+   Do NOT turn days into cards. It must read as a calendar.
 
-Do not make each day a large card. This is a calendar, it must feel like one.
+2. Under the grid, a compact legend row of small chips.
+
+3. A collapsible paste block: a row "듀티표 붙여넣기" with a chevron that
+   expands into a multiline field with placeholder
+   "DDEENNOO 또는 데데이이나나오오" and a right-aligned button "적용".
+   Collapsed by default — it is a setup action, not a daily one.
+
+4. A settings row "근무 시간 설정" with a chevron.
 ```
 
 ---
@@ -150,20 +214,27 @@ Do not make each day a large card. This is a calendar, it must feel like one.
 ```
 [공통 스타일 블록]
 
-Screen: Study tab, a single flashcard review view.
+Screen: Study tab, single flashcard review.
 
-- A thin progress bar at the very top: "7 / 12".
-- The card fills most of the screen: a large surface with generous padding,
-  the term "노티" in 32px bold, centered vertically but slightly above center,
-  and below it a small muted chip "우리 병동 말".
-- A single wide button at the bottom: "답 보기".
-- Design the revealed state too: the answer text appears in 16/24 body,
-  a short "주의점" block in a subtly tinted container below it,
-  and the bottom becomes four grading buttons in one row:
-  다시 · 어려움 · 보통 · 쉬움
-  — equal width, only 쉬움 in accent, the rest neutral outlines.
+COLORED HEADER ZONE, shallower than other screens (about 140px):
+- Title "복습" left, a small close/exit icon right.
+- A thin progress bar spanning the width, with "7 / 12" right-aligned above it.
 
-Keep it calm and uncluttered. This is used while tired.
+SURFACE PANEL overlapping upward, holding one large card:
+- The card fills most of the remaining height, generous internal padding.
+- Term "노티" at 36px bold, positioned slightly above center.
+- Under it a small muted pill "우리 병동 말".
+- A single wide button pinned at the bottom of the panel: "답 보기".
+
+Design the REVEALED state as a second frame:
+- The term shrinks to 24px and moves to the top of the card.
+- The definition appears at 16/24.
+- A "주의점" block sits below in a subtly tinted container with a left accent bar.
+- The bottom becomes four equal-width grading buttons in one row:
+    다시 · 어려움 · 보통 · 쉬움
+  Only 쉬움 filled with the accent; the rest are neutral outlines.
+
+Calm and uncluttered — this is used while exhausted.
 ```
 
 ---
@@ -173,20 +244,23 @@ Keep it calm and uncluttered. This is used while tired.
 ```
 [공통 스타일 블록]
 
-Screen: Settings tab, header "설정".
+Screen: Settings tab.
 
-A grouped settings list — iOS/Android settings style, sectioned,
-hairline dividers, section headers in small caps-ish secondary text.
+COLORED HEADER ZONE, shallow (about 150px):
+- Title "설정" left.
+- Hero: label "저장된 녹음" small, value "1.2 GB" at 40px bold.
+- One breakdown row with a thin usage bar underneath:
+    보관 한도            4 GB
+
+SURFACE PANEL overlapping upward — a GROUPED SETTINGS LIST.
+Sectioned, hairline dividers, section headers small and secondary.
 NOT a stack of cards with paragraphs.
 
-Sections and rows:
-
 자동 녹음
-- toggle row "듀티표에 따라 자동 녹음"
-- value row "녹음할 근무" → "D · E · N"
-- value row "근무 시작 전" → "40분"
-- value row "보관 기간" → "30일"
-- value row "사용 중" → "1.2 GB / 4 GB" with a thin usage bar
+- toggle "듀티표에 따라 자동 녹음"
+- value row "녹음할 근무"        D · E · N
+- value row "근무 시작 전"        40분
+- value row "보관 기간"          30일
 
 조용히 동작
 - toggle "시작·종료 소리 없음"
@@ -195,32 +269,31 @@ Sections and rows:
 개인정보
 - toggle "앱 잠금"
 - toggle "본인 음성 없는 구간 자동 폐기"
-- navigation row "내보낼 때 가리기" → "이름 · 전화번호 · 등록번호"
+- navigation row "내보낼 때 가리기"   이름 · 전화번호 · 등록번호
 
 전사
-- navigation row "전사 모델" → "Small (양자화) · 받아 둔 것 2개"
-- navigation row "병동 사전" → "3개"
+- navigation row "전사 모델"      Small (양자화)   with a "2개 받음" pill
+- navigation row "병동 사전"      3개
 
-Each row is at least 48px tall. Values are right-aligned in secondary color.
-Only one or two rows may carry a single line of helper text — not all of them.
+Each row at least 48px tall. Values right-aligned in secondary color.
+At most one or two rows carry a line of helper text — not all of them.
 ```
 
 ---
 
 ## 6. 스티치에 시키지 말 것
 
-결과가 안 좋아지는 요청들.
-
-- **"의료 앱처럼"** — 하늘색 + 십자가 + 청진기 일러스트가 나온다. 이 앱은 개인 업무 도구다.
-- **"예쁘게" / "모던하게"** — 그라데이션과 유리 효과가 붙는다. 대신 참고할 앱의 **성격**을 적는다.
-- **화면 여러 개를 한 프롬프트에** — 화면끼리 톤이 어긋난다.
-- **아이콘 지정** — 우리는 아이콘 라이브러리를 안 쓴다. 아이콘 없이 되는 배치를 받아야 한다.
-- **밝은 모드 먼저** — 이 앱의 기본 사용 환경은 야간이다. 다크를 먼저 뽑고 밝은 모드를 나중에 맞춘다.
+- **"의료 앱처럼"** — 하늘색 십자가와 청진기가 나온다. 이건 개인 업무 도구다.
+- **"예쁘게" / "모던하게"** — 그라데이션과 유리 효과가 붙는다.
+- **ShopBack 색을 그대로** — 주황·분홍은 새벽 근무에 안 맞는다. 뼈대만 가져온다.
+- **화면 여러 개를 한 프롬프트에** — 톤이 어긋난다.
+- **밝은 모드 먼저** — 야간이 기본 사용 환경이다. 다크를 먼저 뽑는다.
 
 ## 7. 받은 시안에서 확인할 것
 
-- 한 화면에 **덩어리가 4개를 넘는가** → 넘으면 정보 위계가 없는 것이다
-- 설명 문단이 있는가 → 도구에는 설명이 아니라 값과 조작만 있어야 한다
-- **녹음 중 상태가 멀리서 구분되는가**
-- 숫자가 고정폭인가 (시간·용량이 흔들리면 눈이 피로하다)
-- 다크에서 **표면이 배경보다 밝아서** 층이 보이는가 (그림자로 층을 만들면 다크에서 안 보인다)
+- **흰 패널이 컬러 헤더를 실제로 덮고 있는가** — 겹침이 없으면 그냥 두 덩어리로 보인다
+- 헤더의 대표 숫자가 한눈에 읽히는가
+- 리스트가 **행**인가 카드인가 — 카드면 밀도가 죽는다
+- 설명 문단이 있는가 — 도구에는 값과 조작만 있어야 한다
+- 숫자가 고정폭인가 (시간이 흔들리면 눈이 피로하다)
+- 다크에서 **표면이 배경보다 밝아서** 층이 보이는가
