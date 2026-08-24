@@ -47,6 +47,22 @@ import {
 import { getSetting } from "../db";
 import { SETTINGS_KEYS } from "./scheduler";
 
+/**
+ * 온디바이스 모델 파일 이름.
+ *
+ * **한국어 파인튜닝된 모델을 쓸 것.** 원본 Whisper 는 한국어에서 약하다.
+ * 공개된 실측으로 whisper-small 의 한국어 CER 이 18% 수준인데,
+ * 같은 크기를 한국어 데이터로 재학습하면 6% 대로 떨어진다.
+ * 세 배 차이다 — 모델을 키우는 것보다 한국어로 학습시키는 쪽이 훨씬 크게 먹힌다.
+ *
+ * 여기 적힌 것은 파일 이름일 뿐이고, 실제 파일은 최초 실행 때 받아 기기에 둔다.
+ * HuggingFace 의 한국어 파인튜닝 모델은 whisper.cpp 의
+ * `models/convert-h5-to-ggml.py` 로 ggml 로 바꿔 쓸 수 있다.
+ *
+ * 자세한 근거: docs/03-asr-tooling-and-prior-art.md
+ */
+export const DEFAULT_ON_DEVICE_MODEL = "ggml-ko-small-q5_1.bin";
+
 export interface AsrResult {
   segments: {
     startSec: number;
@@ -323,7 +339,7 @@ export async function resolveProvider(): Promise<AsrProvider> {
   }
   const modelPath = await getSetting<string>(
     "asr.modelPath",
-    "ggml-small-q5_1.bin",
+    DEFAULT_ON_DEVICE_MODEL,
   );
   return createOnDeviceProvider(modelPath);
 }

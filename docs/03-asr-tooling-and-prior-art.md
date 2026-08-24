@@ -163,6 +163,69 @@ buildKeywordBoosting(lexicon)    // 클로바 등      — 한글만, 1,000개, 
 `deidentify()`가 그 단계를 맡는다(등록번호·전화번호·호칭 앞 이름 마스킹).
 음성 자체는 비식별화할 수 없다는 점은 분명히 해둔다 — 목소리에 이름과 진단이 그대로 담긴다.
 
+### 실제 숫자 — 그리고 그 숫자를 어디까지 믿을 것인가
+
+**먼저 경고.** 공개된 한국어 STT 비교 글은 거의 전부 이해관계가 있는 쪽이 쓴다.
+경쟁 서비스가 쓴 비교표, Whisper 기반 제품이 쓴 "Whisper가 낫다"는 글,
+벤더가 자기 테스트셋으로 낸 "우리가 8~10% 앞선다"는 발표. 전부 참고는 되지만
+그대로 믿을 수는 없다. 아래 숫자도 그 전제로 읽는다.
+
+| | 한국어 CER | 출처 성격 |
+| --- | --- | --- |
+| Whisper large-v3 (원본) | 8~12% | 여러 벤치마크 종합 |
+| Whisper small (원본) | **18.05%** | ENERZAi 실측 |
+| Whisper small + 한국어 재학습 + 전용 토크나이저 | **6.45%** | 같은 테스트셋 |
+| 484MB 한국어 재학습 모델 | large-v3의 **약 절반** | 같은 곳 |
+
+마지막 두 줄이 이 프로젝트에 중요하다.
+
+**모델을 키우는 것보다 한국어로 학습시키는 쪽이 훨씬 크게 먹힌다.**
+같은 small 크기에서 18% → 6.45%다. 세 배 차이다. 3GB짜리 large-v3를 폰에 넣는 것보다
+484MB짜리 한국어 재학습 모델이 더 정확하다. ENERZAi는 5만 시간, 3,800만 쌍의
+한국어 데이터로 이걸 만들었다.
+
+그래서 이 앱의 온디바이스 기본값은 **한국어 파인튜닝 모델**이다
+(`DEFAULT_ON_DEVICE_MODEL`). 원본 `ggml-small`을 그대로 쓰면 CER 18%인데,
+그 18%가 어디에 몰리느냐가 문제다 — 약물명과 수치에 몰리면 쓸 수 없는 시스템이 된다.
+
+HuggingFace의 한국어 파인튜닝 모델은 whisper.cpp의 `models/convert-h5-to-ggml.py`로
+ggml로 바꿔 넣을 수 있다.
+
+> 참고로 이건 "Whisper에 한국어만 더 학습시키면 되는 것 아니냐"는 직관이
+> **맞다는 증거**이기도 하다. 클로바·다글로가 그 길을 안 갔을 뿐이지,
+> 그 길 자체는 매우 잘 통한다. 그리고 우리 같은 입장에서는 그게 유일하게 가능한 길이다.
+
+### 소비자용 서비스 비교 (클로바노트 · 다글로)
+
+API가 아니라 앱으로 쓸 때의 이야기다. 지금 다글로를 쓰고 계시다면 이 표가 맞다.
+
+| | 클로바노트 | 다글로 |
+| --- | --- | --- |
+| 무료 한도 | 월 300분 (개인정보 활용 동의 시 600분) | 앱 직접 녹음은 무제한, 파일·유튜브 업로드는 월 4시간 |
+| 유료 | 개인용 없음 (기업용만) | 개인 플랜 있음 |
+| 강점 | 화자분리, 한국어 존댓말·격식 처리 | 문장부호로 말의 흐름을 살림, 전문용어 상대적 강세 |
+| 약점 | 고유명사·외국어 이름 약함, 문장 호흡 구분 표기 없음 | — |
+
+**8시간 근무 녹음에는 둘 다 무료 한도로 안 된다.** 하루 8시간이면 480분이다.
+다글로의 "앱 직접 녹음 무제한"이 유일하게 맞는 구조인데, 그건 다글로 앱으로 녹음해야 한다는 뜻이라
+이 앱의 자동 녹음과 겹친다.
+
+### 그런데 이 표들은 우리 질문에 답하지 못한다
+
+위 숫자는 전부 **회의·강의·인터뷰** 기준이다. 병동 인계는 다른 문제다.
+
+- 영문 약어를 한국어로 읽는 코드스위칭이 발화의 상당 부분
+- 여러 사람이 겹쳐 말하고, 알람·발소리·카트 소리가 계속 깔림
+- 말이 빠르고 문장이 안 끝남
+- 틀리면 안 되는 것(약물명·용량·환자 지시)이 전체의 일부에 몰려 있음
+
+마지막 항목이 결정적이다. **전체 CER이 낮아도 그 오류가 전부 약물명이면 쓸모없다.**
+그래서 이 프로젝트의 평가 지표는 CER이 아니라 용어 재현율·과교정률이다(아래).
+
+결론: 벤치마크로 엔진을 고르지 말고, **본인 근무 녹음 30분으로 직접 재볼 것.**
+같은 파일을 두세 엔진에 넣고 약물명·약어가 몇 개나 살아남는지 세면 된다.
+그게 이 용도에서 유일하게 의미 있는 비교다.
+
 ### 한국어는 CER로 본다
 
 영어권은 WER(단어 오류율)을 쓰지만 한국어는 교착어라 어절 단위 비교가 왜곡된다.
@@ -248,5 +311,6 @@ Capacitor 쪽에는 마땅한 것이 없어 JNI 브릿지를 직접 써야 한�
 - [Cap-go/capacitor-audio-recorder](https://github.com/Cap-go/capacitor-audio-recorder) · [urbandroid-team/android-audio-recorder-foreground-service](https://github.com/urbandroid-team/android-audio-recorder-foreground-service)
 - [clinical-abbreviations (Meta-Inventory)](https://github.com/lisavirginia/clinical-abbreviations) · [MeDAL](https://github.com/McGill-NLP/medal)
 - [open-spaced-repetition (FSRS)](https://github.com/open-spaced-repetition)
+- [ENERZAi — Low-bit Whisper로 한국어 음성 인식 정복하기](https://enerzai.com/resources/blog/%EC%9E%91%EC%9D%80-%EC%96%B8%EC%96%B4-%EB%AA%A8%EB%8D%B8%EC%9D%B4-%EB%A7%B5%EB%8B%A4-low-bit-whisper%EB%A1%9C-%ED%95%9C%EA%B5%AD%EC%96%B4-%EC%9D%8C%EC%84%B1-%EC%9D%B8%EC%8B%9D-%EC%A0%95%EB%B3%B5%ED%95%98%EA%B8%B0) · [whisper.cpp 모델 변환](https://github.com/ggml-org/whisper.cpp/blob/master/models/README.md)
 - [네이버 클라우드 CLOVA Speech](https://www.ncloud.com/product/aiService/clovaSpeech) · [CLOVA Speech 개요(NEST)](https://guide.ncloud-docs.com/docs/clovaspeech-overview) · [실시간 스트리밍 API](https://api.ncloud-docs.com/docs/en/ai-application-service-clovaspeech-grpc)
 - [액션파워 — 다글로 STT 성능 비교](https://actionpower.kr/en/article/17) · [액션파워 기술 블로그](https://actionpower.medium.com/)
