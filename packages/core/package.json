@@ -1,0 +1,27 @@
+{
+  "name": "@nsr/core",
+  "version": "0.1.0",
+  "description": "NSR 도메인 코어 — 한글 음운 엔진, 간호 용어/은어 사전, 전사 교정, 태움 스코어, 학습 SRS, 듀티 스케줄러",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "typescript": "^5.9.3",
+    "vitest": "^3.2.4",
+    "@types/node": "^22.15.3"
+  },
+  "license": "UNLICENSED"
+}
