@@ -23,6 +23,7 @@ import {
   tick,
   upcomingWindows,
 } from "../services/scheduler";
+import { restoreGeofence } from "../services/geofence";
 
 export interface AppStateValue {
   ready: boolean;
@@ -116,6 +117,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       appLockEnabled.current = lock;
       if (lock) setLocked(true);
       await registerBackgroundTask();
+      // 지오펜스는 켜 둔 사용자에 한해 복구한다. OS 가 재부팅 등으로 지웠을 수 있다.
+      await restoreGeofence();
       await refresh();
       if (!cancelled) setReady(true);
     })();

@@ -9,6 +9,14 @@ import { useApp } from "../../src/state/AppContext";
 import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../../src/db";
 import { SETTINGS_KEYS, platformCapability } from "../../src/services/scheduler";
 import { deleteAllRecordings } from "../../src/services/files";
+import {
+  clearWorkplace,
+  geofenceEnabled,
+  getWorkplace,
+  setGeofence,
+  setWorkplaceHere,
+  type Workplace,
+} from "../../src/services/geofence";
 import { getApiKey, setApiKey, testConnection } from "../../src/services/llm";
 import {
   MASKABLE_KINDS,
@@ -66,6 +74,9 @@ export default function Settings() {
   const app = useApp();
   const [appLock, setAppLock] = useState(false);
   const [iosContinuous, setIosContinuous] = useState(false);
+  const [workplace, setWorkplace] = useState<Workplace | null>(null);
+  const [geoOn, setGeoOn] = useState(false);
+  const [geoMsg, setGeoMsg] = useState<string | null>(null);
   const [discardWithoutSelf, setDiscardWithoutSelf] = useState(true);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -90,6 +101,8 @@ export default function Settings() {
   const load = useCallback(async () => {
     setAppLock(await getSetting<boolean>(SETTINGS_KEYS.appLock, false));
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
+    setWorkplace(await getWorkplace());
+    setGeoOn(await geofenceEnabled());
     setDiscardWithoutSelf(await getSetting<boolean>(SETTINGS_KEYS.discardWithoutSelf, true));
     setLlmEnabled(await getSetting<boolean>(SETTINGS_KEYS.llmPostEdit, false));
     setCloudAsr(
@@ -286,6 +299,59 @@ export default function Settings() {
         </Small>
         <Divider />
         <Row label="현재 사용 중" value={`${storageMb} MB / ${policy.maxStorageMb} MB`} />
+      </Card>
+
+      {/* 근무지 지오펜스 */}
+      <Card>
+        <Heading>근무지에서 자동 녹음</Heading>
+        <Small>
+          병원 반경에 들어오면 녹음을 켜고, 나가면 끕니다. 근무표가 모르는
+          출근 전·퇴근 후 오버타임까지 실제 있었던 시간이 그대로 덮입니다.
+          근무일(오늘·어제 나이트)에만 켜지므로 오프 날 병원 근처를 지나가도
+          녹음되지 않습니다. 위치는 기기 밖으로 나가지 않습니다.
+        </Small>
+        <Divider />
+        {workplace ? (
+          <Row
+            label="근무지"
+            value={`지정됨 · 반경 ${workplace.radius}m`}
+            onPress={async () => {
+              await clearWorkplace();
+              setWorkplace(null);
+              setGeoOn(false);
+            }}
+          />
+        ) : (
+          <Button
+            label="지금 서 있는 곳을 근무지로 지정"
+            tone="primary"
+            onPress={async () => {
+              const wp = await setWorkplaceHere();
+              if (wp) {
+                setWorkplace(wp);
+                setGeoMsg(null);
+              } else {
+                setGeoMsg("위치 권한이 없어 지정하지 못했습니다.");
+              }
+            }}
+          />
+        )}
+        {workplace ? <Small>지정된 항목을 누르면 해제됩니다. 병동에서 누르는 것이 가장 정확합니다.</Small> : null}
+        <Toggle
+          label="지오펜스 자동 녹음"
+          description={
+            Platform.OS === "android"
+              ? "위치를 '항상 허용'으로 두어야 합니다. 안드로이드 14부터는 백그라운드 마이크 시작이 막힐 수 있어, 그때는 앱을 여는 순간 이어받습니다."
+              : "위치를 '항상'으로 허용해야 합니다."
+          }
+          value={geoOn}
+          onChange={async (v) => {
+            const r = await setGeofence(v);
+            setGeoOn(v && r.ok);
+            setGeoMsg(r.ok ? null : (r.message ?? null));
+          }}
+        />
+        {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
       </Card>
 
       {/* 조용함 */}
