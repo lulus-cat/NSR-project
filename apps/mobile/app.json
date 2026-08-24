@@ -37,7 +37,11 @@
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.ACCESS_BACKGROUND_LOCATION"
       ],
-      "versionCode": 1
+      "versionCode": 1,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#1B302A"
+      }
     },
     "plugins": [
       "expo-router",
@@ -56,10 +60,20 @@
           "locationAlwaysAndWhenInUsePermission": "근무지에 들어오고 나가는 것을 감지해 녹음을 자동으로 켜고 끄기 위해 위치를 사용합니다. 위치는 기기 밖으로 나가지 않습니다.",
           "isAndroidBackgroundLocationEnabled": true
         }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain",
+          "backgroundColor": "#131312"
+        }
       ]
     ],
     "experiments": {
       "typedRoutes": true
-    }
+    },
+    "icon": "./assets/icon.png"
   }
 }
