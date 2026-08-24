@@ -19,7 +19,6 @@
  * 캐시가 실제로 맞는지는 `usage.cache_read_input_tokens`로 확인한다.
  */
 
-import Anthropic from "@anthropic-ai/sdk";
 import { buildGlossaryForLLM, type Lexicon } from "@nsr/core";
 import { redactForNetwork } from "./export";
 
@@ -42,7 +41,23 @@ export async function setApiKey(key: string | null): Promise<void> {
   }
 }
 
-async function createClient(): Promise<Anthropic> {
+interface AnthropicBlock {
+  type: string;
+  text?: string;
+  input?: unknown;
+}
+
+/**
+ * Anthropic API 호출.
+ *
+ * 공식 SDK 를 안 쓴다. 그건 Node 용이라 `node:fs` 를 불러오고, React Native 에는
+ * 그런 모듈이 없어서 **번들 자체가 안 만들어진다.** 실제로 release APK 빌드가
+ * 여기서 깨졌다. API 는 POST 하나라 fetch 로 충분하다.
+ */
+async function callAnthropic(body: unknown): Promise<{
+  content: AnthropicBlock[];
+  usage?: { cache_read_input_tokens?: number };
+}> {
   const apiKey = await getApiKey();
   if (!apiKey) {
     throw new Error(
@@ -50,7 +65,27 @@ async function createClient(): Promise<Anthropic> {
         "키는 이 기기의 보안 저장소(iOS 키체인 / Android 키스토어)에만 보관됩니다.",
     );
   }
-  return new Anthropic({ apiKey });
+
+  const res = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    // 상태 코드로 사람이 읽을 말을 만든다. SDK 의 오류 클래스 대신 쓰는 것이다.
+    const detail = await res.text().catch(() => "");
+    if (res.status === 401) throw new Error("API 키가 올바르지 않습니다.");
+    if (res.status === 429) {
+      throw new Error("요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+    }
+    throw new Error(`API 오류 ${res.status}: ${detail.slice(0, 200)}`);
+  }
+  return res.json();
 }
 
 const MODEL = "claude-opus-5";
@@ -77,11 +112,10 @@ export async function postEditTranscript(
   correctedText: string,
   lexicon: Lexicon,
 ): Promise<{ text: string; redactedCount: number; cacheHit: boolean }> {
-  const client = await createClient();
   const redacted = await redactForNetwork(correctedText);
   const glossary = buildGlossaryForLLM(lexicon);
 
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 16000,
     system: [
@@ -97,15 +131,15 @@ export async function postEditTranscript(
   });
 
   const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === "text")
-    .map((b) => b.text)
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
     .join("")
     .trim();
 
   return {
     text,
     redactedCount: redacted.result.redactedCount,
-    cacheHit: (response.usage.cache_read_input_tokens ?? 0) > 0,
+    cacheHit: (response.usage?.cache_read_input_tokens ?? 0) > 0,
   };
 }
 
@@ -134,11 +168,10 @@ export async function summarizeShift(
   transcriptText: string,
   lexicon: Lexicon,
 ): Promise<ShiftInsight> {
-  const client = await createClient();
   const redacted = await redactForNetwork(transcriptText);
   const glossary = buildGlossaryForLLM(lexicon);
 
-  const response = await client.messages.create({
+  const response = await callAnthropic({
     model: MODEL,
     max_tokens: 8000,
     system: [
@@ -183,9 +216,7 @@ export async function summarizeShift(
     messages: [{ role: "user", content: redacted.text }],
   });
 
-  const toolUse = response.content.find(
-    (b): b is Anthropic.ToolUseBlock => b.type === "tool_use",
-  );
+  const toolUse = response.content.find((b) => b.type === "tool_use");
   if (!toolUse) {
     throw new Error("모델이 결과를 구조화해 반환하지 않았습니다. 다시 시도해 주세요.");
   }
@@ -206,23 +237,13 @@ export async function summarizeShift(
 /** 키가 유효한지 가볍게 확인한다. 설정 화면의 "연결 테스트" 버튼용. */
 export async function testConnection(): Promise<{ ok: boolean; message: string }> {
   try {
-    const client = await createClient();
-    await client.messages.create({
+    await callAnthropic({
       model: MODEL,
       max_tokens: 16,
       messages: [{ role: "user", content: "ping" }],
     });
     return { ok: true, message: "연결됐습니다." };
   } catch (error) {
-    if (error instanceof Anthropic.AuthenticationError) {
-      return { ok: false, message: "API 키가 올바르지 않습니다." };
-    }
-    if (error instanceof Anthropic.RateLimitError) {
-      return { ok: false, message: "요청이 너무 많습니다. 잠시 후 다시 시도해 주세요." };
-    }
-    if (error instanceof Anthropic.APIConnectionError) {
-      return { ok: false, message: "네트워크에 연결할 수 없습니다." };
-    }
     return {
       ok: false,
       message: error instanceof Error ? error.message : "알 수 없는 오류",
