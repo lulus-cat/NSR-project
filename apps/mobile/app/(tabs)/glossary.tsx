@@ -11,7 +11,7 @@ import {
   type TermCategory,
   type WardPack,
 } from "@nsr/core";
-import { Badge, Body, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { Badge, Body, Card, Divider, Heading, Small, HeaderScreen } from "../../src/components/ui";
 import { radius, space, type, useTheme } from "../../src/theme";
 import { enabledWardPacks, listUserTerms } from "../../src/db";
 
@@ -67,7 +67,7 @@ export default function Glossary() {
   }, [query]);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
+    <HeaderScreen title="용어와 자료">
       <TextInput
         value={query}
         onChangeText={setQuery}
@@ -235,6 +235,6 @@ export default function Glossary() {
           ))}
         </>
       )}
-    </ScrollView>
+    </HeaderScreen>
   );
 }

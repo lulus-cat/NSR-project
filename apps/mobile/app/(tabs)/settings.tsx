@@ -3,7 +3,7 @@ import { Alert, Platform, ScrollView, Switch, TextInput, View } from "react-nati
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
 import { DEFAULT_RECORDING_POLICY, type ShiftCode } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, Heading, Row, Small } from "../../src/components/ui";
+import { Badge, Body, Button, Card, Divider, HeaderScreen, Heading, Row, Small } from "../../src/components/ui";
 import { radius, space, type, useTheme } from "../../src/theme";
 import { useApp } from "../../src/state/AppContext";
 import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../../src/db";
@@ -167,7 +167,15 @@ export default function Settings() {
   const version = currentVersion();
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
+    <HeaderScreen
+      title="설정"
+      heroLabel="저장된 녹음"
+      hero={`${storageMb} MB`}
+      rows={[
+        { label: "보관 한도", value: `${policy.maxStorageMb} MB` },
+        { label: "보관 기간", value: `${policy.retentionDays}일` },
+      ]}
+    >
       {/* 판 번호와 업데이트 */}
       <Card tone={update?.show ? "accent" : "default"}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
@@ -594,6 +602,6 @@ export default function Settings() {
           {DEFAULT_RECORDING_POLICY.retentionDays}일 보관
         </Small>
       </Card>
-    </ScrollView>
+    </HeaderScreen>
   );
 }

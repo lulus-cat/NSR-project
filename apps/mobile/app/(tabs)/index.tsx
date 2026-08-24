@@ -21,6 +21,7 @@ import {
   Heading,
   Row,
   Small,
+  HeaderScreen,
 } from "../../src/components/ui";
 import { useApp } from "../../src/state/AppContext";
 import { space, type, useTheme } from "../../src/theme";
@@ -115,13 +116,21 @@ export default function Home() {
   const capability = platformCapability(iosContinuous);
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
-      <ScrollView
-        // 아래 탭이 마지막 항목을 가리지 않게 넉넉히 띄운다.
-        contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-      >
-        <Text style={[type.title, { color: t.text }]}>오늘</Text>
+    <HeaderScreen
+      title="오늘"
+      heroLabel="이번 주 근무"
+      hero={`${stats.onSiteHours}시간`}
+      rows={[
+        { label: "야간", value: `${stats.nightHours}시간` },
+        {
+          label: "초과",
+          value: `${stats.overtimeHours}시간`,
+          tone: stats.overtimeHours > 0 ? "alert" : "default",
+        },
+        { label: "연속 근무", value: `${stats.longestConsecutiveDays}일` },
+      ]}
+      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
+    >
 
         {/* 알파 안내 — 처음 켠 사람이 무엇을 기대해야 하는지 */}
         {needsModel ? (
@@ -348,7 +357,6 @@ export default function Home() {
         <Small>
           이 앱을 그만 쓰고 싶으면 설정에서 모든 녹음과 기록을 한 번에 지울 수 있습니다.
         </Small>
-      </ScrollView>
-    </SafeAreaView>
+    </HeaderScreen>
   );
 }

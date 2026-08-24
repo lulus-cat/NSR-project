@@ -23,6 +23,11 @@ export interface Theme {
   /** 바텀시트·모달처럼 떠 있는 면. 다크에서 계층은 그림자가 아니라 밝기로 만든다. */
   surfaceRaised: string;
   border: string;
+  /** 화면 상단 색면. 그 위로 콘텐츠 패널이 겹쳐 올라온다. */
+  headerBg: string;
+  /** 색면 위 글자. */
+  headerText: string;
+  headerTextMuted: string;
   text: string;
   textMuted: string;
   accent: string;
@@ -39,6 +44,9 @@ const light: Theme = {
   surfaceAlt: "#EFEEEB",
   surfaceRaised: "#FFFFFF",
   border: "#E0DED9",
+  headerBg: "#2A5648",
+  headerText: "#F2F7F4",
+  headerTextMuted: "#A9C4B9",
   text: "#1A1917",
   textMuted: "#6B6862",
   accent: "#2F6F5E",
@@ -65,6 +73,9 @@ const dark: Theme = {
   surfaceAlt: "#262624",
   surfaceRaised: "#2B2B28",
   border: "#383733",
+  headerBg: "#1B302A",
+  headerText: "#E7EFEA",
+  headerTextMuted: "#8FA79D",
   text: "#EAE7E1",
   textMuted: "#9A968E",
   accent: "#6FBFA4",
@@ -98,6 +109,9 @@ export const space = {
   /** 스크롤 맨 아래 여백. 마지막 항목이 화면 끝에 붙지 않게. */
   bottom: 56,
 } as const;
+
+/** 숫자 자리가 흔들리지 않게. 시간·용량처럼 자주 바뀌는 값에 얹는다. */
+export const TABULAR = { fontVariant: ["tabular-nums"] } as { fontVariant: ["tabular-nums"] };
 
 /** 카드 12 는 M3 Card 기본값(corner.medium)이자 SEED 의 기본 반경이다. */
 export const radius = { sm: 6, md: 8, lg: 12, xl: 16, full: 9999 } as const;
@@ -138,6 +152,11 @@ export const type = {
   caption: { fontSize: 12, lineHeight: 16, fontWeight: "600" as const },
   /** 버튼 라벨. */
   button: { fontSize: 15, lineHeight: 20, fontWeight: "700" as const },
-  /** 숫자. 자리가 흔들리지 않게 고정폭 숫자를 쓴다. */
-  mono: { fontSize: 13, lineHeight: 18, fontVariant: ["tabular-nums" as const] },
+  /** 화면 대표 숫자. 헤더 색면에 크게 얹는다. */
+  hero: { fontSize: 40, lineHeight: 46, fontWeight: "700" as const },
+  /**
+   * 숫자. 고정폭으로 쓰려면 `TABULAR` 를 함께 얹는다 —
+   * `as const` 로 굳은 배열은 Text style 이 안 받아서 토큰에 못 넣는다.
+   */
+  mono: { fontSize: 13, lineHeight: 18 },
 } as const;

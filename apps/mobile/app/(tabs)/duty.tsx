@@ -10,7 +10,7 @@ import {
   type DutyEntry,
   type ShiftCode,
 } from "@nsr/core";
-import { Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { Body, Button, Card, Divider, Heading, Small, HeaderScreen } from "../../src/components/ui";
 import { radius, space, type, useTheme } from "../../src/theme";
 import { deleteDutyEntry, listDutyEntries, upsertDutyEntries } from "../../src/db";
 import { useApp } from "../../src/state/AppContext";
@@ -67,7 +67,15 @@ export default function Duty() {
   const resolved = new Map(resolveAll(schedule).map((s) => [s.date, s]));
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
+    <HeaderScreen
+      title="듀티표"
+      heroLabel="등록된 근무"
+      hero={`${entries.filter((e) => e.code !== "OFF").length}일`}
+      rows={[
+        { label: "오프", value: `${entries.filter((e) => e.code === "OFF").length}일` },
+        { label: "전체 입력", value: `${entries.length}일` },
+      ]}
+    >
       <Card>
         <Heading>듀티표 붙여넣기</Heading>
         <Small>
@@ -212,6 +220,6 @@ export default function Duty() {
           })
         )}
       </Card>
-    </ScrollView>
+    </HeaderScreen>
   );
 }
