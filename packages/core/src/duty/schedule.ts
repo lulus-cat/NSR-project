@@ -256,6 +256,18 @@ export interface LaborStats {
   onSiteHours: number;
   /** 야간근로(22:00~06:00) 시간. 근로기준법 제56조 가산수당 대상. */
   nightHours: number;
+  /**
+   * 근무표에 안 적힌 초과 체류. onSite - scheduled 다.
+   *
+   * 인계가 길어져 남는 시간이 여기 쌓인다. 이게 수당으로 잡히지 않으면
+   * **공짜로 일한 시간**이고, 신규간호사에게 가장 흔한 형태다.
+   */
+  offTheBooksHours: number;
+  /**
+   * 주 40시간을 넘긴 시간. 근로기준법 제50조의 소정근로시간 기준이다.
+   * 체류 시간(onSite)으로 센다 — 실제로 병원에 있던 시간이 기준이어야 한다.
+   */
+  overtimeHours: number;
   nightShiftCount: number;
   /** 최장 연속 근무일수. */
   longestConsecutiveDays: number;
@@ -288,6 +300,15 @@ function nightMillis(startAt: number, endAt: number): number {
     total += overlapMs(startAt, endAt, dayStart + 22 * HOUR_MS, dayStart + DAY_MS);
   }
   return total;
+}
+
+/** ISO 주(월요일 시작) 키. 주 단위 집계에 쓴다. */
+function weekKey(at: number): string {
+  const d = new Date(at);
+  d.setHours(0, 0, 0, 0);
+  // 월요일로 당긴다. getDay()는 일=0 이므로 그 경우 6일 전이 월요일이다.
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+  return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
 }
 
 export function laborStats(shifts: ResolvedShift[]): LaborStats {
@@ -333,10 +354,22 @@ export function laborStats(shifts: ResolvedShift[]): LaborStats {
     prevDate = s.date;
   }
 
+  // 주 40시간 초과분. 주마다 따로 세야 한다 — 2주치를 합쳐 80시간으로 보면
+  // 한 주에 몰아 일한 것이 안 보인다.
+  const byWeek = new Map<string, number>();
+  for (const s of sorted) {
+    const k = weekKey(s.startAt);
+    byWeek.set(k, (byWeek.get(k) ?? 0) + (s.onSiteEndAt - s.onSiteStartAt));
+  }
+  let overtimeMs = 0;
+  for (const ms of byWeek.values()) overtimeMs += Math.max(0, ms - 40 * HOUR_MS);
+
   return {
     scheduledHours: Math.round((scheduledMs / HOUR_MS) * 10) / 10,
     onSiteHours: Math.round((onSiteMs / HOUR_MS) * 10) / 10,
     nightHours: Math.round((nightMs / HOUR_MS) * 10) / 10,
+    offTheBooksHours: Math.round(((onSiteMs - scheduledMs) / HOUR_MS) * 10) / 10,
+    overtimeHours: Math.round((overtimeMs / HOUR_MS) * 10) / 10,
     nightShiftCount,
     longestConsecutiveDays: longest,
     quickReturns,

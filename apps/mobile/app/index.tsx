@@ -273,6 +273,16 @@ export default function Home() {
               value={`${stats.onSiteHours}시간`}
             />
             <Divider />
+            <Row
+              label="근무표에 없는 시간"
+              value={`${stats.offTheBooksHours}시간`}
+            />
+            <Small>
+              인계가 길어져 남은 시간입니다. 수당으로 안 잡히면 공짜로 일한 시간이 됩니다.
+            </Small>
+            <Divider />
+            <Row label="주 40시간 초과" value={`${stats.overtimeHours}시간`} />
+            <Divider />
             <Row label="야간근로" value={`${stats.nightHours}시간 · ${stats.nightShiftCount}회`} />
             {warnings.length > 0 ? (
               <View style={{ gap: space.sm, marginTop: space.sm }}>

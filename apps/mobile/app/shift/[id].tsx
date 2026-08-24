@@ -5,6 +5,7 @@ import { useLocalSearchParams } from "expo-router";
 import {
   DEFAULT_TEMPLATES,
   assignSpeakerRange,
+  josa,
   recordCorrection,
   speakerCoverage,
   type SpeakerRole,
@@ -319,7 +320,7 @@ export default function ShiftDetail() {
     setWordTarget(null);
     setError(null);
     setBusy(null);
-    setNotice(`'${surface}'을(를) 내 사전에 담았습니다. 뜻은 병동 사전 화면에서 채우세요.`);
+    setNotice(`'${surface}'${josa(surface, "을")} 내 사전에 담았습니다. 뜻은 병동 사전 화면에서 채우세요.`);
   }, [wordTarget]);
 
   return (

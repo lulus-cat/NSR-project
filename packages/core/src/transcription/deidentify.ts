@@ -28,6 +28,8 @@
  * 오디오를 밖으로 보내는 경로에서는 이 함수가 아무 역할도 하지 못한다.
  */
 
+import { josa } from "../hangul/josa.js";
+
 /** 가려진 것의 종류. 화면에서 "무엇을 몇 건 가렸는지" 보여주기 위해 나눈다. */
 export type PiiKind =
   | "rrn" // 주민등록번호
@@ -209,7 +211,7 @@ export function describeRedactions(result: DeidentifyResult): string {
     .map((k) => `${PII_LABELS[k]} ${result.byKind[k]}건`)
     .join(", ");
   if (!parts) return "가릴 개인정보를 찾지 못했습니다.";
-  return `${parts}을(를) 가렸습니다.`;
+  return `${parts}${josa(parts, "을")} 가렸습니다.`;
 }
 
 /**

@@ -65,6 +65,9 @@ export default function Onboarding() {
   const t = useTheme();
   const app = useApp();
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  // 동의 직후 홈으로 넘어가며 DB·스케줄러가 뜨느라 몇 초 멈춘다.
+  // 아무 표시가 없으면 안 눌린 줄 알고 다시 누른다.
+  const [starting, setStarting] = useState(false);
   const allChecked = ITEMS.every((i) => checked[i.key]);
 
   return (
@@ -114,10 +117,14 @@ export default function Onboarding() {
         })}
 
         <Button
-          label={allChecked ? "확인했습니다" : "위 항목을 모두 읽어주세요"}
+          label={starting ? "준비하는 중" : allChecked ? "확인했습니다" : "위 항목을 모두 읽어주세요"}
           tone="primary"
-          disabled={!allChecked}
-          onPress={() => void app.completeOnboarding()}
+          disabled={!allChecked || starting}
+          busy={starting}
+          onPress={() => {
+            setStarting(true);
+            void app.completeOnboarding();
+          }}
         />
         <Small>
           녹음 기능은 기본으로 꺼져 있습니다. 설정에서 직접 켜야 시작됩니다.

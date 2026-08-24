@@ -5,6 +5,7 @@ import {
   addTermToPack,
   createWardPack,
   draftTermFromSuggestion,
+  josa,
   packStats,
   suggestPackTerms,
   type LexiconEntry,
@@ -115,7 +116,7 @@ export default function WardDict() {
         `${stored.pack.name}에서 쓰는 말. 뜻을 채워 주세요.`,
       );
       await saveWardPack(addTermToPack(stored.pack, draft, Date.now()));
-      setMsg(`'${suggestion.surface}'을(를) ${stored.pack.name}에 담았습니다. 뜻을 채워 주세요.`);
+      setMsg(`'${suggestion.surface}'${josa(suggestion.surface, "을")} ${stored.pack.name}에 담았습니다. 뜻을 채워 주세요.`);
       await load();
     },
     [load],
