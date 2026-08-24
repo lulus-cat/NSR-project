@@ -170,7 +170,7 @@ jobs:
         run: |
           set +e
           chmod +x android/gradlew
-          (cd android && ./gradlew assembleDebug --no-daemon) > build.log 2>&1
+          (cd android && ./gradlew assembleRelease --no-daemon) > build.log 2>&1
           code=$?
           tail -120 build.log
           echo "빌드 후 디스크:"; df -h / | tail -1
@@ -186,7 +186,7 @@ jobs:
       - name: 이름 붙이기
         run: |
           mkdir -p out
-          cp apps/mobile/android/app/build/outputs/apk/debug/app-debug.apk \
+          cp apps/mobile/android/app/build/outputs/apk/release/app-release.apk \
              "out/nsr-${{ env.VERSION_NAME }}-alpha.apk"
           ls -lh out/
 
