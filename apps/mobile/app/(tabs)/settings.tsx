@@ -17,7 +17,7 @@ import {
   setWorkplaceHere,
   type Workplace,
 } from "../../src/services/geofence";
-import { getApiKey, setApiKey, testConnection } from "../../src/services/llm";
+import { getApiKey, getProvider, setApiKey, setProvider, testConnection, type LlmProvider } from "../../src/services/llm";
 import {
   MASKABLE_KINDS,
   loadPrivacySettings,
@@ -81,6 +81,7 @@ export default function Settings() {
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [hasKey, setHasKey] = useState(false);
+  const [llmProvider, setLlmProvider] = useState<LlmProvider>("anthropic");
   const [connectionMsg, setConnectionMsg] = useState<string | null>(null);
   const [storageMb, setStorageMb] = useState(0);
   const [cloudAsr, setCloudAsr] = useState<{ enabled: boolean; endpoint: string }>({
@@ -108,7 +109,9 @@ export default function Settings() {
     setCloudAsr(
       await getSetting(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" }),
     );
-    setHasKey((await getApiKey()) !== null);
+    const provider = await getProvider();
+    setLlmProvider(provider);
+    setHasKey((await getApiKey(provider)) !== null);
     setStorageMb(Math.round(((await totalStorageBytes()) / (1024 * 1024)) * 10) / 10);
     setPrivacy(await loadPrivacySettings());
     setAutoUpdate(await autoCheckEnabled());
@@ -602,6 +605,33 @@ export default function Settings() {
         />
         {llmEnabled ? (
           <>
+            <Small muted={false}>모델 공급자</Small>
+            <View style={{ flexDirection: "row", gap: space.sm }}>
+              {(
+                [
+                  ["anthropic", "Claude"],
+                  ["openai", "GPT"],
+                ] as [LlmProvider, string][]
+              ).map(([p, label]) => (
+                <View key={p} style={{ flex: 1 }}>
+                  <Button
+                    label={label}
+                    tone={llmProvider === p ? "primary" : "default"}
+                    onPress={async () => {
+                      setLlmProvider(p);
+                      await setProvider(p);
+                      setHasKey((await getApiKey(p)) !== null);
+                      setConnectionMsg(null);
+                    }}
+                  />
+                </View>
+              ))}
+            </View>
+            <Small>
+              둘 다 API 키 방식입니다. OpenAI 의 &ldquo;ChatGPT 로 로그인&rdquo;(OAuth)은
+              승인받은 앱만 쓸 수 있는 베타이고, Anthropic 은 서드파티 앱용 OAuth 가
+              없습니다. 그래서 정직하게 키 입력입니다.
+            </Small>
             <TextInput
               value={apiKeyInput}
               onChangeText={setApiKeyInput}
@@ -628,7 +658,7 @@ export default function Settings() {
                   label="저장"
                   onPress={async () => {
                     if (!apiKeyInput.trim()) return;
-                    await setApiKey(apiKeyInput.trim());
+                    await setApiKey(apiKeyInput.trim(), llmProvider);
                     setApiKeyInput("");
                     setHasKey(true);
                     setConnectionMsg(null);

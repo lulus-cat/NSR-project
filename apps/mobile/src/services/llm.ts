@@ -20,24 +20,48 @@
  */
 
 import { buildGlossaryForLLM, type Lexicon } from "@nsr/core";
+import { getSetting, setSetting } from "../db";
 import { redactForNetwork } from "./export";
 
-/** 기기에 저장된 사용자 키를 쓴다. 앱 번들에는 어떤 키도 들어가지 않는다. */
-const SECURE_KEY = "anthropic.apiKey";
+/**
+ * 공급자 선택.
+ *
+ * OAuth 에 대해 정직하게: OpenAI 의 "ChatGPT 로 로그인" 은 승인받은 앱만 쓰는
+ * 베타이고, Anthropic 은 서드파티 앱용 OAuth 자체가 없다. 그래서 양쪽 다
+ * API 키 방식이다. 키는 기기 보안 저장소에만 있다.
+ */
+export type LlmProvider = "anthropic" | "openai";
 
-export async function getApiKey(): Promise<string | null> {
-  const SecureStore = await import("expo-secure-store");
-  return SecureStore.getItemAsync(SECURE_KEY);
+const PROVIDER_SETTING = "llm.provider";
+const SECURE_KEYS: Record<LlmProvider, string> = {
+  anthropic: "anthropic.apiKey",
+  openai: "openai.apiKey",
+};
+
+export async function getProvider(): Promise<LlmProvider> {
+  return getSetting<LlmProvider>(PROVIDER_SETTING, "anthropic");
 }
 
-export async function setApiKey(key: string | null): Promise<void> {
+export async function setProvider(p: LlmProvider): Promise<void> {
+  await setSetting(PROVIDER_SETTING, p);
+}
+
+export async function getApiKey(provider: LlmProvider = "anthropic"): Promise<string | null> {
+  const SecureStore = await import("expo-secure-store");
+  return SecureStore.getItemAsync(SECURE_KEYS[provider]);
+}
+
+export async function setApiKey(
+  key: string | null,
+  provider: LlmProvider = "anthropic",
+): Promise<void> {
   const SecureStore = await import("expo-secure-store");
   if (key) {
-    await SecureStore.setItemAsync(SECURE_KEY, key, {
+    await SecureStore.setItemAsync(SECURE_KEYS[provider], key, {
       keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
     });
   } else {
-    await SecureStore.deleteItemAsync(SECURE_KEY);
+    await SecureStore.deleteItemAsync(SECURE_KEYS[provider]);
   }
 }
 
@@ -58,7 +82,7 @@ async function callAnthropic(body: unknown): Promise<{
   content: AnthropicBlock[];
   usage?: { cache_read_input_tokens?: number };
 }> {
-  const apiKey = await getApiKey();
+  const apiKey = await getApiKey("anthropic");
   if (!apiKey) {
     throw new Error(
       "API 키가 설정되어 있지 않습니다. 설정 > 보조 기능에서 입력해 주세요. " +
@@ -89,6 +113,62 @@ async function callAnthropic(body: unknown): Promise<{
 }
 
 const MODEL = "claude-opus-5";
+const OPENAI_MODEL = "gpt-5-mini";
+
+/**
+ * OpenAI 호출. Anthropic 과 같은 이유로 SDK 없이 fetch 다.
+ * schema 를 주면 structured output 으로 강제해 JSON 만 받는다.
+ */
+async function callOpenAi(input: {
+  system: string;
+  user: string;
+  maxTokens: number;
+  schema?: { name: string; schema: unknown };
+}): Promise<string> {
+  const apiKey = await getApiKey("openai");
+  if (!apiKey) {
+    throw new Error(
+      "OpenAI API 키가 설정되어 있지 않습니다. 설정 > 보조 기능에서 입력해 주세요.",
+    );
+  }
+
+  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+    method: "POST",
+    headers: {
+      "content-type": "application/json",
+      authorization: `Bearer ${apiKey}`,
+    },
+    body: JSON.stringify({
+      model: OPENAI_MODEL,
+      max_completion_tokens: input.maxTokens,
+      messages: [
+        { role: "system", content: input.system },
+        { role: "user", content: input.user },
+      ],
+      ...(input.schema
+        ? {
+            response_format: {
+              type: "json_schema",
+              json_schema: { name: input.schema.name, strict: true, schema: input.schema.schema },
+            },
+          }
+        : {}),
+    }),
+  });
+
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    if (res.status === 401) throw new Error("OpenAI API 키가 올바르지 않습니다.");
+    if (res.status === 429) {
+      throw new Error("요청이 너무 많거나 크레딧이 부족합니다. 잠시 후 다시 시도해 주세요.");
+    }
+    throw new Error(`OpenAI API 오류 ${res.status}: ${detail.slice(0, 200)}`);
+  }
+  const data = (await res.json()) as {
+    choices?: { message?: { content?: string } }[];
+  };
+  return (data.choices?.[0]?.message?.content ?? "").trim();
+}
 
 const POST_EDIT_SYSTEM = `당신은 한국 병원 병동의 간호 인계 대화 전사본을 다듬는 편집자입니다.
 
@@ -114,6 +194,15 @@ export async function postEditTranscript(
 ): Promise<{ text: string; redactedCount: number; cacheHit: boolean }> {
   const redacted = await redactForNetwork(correctedText);
   const glossary = buildGlossaryForLLM(lexicon);
+
+  if ((await getProvider()) === "openai") {
+    const text = await callOpenAi({
+      system: `${POST_EDIT_SYSTEM}\n\n참고 용어집:\n${glossary}`,
+      user: redacted.text,
+      maxTokens: 16000,
+    });
+    return { text, redactedCount: redacted.result.redactedCount, cacheHit: false };
+  }
 
   const response = await callAnthropic({
     model: MODEL,
@@ -163,6 +252,23 @@ const INSIGHT_SYSTEM = `당신은 신규간호사의 근무 복기를 돕는 선
 - 확인이 필요한 항목은 구체적으로 쓰세요. "공부하세요"가 아니라 "폴리 유치 시 소변주머니 높이 기준을 확인하세요"처럼.
 - 전사본에 없는 내용을 지어내지 마세요.`;
 
+/** 두 공급자가 똑같은 구조로 답하게 하는 공용 스키마. */
+const INSIGHT_SCHEMA = {
+  type: "object",
+  properties: {
+    summary: { type: "string", description: "세 문장 이내의 근무 요약" },
+    followUps: {
+      type: "array",
+      items: { type: "string" },
+      description: "다음 근무 전에 확인할 구체적 항목",
+    },
+    didWell: { type: "array", items: { type: "string" }, description: "오늘 잘한 점" },
+    studyTopics: { type: "array", items: { type: "string" }, description: "학습이 필요한 주제" },
+  },
+  required: ["summary", "followUps", "didWell", "studyTopics"],
+  additionalProperties: false,
+} as const;
+
 /** 근무 통찰. 규칙으로는 뽑을 수 없는 것들. */
 export async function summarizeShift(
   transcriptText: string,
@@ -170,6 +276,22 @@ export async function summarizeShift(
 ): Promise<ShiftInsight> {
   const redacted = await redactForNetwork(transcriptText);
   const glossary = buildGlossaryForLLM(lexicon);
+
+  if ((await getProvider()) === "openai") {
+    const raw = await callOpenAi({
+      system: `${INSIGHT_SYSTEM}\n\n참고 용어집:\n${glossary}`,
+      user: redacted.text,
+      maxTokens: 8000,
+      schema: { name: "shift_insight", schema: INSIGHT_SCHEMA },
+    });
+    const parsed = JSON.parse(raw) as ShiftInsight;
+    return {
+      summary: parsed.summary ?? "",
+      followUps: parsed.followUps ?? [],
+      didWell: parsed.didWell ?? [],
+      studyTopics: parsed.studyTopics ?? [],
+    };
+  }
 
   const response = await callAnthropic({
     model: MODEL,
@@ -187,29 +309,7 @@ export async function summarizeShift(
         name: "record_shift_insight",
         description: "근무 복기 결과를 구조화해 기록한다.",
         strict: true,
-        input_schema: {
-          type: "object",
-          properties: {
-            summary: { type: "string", description: "세 문장 이내의 근무 요약" },
-            followUps: {
-              type: "array",
-              items: { type: "string" },
-              description: "다음 근무 전에 확인할 구체적 항목",
-            },
-            didWell: {
-              type: "array",
-              items: { type: "string" },
-              description: "오늘 잘한 점",
-            },
-            studyTopics: {
-              type: "array",
-              items: { type: "string" },
-              description: "학습이 필요한 주제",
-            },
-          },
-          required: ["summary", "followUps", "didWell", "studyTopics"],
-          additionalProperties: false,
-        },
+        input_schema: INSIGHT_SCHEMA,
       },
     ],
     tool_choice: { type: "tool", name: "record_shift_insight" },
@@ -237,11 +337,15 @@ export async function summarizeShift(
 /** 키가 유효한지 가볍게 확인한다. 설정 화면의 "연결 테스트" 버튼용. */
 export async function testConnection(): Promise<{ ok: boolean; message: string }> {
   try {
-    await callAnthropic({
-      model: MODEL,
-      max_tokens: 16,
-      messages: [{ role: "user", content: "ping" }],
-    });
+    if ((await getProvider()) === "openai") {
+      await callOpenAi({ system: "ping 에 pong 으로만 답한다.", user: "ping", maxTokens: 16 });
+    } else {
+      await callAnthropic({
+        model: MODEL,
+        max_tokens: 16,
+        messages: [{ role: "user", content: "ping" }],
+      });
+    }
     return { ok: true, message: "연결됐습니다." };
   } catch (error) {
     return {
