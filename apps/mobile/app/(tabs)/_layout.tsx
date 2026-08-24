@@ -50,7 +50,7 @@ export default function TabsLayout() {
       <Tabs.Screen name="index" options={{ title: "홈", headerShown: false }} />
       <Tabs.Screen name="duty" options={{ headerShown: false, title: "듀티" }} />
       <Tabs.Screen name="care" options={{ headerShown: false, title: "마음" }} />
-      <Tabs.Screen name="study" options={{ title: "학습" }} />
+      <Tabs.Screen name="study" options={{ headerShown: false, title: "학습" }} />
       <Tabs.Screen name="glossary" options={{ headerShown: false, title: "용어" }} />
       <Tabs.Screen name="settings" options={{ headerShown: false, title: "설정" }} />
     </Tabs>

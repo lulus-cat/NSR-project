@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ScrollView, View } from "react-native";
+import { View } from "react-native";
 import { Text } from "react-native";
 import {
   createSchedule,
@@ -13,7 +13,7 @@ import {
   type Grade,
   type ReviewState,
 } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { Badge, Body, Button, Card, Divider, Heading, HeaderScreen, Small } from "../../src/components/ui";
 import { space, type, useTheme } from "../../src/theme";
 import {
   listCards,
@@ -109,9 +109,24 @@ export default function Study() {
     [currentId, nightDays, stateById],
   );
 
-  if (cards.length === 0) {
-    return (
-      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
+  const sources = current ? current.sourceIds.map(getSource).filter(Boolean) : [];
+
+  // 갈래가 셋(빈 상태·복습 끝·복습 중)이어도 머리는 하나다.
+  // 헤더의 대표 숫자는 "지금 남은 것" — 이 화면에 온 이유가 그것이다.
+  return (
+    <HeaderScreen
+      title="학습"
+      heroLabel="오늘 복습"
+      hero={cards.length === 0 ? "카드 없음" : current ? `${queue.length}장` : "끝"}
+      rows={[
+        { label: "전체 카드", value: `${stats.total}장` },
+        { label: "익숙해진 카드", value: `${stats.mature}장` },
+        ...(stats.leeches > 0
+          ? [{ label: "계속 틀리는 카드", value: `${stats.leeches}장`, tone: "alert" as const }]
+          : []),
+      ]}
+    >
+      {cards.length === 0 ? (
         <Card>
           <Heading>아직 카드가 없습니다</Heading>
           <Body muted>
@@ -119,42 +134,24 @@ export default function Study() {
             시중 암기장과 다른 점은, 여기 나오는 말이 내일도 그 병동에서 나온다는 것입니다.
           </Body>
         </Card>
-      </ScrollView>
-    );
-  }
-
-  if (!current) {
-    return (
-      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
-        <Card tone="accent">
-          <Heading>오늘 복습 끝</Heading>
-          <Body>{done > 0 ? `${done}장 봤습니다.` : "지금 볼 카드가 없습니다."}</Body>
-        </Card>
-        <Card>
-          <Heading>진행 상황</Heading>
-          <Body>전체 {stats.total}장</Body>
-          <Small>
-            익숙해진 카드 {stats.mature}장 · 아직 배우는 중 {stats.learning}장
-          </Small>
+      ) : !current ? (
+        <>
+          <Card tone="accent">
+            <Heading>오늘 복습 끝</Heading>
+            <Body>{done > 0 ? `${done}장 봤습니다.` : "지금 볼 카드가 없습니다."}</Body>
+          </Card>
           {stats.leeches > 0 ? (
-            <>
-              <Divider />
+            <Card>
               <Badge text={`계속 틀리는 카드 ${stats.leeches}장`} tone="warn" />
               <Small>
                 반복해서 틀리는 카드는 대개 카드가 나쁜 게 아니라 그 앞의 개념이 비어 있다는 뜻입니다.
                 해당 용어의 공식 자료를 한 번 읽어보는 편이 빠릅니다.
               </Small>
-            </>
+            </Card>
           ) : null}
-        </Card>
-      </ScrollView>
-    );
-  }
-
-  const sources = current.sourceIds.map(getSource).filter(Boolean);
-
-  return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
+        </>
+      ) : (
+        <>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <Badge text={KIND_LABELS[current.kind]} tone="muted" />
         <Small>남은 {queue.length}장</Small>
@@ -206,6 +203,8 @@ export default function Study() {
       ) : (
         <Button label="답 보기" tone="primary" onPress={() => setRevealed(true)} />
       )}
-    </ScrollView>
+        </>
+      )}
+    </HeaderScreen>
   );
 }
