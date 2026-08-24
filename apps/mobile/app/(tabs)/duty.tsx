@@ -10,10 +10,10 @@ import {
   type DutyEntry,
   type ShiftCode,
 } from "@nsr/core";
-import { Body, Button, Card, Divider, Heading, Small } from "../src/components/ui";
-import { radius, space, type, useTheme } from "../src/theme";
-import { deleteDutyEntry, listDutyEntries, upsertDutyEntries } from "../src/db";
-import { useApp } from "../src/state/AppContext";
+import { Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { radius, space, type, useTheme } from "../../src/theme";
+import { deleteDutyEntry, listDutyEntries, upsertDutyEntries } from "../../src/db";
+import { useApp } from "../../src/state/AppContext";
 
 const QUICK_CODES: ShiftCode[] = ["D", "E", "N", "OFF"];
 
@@ -67,7 +67,7 @@ export default function Duty() {
   const resolved = new Map(resolveAll(schedule).map((s) => [s.date, s]));
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
       <Card>
         <Heading>듀티표 붙여넣기</Heading>
         <Small>

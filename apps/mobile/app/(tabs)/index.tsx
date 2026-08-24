@@ -21,23 +21,23 @@ import {
   Heading,
   Row,
   Small,
-} from "../src/components/ui";
-import { useApp } from "../src/state/AppContext";
-import { space, type, useTheme } from "../src/theme";
+} from "../../src/components/ui";
+import { useApp } from "../../src/state/AppContext";
+import { space, type, useTheme } from "../../src/theme";
 import {
   getSetting,
   listDutyEntries,
   listReviewStates,
   listTaeumScores,
-} from "../src/db";
+} from "../../src/db";
 import {
   SETTINGS_KEYS,
   platformCapability,
   startManual,
   stopManual,
-} from "../src/services/scheduler";
-import { checkForUpdate, type UpdateCheck } from "../src/services/update";
-import { activeModelId, listModels } from "../src/services/models";
+} from "../../src/services/scheduler";
+import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
+import { activeModelId, listModels } from "../../src/services/models";
 
 function formatClock(epochMs: number): string {
   const d = new Date(epochMs);
@@ -117,7 +117,8 @@ export default function Home() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.xxl }}
+        // 아래 탭이 마지막 항목을 가리지 않게 넉넉히 띄운다.
+        contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
       >
         <Text style={[type.title, { color: t.text }]}>오늘</Text>

@@ -48,14 +48,12 @@ function Gate() {
         contentStyle: { backgroundColor: t.bg },
       }}
     >
-      <Stack.Screen name="index" options={{ headerShown: false }} />
+      {/* 주요 화면은 아래 탭으로 묶여 있다. (tabs) 는 주소에 안 나타난다. */}
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
       <Stack.Screen name="onboarding" options={{ headerShown: false, gestureEnabled: false }} />
-      <Stack.Screen name="duty" options={{ title: "듀티표" }} />
-      <Stack.Screen name="study" options={{ title: "학습" }} />
-      <Stack.Screen name="glossary" options={{ title: "용어와 자료" }} />
+      {/* 설정에서 들어가는 화면들. 탭에 둘 만큼 자주 쓰지 않는다. */}
       <Stack.Screen name="ward-dict" options={{ title: "병동 사전" }} />
       <Stack.Screen name="models" options={{ title: "전사 모델" }} />
-      <Stack.Screen name="settings" options={{ title: "설정" }} />
       <Stack.Screen name="shift/[id]" options={{ title: "근무 기록" }} />
     </Stack>
   );

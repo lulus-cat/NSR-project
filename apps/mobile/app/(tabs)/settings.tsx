@@ -3,20 +3,20 @@ import { Alert, Platform, ScrollView, Switch, TextInput, View } from "react-nati
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
 import { DEFAULT_RECORDING_POLICY, type ShiftCode } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, Heading, Row, Small } from "../src/components/ui";
-import { radius, space, type, useTheme } from "../src/theme";
-import { useApp } from "../src/state/AppContext";
-import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../src/db";
-import { SETTINGS_KEYS, platformCapability } from "../src/services/scheduler";
-import { deleteAllRecordings } from "../src/services/files";
-import { getApiKey, setApiKey, testConnection } from "../src/services/llm";
+import { Badge, Body, Button, Card, Divider, Heading, Row, Small } from "../../src/components/ui";
+import { radius, space, type, useTheme } from "../../src/theme";
+import { useApp } from "../../src/state/AppContext";
+import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../../src/db";
+import { SETTINGS_KEYS, platformCapability } from "../../src/services/scheduler";
+import { deleteAllRecordings } from "../../src/services/files";
+import { getApiKey, setApiKey, testConnection } from "../../src/services/llm";
 import {
   MASKABLE_KINDS,
   loadPrivacySettings,
   savePrivacySettings,
   type PrivacySettings,
-} from "../src/services/export";
-import { activeModelId, listModels } from "../src/services/models";
+} from "../../src/services/export";
+import { activeModelId, listModels } from "../../src/services/models";
 import {
   RELEASE_REPO,
   autoCheckEnabled,
@@ -26,7 +26,7 @@ import {
   setAutoCheck,
   skipVersion,
   type UpdateCheck,
-} from "../src/services/update";
+} from "../../src/services/update";
 import type { PiiKind } from "@nsr/core";
 
 function Toggle({
@@ -167,7 +167,7 @@ export default function Settings() {
   const version = currentVersion();
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
       {/* 판 번호와 업데이트 */}
       <Card tone={update?.show ? "accent" : "default"}>
         <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>

@@ -13,14 +13,14 @@ import {
   type Grade,
   type ReviewState,
 } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, Heading, Small } from "../src/components/ui";
-import { space, type, useTheme } from "../src/theme";
+import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { space, type, useTheme } from "../../src/theme";
 import {
   listCards,
   listDutyEntries,
   listReviewStates,
   saveReviewState,
-} from "../src/db";
+} from "../../src/db";
 import { getSource } from "@nsr/core";
 
 const KIND_LABELS: Record<StudyCard["kind"], string> = {
@@ -111,7 +111,7 @@ export default function Study() {
 
   if (cards.length === 0) {
     return (
-      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
         <Card>
           <Heading>아직 카드가 없습니다</Heading>
           <Body muted>
@@ -125,7 +125,7 @@ export default function Study() {
 
   if (!current) {
     return (
-      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+      <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
         <Card tone="accent">
           <Heading>오늘 복습 끝</Heading>
           <Body>{done > 0 ? `${done}장 봤습니다.` : "지금 볼 카드가 없습니다."}</Body>
@@ -154,7 +154,7 @@ export default function Study() {
   const sources = current.sourceIds.map(getSource).filter(Boolean);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
       <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
         <Badge text={KIND_LABELS[current.kind]} tone="muted" />
         <Small>남은 {queue.length}장</Small>

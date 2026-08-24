@@ -11,9 +11,9 @@ import {
   type TermCategory,
   type WardPack,
 } from "@nsr/core";
-import { Badge, Body, Card, Divider, Heading, Small } from "../src/components/ui";
-import { radius, space, type, useTheme } from "../src/theme";
-import { enabledWardPacks, listUserTerms } from "../src/db";
+import { Badge, Body, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { radius, space, type, useTheme } from "../../src/theme";
+import { enabledWardPacks, listUserTerms } from "../../src/db";
 
 const CATEGORY_LABELS: Record<TermCategory, string> = {
   assessment: "사정",
@@ -67,7 +67,7 @@ export default function Glossary() {
   }, [query]);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
       <TextInput
         value={query}
         onChangeText={setQuery}
