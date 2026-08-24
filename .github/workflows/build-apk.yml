@@ -65,11 +65,14 @@ jobs:
           npm run -w @nsr/core test
           npm run -w @nsr/core build
 
-      - name: 앱 설치·타입 검사
+      # 판 검사를 여기서 한다. gradle 까지 가면 C++ 컴파일에 16분을 태우고 나서야
+      # "없는 함수를 부른다" 같은 모습으로 알게 된다. 그 16분을 몇 초로 줄인다.
+      - name: 앱 설치·타입 검사·판 검사
         working-directory: apps/mobile
         run: |
           npm ci
           npm run typecheck
+          node ../../tools/check-expo-versions.mjs .
 
       - name: JDK 21 준비
         uses: actions/setup-java@v5
