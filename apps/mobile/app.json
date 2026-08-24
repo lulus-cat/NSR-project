@@ -1,0 +1,48 @@
+{
+  "expo": {
+    "name": "근무기록",
+    "slug": "nsr",
+    "scheme": "nsr",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "app.nsr.shiftlog",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "근무 중 인계와 교육 내용을 본인이 나중에 복기할 수 있도록 녹음합니다. 녹음 파일은 이 기기 안에만 저장됩니다.",
+        "NSFaceIDUsageDescription": "앱을 열 때 본인 확인을 위해 사용합니다. 녹음에는 환자 정보가 포함될 수 있습니다.",
+        "UIBackgroundModes": ["audio", "processing"],
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "app.nsr.shiftlog",
+      "allowBackup": false,
+      "permissions": [
+        "android.permission.RECORD_AUDIO",
+        "android.permission.FOREGROUND_SERVICE",
+        "android.permission.FOREGROUND_SERVICE_MICROPHONE",
+        "android.permission.POST_NOTIFICATIONS",
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.WAKE_LOCK"
+      ]
+    },
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "expo-local-authentication",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "근무 중 인계와 교육 내용을 녹음하기 위해 마이크를 사용합니다."
+        }
+      ]
+    ],
+    "experiments": {
+      "typedRoutes": true
+    }
+  }
+}
