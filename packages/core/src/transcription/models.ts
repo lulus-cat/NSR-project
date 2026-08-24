@@ -164,12 +164,65 @@ export const OFFICIAL_MODELS: AsrModel[] = [
  * 그 뒤 앱의 모델 화면에서 "직접 추가"로 파일이나 URL 을 넣는다.
  */
 export const KOREAN_MODEL_GUIDE = {
-  searchHint: "HuggingFace 에서 whisper korean fine-tuned 로 찾는다",
+  /**
+   * 실제로 존재하는 한국어 파인튜닝 모델들.
+   *
+   * URL 을 박아 두지 않고 **id 만** 적는다. 주소는 바뀌고 파일명도 바뀌지만
+   * id 로 검색하면 옮겨간 자리도 찾을 수 있다. 죽은 링크보다 낫다.
+   *
+   * 확인된 것 (2026-08 조사):
+   *  - large-v3 는 **turbo 파생**에 생태계가 몰려 있다. 순수 large-v3 한국어
+   *    파인튜닝은 하나뿐이고 성능 수치가 공개돼 있지 않다.
+   *  - 아래 첫 항목은 **이미 ggml 로 변환돼 있어** 변환 없이 바로 넣을 수 있다.
+   */
+  known: [
+    {
+      id: "royshilkrot/whisper-large-v3-turbo-korean-ggml",
+      base: "large-v3-turbo",
+      note: "한국어 오픈 데이터 약 200시간 학습. 제작자 보고 WER 24 → 16. ggml 변환 완료라 바로 넣을 수 있다.",
+      ready: true,
+    },
+    {
+      id: "royshilkrot/whisper-medium-korean-ggml",
+      base: "medium",
+      note: "같은 제작자의 medium 한국어. 역시 ggml.",
+      ready: true,
+    },
+    {
+      id: "ghost613/whisper-large-v3-turbo-korean",
+      base: "large-v3-turbo",
+      note: "Zeroth Korean 학습. ggml 변환이 필요하다.",
+      ready: false,
+    },
+    {
+      id: "seastar105/whisper-medium-ko-zeroth",
+      base: "medium",
+      note: "Zeroth Korean. 변환 필요.",
+      ready: false,
+    },
+  ],
+  searchHint: "HuggingFace 에서 위 id 로 찾거나 'whisper korean ggml' 로 검색한다",
   convertCommand:
     "python3 whisper.cpp/models/convert-h5-to-ggml.py ./모델폴더/ ./whisper ./출력",
   why:
     "같은 크기에서 원본 CER 18.05% → 한국어 재학습 6.45%. " +
     "모델을 키우는 것보다 효과가 크다.",
+  /**
+   * 직접 파인튜닝을 생각한다면 알아야 할 것.
+   *
+   * large-v3 full fine-tune 은 24GB 로도 안 된다 — batch 1, 오디오 2.5초로
+   * 잘라도 OOM 났다는 보고가 있다. LoRA + 8bit 면 **8GB** 로 떨어진다
+   * (무료 Colab T4 실측). 8GB 노트북 GPU 는 경계선이고 실측 사례가 없다.
+   *
+   * 데이터는 8~12시간이면 의미 있는 개선의 최소선(HF 공식 블로그),
+   * 위 한국어 turbo 모델은 200시간을 썼다.
+   */
+  finetune: {
+    fullVramGb: 24,
+    loraVramGb: 8,
+    minHours: 8,
+    note: "파인튜닝 전에 위 known 모델을 먼저 써 보는 편이 거의 언제나 낫다.",
+  },
 } as const;
 
 export function getModel(id: string): AsrModel | undefined {

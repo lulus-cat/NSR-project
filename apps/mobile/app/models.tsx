@@ -341,6 +341,18 @@ export default function Models() {
         <Divider />
         <Small muted={false}>1. 찾기</Small>
         <Small>{KOREAN_MODEL_GUIDE.searchHint}</Small>
+        {KOREAN_MODEL_GUIDE.known.map((m) => (
+          <View key={m.id} style={{ gap: space.xxs, paddingVertical: space.tight }}>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+              <Badge text={m.ready ? "변환 불필요" : "변환 필요"} tone={m.ready ? "ok" : "muted"} />
+              <Small muted={false}>{m.base}</Small>
+            </View>
+            <Text selectable style={[type.small, { color: t.text, fontFamily: "monospace" }]}>
+              {m.id}
+            </Text>
+            <Small>{m.note}</Small>
+          </View>
+        ))}
         <Small muted={false}>2. ggml 로 바꾸기</Small>
         <View
           style={{
