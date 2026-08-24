@@ -42,6 +42,13 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
+    # NDK 의 C++ 컴파일이 빌드 시간의 대부분이다. prebuild 산출물이 매번
+    # 바이트 단위로 같다는 것을 확인했으므로(같은 입력 → 같은 오브젝트),
+    # ccache 가 두 번째 빌드부터 컴파일을 통째로 건너뛴다.
+    env:
+      CMAKE_C_COMPILER_LAUNCHER: ccache
+      CMAKE_CXX_COMPILER_LAUNCHER: ccache
+
     steps:
       # 지난 판 이후 무엇이 바뀌었는지 쓰려면 역사와 태그가 다 있어야 한다.
       # 기본값(fetch-depth: 1)이면 커밋이 하나뿐이라 릴리스 노트가 통째로 빈다.
@@ -53,6 +60,12 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: "22"
+          # npm ci 두 번(core + 앱)이 매번 전부 새로 받는다. 락파일이 그대로면
+          # 받은 것을 다시 쓴다.
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            apps/mobile/package-lock.json
 
       # apps/ 는 워크스페이스가 아니다. Metro 가 호이스팅에 예민해서 앱은 자기
       # node_modules 를 따로 갖는다. 그래서 설치도 두 번 한다.
@@ -82,6 +95,23 @@ jobs:
 
       - name: 안드로이드 SDK 준비
         uses: android-actions/setup-android@v3
+
+      # 지난 빌드에서 로그가 "535 actionable tasks: 535 executed" — 재사용이 0 이었다.
+      # 의존성(~/.gradle)과 C++ 오브젝트(ccache)를 실행 사이에 남긴다.
+      - name: gradle 캐시
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('apps/mobile/package-lock.json') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: C++ 컴파일 캐시 (ccache)
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: nsr-ndk
+          max-size: 1G
 
       # 판 번호를 실행 횟수에서 뽑지 않는다. 이미 붙어 있는 태그 중 제일 높은 것에서
       # 하나 올린다. 실행 횟수는 저장소를 옮기거나 워크플로를 갈아 끼우면 어긋난다.
@@ -170,7 +200,7 @@ jobs:
         run: |
           set +e
           chmod +x android/gradlew
-          (cd android && ./gradlew assembleRelease --no-daemon) > build.log 2>&1
+          (cd android && ./gradlew assembleRelease --no-daemon --build-cache) > build.log 2>&1
           code=$?
           tail -120 build.log
           echo "빌드 후 디스크:"; df -h / | tail -1

@@ -1,5 +1,6 @@
 import { Tabs } from "expo-router";
 import { StyleSheet } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { type, useTheme } from "../../src/theme";
 
 /**
@@ -20,6 +21,7 @@ import { type, useTheme } from "../../src/theme";
  */
 export default function TabsLayout() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
 
   return (
     <Tabs
@@ -31,12 +33,14 @@ export default function TabsLayout() {
         sceneStyle: { backgroundColor: t.bg },
         tabBarActiveTintColor: t.accent,
         tabBarInactiveTintColor: t.textMuted,
+        // 높이를 56 으로 못 박았더니 제스처 내비 폰에서 시스템 바가 탭을
+        // 통째로 가렸다. 기기 하단 인셋만큼 높이와 패딩을 함께 늘린다.
         tabBarStyle: {
           backgroundColor: t.surface,
           borderTopColor: t.border,
           borderTopWidth: StyleSheet.hairlineWidth,
-          height: 56,
-          paddingBottom: 6,
+          height: 56 + insets.bottom,
+          paddingBottom: 6 + insets.bottom,
           paddingTop: 6,
         },
         // 아이콘이 없으니 라벨이 곧 탭이다. 조금 키우고 굵게 둔다.

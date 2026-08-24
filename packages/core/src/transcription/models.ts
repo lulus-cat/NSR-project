@@ -185,8 +185,17 @@ export const KOREAN_MODEL_GUIDE = {
     {
       id: "royshilkrot/whisper-medium-korean-ggml",
       base: "medium",
-      note: "같은 제작자의 medium 한국어. 역시 ggml.",
+      note: "같은 제작자의 medium 한국어. 역시 ggml 이라 바로 넣을 수 있지만, 학습 데이터가 낭독 위주다. 대화체는 아래 jangmin 쪽이 맞다.",
       ready: true,
+    },
+    {
+      id: "jangmin/whisper-medium-ko-normalized-1273h",
+      base: "medium",
+      note:
+        "**대화체로 학습된 medium 은 이것이다.** AI Hub 명령어 음성 796시간 + " +
+        "소음 환경 대화 363시간 등 1,273시간 — 낭독이 아니라 실제 대화·소음 데이터라 " +
+        "병동 환경에 제일 가깝다. Safetensors 라서 ggml 변환 + 양자화가 필요하다.",
+      ready: false,
     },
     {
       id: "bybb138/whisper-large-v3-turbo-korean",
