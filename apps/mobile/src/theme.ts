@@ -36,6 +36,8 @@ export interface Theme {
   warn: string;
   ok: string;
   recording: string;
+  /** 달력의 나이트 근무 표시. 초록(데이)·호박(이브닝)과 겹치지 않는 보라. */
+  night: string;
 }
 
 const light: Theme = {
@@ -55,6 +57,7 @@ const light: Theme = {
   warn: "#8A5F10",
   ok: "#2F6F5E",
   recording: "#C0553F",
+  night: "#5C5FA8",
 };
 
 /**
@@ -84,6 +87,7 @@ const dark: Theme = {
   warn: "#D9A94C",
   ok: "#6FBFA4",
   recording: "#E08268",
+  night: "#9B9EDB",
 };
 
 export function useTheme(): Theme {

@@ -16,6 +16,8 @@ export type ShiftCode =
   | "E" // 이브닝
   | "N" // 나이트
   | "OFF" // 휴무
+  | "ADM" // 상근 (평일 고정 근무)
+  | "SPC" // 스페셜 (환자 전담 등 병동이 따로 정하는 근무)
   | "EDU" // 교육
   | "ANNUAL" // 연차
   | "SICK" // 병가
@@ -81,6 +83,29 @@ export const DEFAULT_TEMPLATES: Record<ShiftCode, ShiftTemplate> = {
     preHandoverMin: 0,
     postHandoverMin: 0,
     isWorking: false,
+  },
+  ADM: {
+    code: "ADM",
+    label: "상근",
+    startTime: "09:00",
+    endTime: "18:00",
+    crossesMidnight: false,
+    // 상근은 교대 인계가 없다. 그래도 출근 직후 회의·보고가 있어 조금만 잡는다.
+    preHandoverMin: 20,
+    postHandoverMin: 10,
+    isWorking: true,
+  },
+  SPC: {
+    code: "SPC",
+    label: "스페셜",
+    // 스페셜은 병동마다 시간이 제각각이다. 기본값은 자리만 잡고,
+    // 실제 시각은 항목의 override 나 설정 템플릿으로 바꾼다.
+    startTime: "08:00",
+    endTime: "20:00",
+    crossesMidnight: false,
+    preHandoverMin: 30,
+    postHandoverMin: 20,
+    isWorking: true,
   },
   EDU: {
     code: "EDU",

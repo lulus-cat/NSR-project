@@ -117,7 +117,7 @@ export const DEFAULT_RECORDING_POLICY: RecordingPolicy = {
   enabled: false, // 명시적으로 켜야 한다. 기본값이 켜짐이면 안 된다.
   leadMinutes: 45,
   trailMinutes: 40,
-  codes: ["D", "E", "N"],
+  codes: ["D", "E", "N", "ADM", "SPC"],
   segmentMinutes: 30,
   maxStorageMb: 4096,
   retentionDays: 30,
@@ -208,6 +208,8 @@ const CODE_ALIASES: Record<string, ShiftCode> = {
   E: "E", 이: "E", 이브닝: "E",
   N: "N", 나: "N", 나이트: "N",
   O: "OFF", OFF: "OFF", 오: "OFF", 오프: "OFF", 휴: "OFF", "-": "OFF", "/": "OFF",
+  상: "ADM", 상근: "ADM",
+  스: "SPC", 스페셜: "SPC", S: "SPC",
   교육: "EDU", EDU: "EDU",
   연: "ANNUAL", 연차: "ANNUAL", A: "ANNUAL",
   병: "SICK", 병가: "SICK",

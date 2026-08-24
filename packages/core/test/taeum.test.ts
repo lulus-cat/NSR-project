@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { scoreShift, summarizeTrend, DISCLAIMER } from "../src/taeum/index.js";
+import { scoreShift, summarizeTrend, taeumTemperature, DISCLAIMER } from "../src/taeum/index.js";
 import type { TranscriptSegment, SpeakerRole } from "../src/transcription/types.js";
 
 let seq = 0;
@@ -123,5 +123,22 @@ describe("추이 요약", () => {
     expect(r.dominantCategory).toBe("insult");
     expect(r.worst?.shiftId).toBe("1");
     expect(r.message).toContain("심각");
+  });
+});
+
+describe("태움 체온", () => {
+  it("레벨 경계가 임상 표현과 맞아떨어진다", () => {
+    expect(taeumTemperature(0)).toMatchObject({ celsius: 35.8, label: "저체온", tone: "ok" });
+    expect(taeumTemperature(5).label).toBe("정상체온");
+    expect(taeumTemperature(10)).toMatchObject({ celsius: 37.0, label: "미열", tone: "muted" });
+    expect(taeumTemperature(30)).toMatchObject({ celsius: 37.6, label: "발열", tone: "warn" });
+    expect(taeumTemperature(60)).toMatchObject({ celsius: 38.6, label: "고열", tone: "danger" });
+    expect(taeumTemperature(100).celsius).toBe(40.0);
+  });
+
+  it("범위 밖과 쓰레기 입력은 안전하게 잘린다", () => {
+    expect(taeumTemperature(-5).celsius).toBe(35.8);
+    expect(taeumTemperature(999).celsius).toBe(40.0);
+    expect(taeumTemperature(NaN).celsius).toBe(35.8);
   });
 });
