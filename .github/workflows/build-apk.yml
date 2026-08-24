@@ -127,6 +127,12 @@ jobs:
             exit $code
           fi
 
+      # prebuild 가 깔아 주는 gradle 래퍼(9.3.1)가 같이 딸려오는 안드로이드
+      # 플러그인이 요구하는 판(9.4.1)보다 낮다. Expo 템플릿 안에서 짝이 안 맞는다.
+      # android/ 는 매번 새로 만들어지므로 커밋해 둘 수 없고 여기서 손봐야 한다.
+      - name: 안드로이드 빌드 준비
+        run: tools/prepare-android-build.sh apps/mobile/android
+
       - name: APK 빌드
         working-directory: apps/mobile
         run: |
