@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Linking, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
+import { useRouter } from "expo-router";
 import {
   OFFICIAL_SOURCES,
   buildLexicon,
@@ -8,10 +9,11 @@ import {
   sourcesForTerm,
   type LexiconEntry,
   type TermCategory,
+  type WardPack,
 } from "@nsr/core";
 import { Badge, Body, Card, Divider, Heading, Small } from "../src/components/ui";
 import { radius, space, type, useTheme } from "../src/theme";
-import { listUserTerms } from "../src/db";
+import { enabledWardPacks, listUserTerms } from "../src/db";
 
 const CATEGORY_LABELS: Record<TermCategory, string> = {
   assessment: "사정",
@@ -31,20 +33,28 @@ type Tab = "terms" | "sources";
 
 export default function Glossary() {
   const t = useTheme();
+  const router = useRouter();
   const [tab, setTab] = useState<Tab>("terms");
   const [query, setQuery] = useState("");
   const [userTerms, setUserTerms] = useState<LexiconEntry[]>([]);
+  const [packs, setPacks] = useState<WardPack[]>([]);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    setUserTerms(await listUserTerms());
+    // 화면과 전사가 같은 사전을 봐야 한다. 병동 사전도 함께 싣는다.
+    const [terms, wardPacks] = await Promise.all([listUserTerms(), enabledWardPacks()]);
+    setUserTerms(terms);
+    setPacks(wardPacks);
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const lexicon = useMemo(() => buildLexicon(userTerms), [userTerms]);
+  const lexicon = useMemo(
+    () => buildLexicon({ userTerms, packs }),
+    [userTerms, packs],
+  );
 
   const terms = useMemo(() => {
     if (!query.trim()) return lexicon.entries.slice(0, 60);
@@ -172,9 +182,16 @@ export default function Glossary() {
           {terms.length === 0 ? (
             <Card>
               <Body muted>
-                찾는 말이 없습니다. 병동마다 쓰는 말이 다르니, 설정에서 직접 등록해두면
-                다음 전사부터 자동으로 인식됩니다.
+                찾는 말이 없습니다. 병동마다 쓰는 말이 다릅니다.
               </Body>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => router.push("/ward-dict")}
+              >
+                <Text style={[type.small, { color: t.accent }]}>
+                  병동 사전에 이 말을 담으러 가기 →
+                </Text>
+              </Pressable>
             </Card>
           ) : null}
         </>

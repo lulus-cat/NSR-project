@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { defaultLexicon, buildLexicon, BUILTIN_TERMS } from "../src/lexicon/index.js";
+import { correctTranscript } from "../src/transcription/index.js";
 
 describe("사전 무결성", () => {
   it("id가 중복되지 않는다", () => {
@@ -43,6 +44,33 @@ describe("조회", () => {
   });
   it("무관한 말은 못 찾는다", () => {
     expect(defaultLexicon.lookup("점심메뉴")).toBeNull();
+  });
+});
+
+describe("검체·용기 은어", () => {
+  it.each([
+    ["바틀", "culture-bottle"],
+    ["보틀", "culture-bottle"],
+    ["컬쳐", "culture-sensitivity"],
+    ["퍼플튜브", "edta-tube"],
+    ["유린백", "urine-bag"],
+    ["드레싱셋", "dressing-set"],
+    ["노멀세이린", "normal-saline-slang"],
+    ["떡쳤다", "swamped"],
+  ])("%s → %s", (spoken, id) => {
+    expect(defaultLexicon.lookup(spoken)?.entry.id).toBe(id);
+  });
+
+  it("문장 안에서 바틀을 잡아낸다", () => {
+    const r = correctTranscript("혈액배양 바틀 두 개 나갔고 컬쳐 결과는 아직이에요");
+    expect(r.termIds).toContain("culture-bottle");
+    expect(r.termIds).toContain("culture-sensitivity");
+  });
+
+  it("완곡어도 뜻을 알려준다", () => {
+    const entry = defaultLexicon.lookup("내려요")?.entry;
+    expect(entry?.id).toBe("transfer-up-down");
+    expect(entry?.definition).toContain("사망");
   });
 });
 

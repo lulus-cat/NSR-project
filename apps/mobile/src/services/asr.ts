@@ -32,6 +32,7 @@ import {
   type TermAnnotation,
 } from "@nsr/core";
 import {
+  enabledWardPacks,
   knownEntryIds,
   listSegments,
   listUserTerms,
@@ -172,10 +173,17 @@ export function createSelfHostedProvider(endpoint: string, apiKey?: string): Asr
   };
 }
 
-/** 사용자 사전을 합친 렉시콘. 화면과 전사가 같은 사전을 봐야 한다. */
+/**
+ * 세 층을 합친 사전. 화면과 전사가 **같은 사전**을 봐야 한다.
+ *
+ *   내 사전 > 병동 사전 > 내장 사전
+ *
+ * 병동 사전을 여기서 함께 싣는 것이 핵심이다. 그래야 그 병동에서만 쓰는 말도
+ * 전사 교정과 학습카드에 그대로 반영된다.
+ */
 export async function loadLexicon(): Promise<Lexicon> {
-  const userTerms = await listUserTerms();
-  return buildLexicon(userTerms);
+  const [userTerms, packs] = await Promise.all([listUserTerms(), enabledWardPacks()]);
+  return buildLexicon({ userTerms, packs });
 }
 
 /** 이 근무에서 쓸 ASR 옵션. 사전과 사용 이력으로 프롬프트를 만든다. */

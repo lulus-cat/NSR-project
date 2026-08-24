@@ -3,6 +3,8 @@ import { CLINICAL_TERMS } from "./terms-clinical.js";
 import { MEDICATION_TERMS } from "./terms-medication.js";
 import { SLANG_TERMS } from "./slang.js";
 import { SLANG_EXTRA_TERMS } from "./slang-extra.js";
+import { SPECIMEN_TERMS } from "./slang-specimen.js";
+import { mergeWardPacks, type WardPack } from "./ward-pack.js";
 import { pronunciationKey, normalizeForCompare } from "../hangul/phonology.js";
 import {
   bestPrepared,
@@ -15,7 +17,8 @@ import { ASR_MISHEARD } from "./misheard.js";
 import { ALL_ABBREVS, type AbbrevRow } from "./abbreviations.js";
 
 export type { LexiconEntry, LexiconHit, TermCategory };
-export { CLINICAL_TERMS, MEDICATION_TERMS, SLANG_TERMS, SLANG_EXTRA_TERMS };
+export { CLINICAL_TERMS, MEDICATION_TERMS, SLANG_TERMS, SLANG_EXTRA_TERMS, SPECIMEN_TERMS };
+export * from "./ward-pack.js";
 export { ASR_MISHEARD } from "./misheard.js";
 export { ALL_ABBREVS } from "./abbreviations.js";
 export type { AbbrevRow } from "./abbreviations.js";
@@ -26,6 +29,7 @@ const CURATED_TERMS: readonly LexiconEntry[] = [
   ...MEDICATION_TERMS,
   ...SLANG_TERMS,
   ...SLANG_EXTRA_TERMS,
+  ...SPECIMEN_TERMS,
 ].map((entry) => {
   const misheard = ASR_MISHEARD[entry.id];
   return misheard ? { ...entry, misheard } : entry;
@@ -316,16 +320,44 @@ export function spokenSurfacesOf(entry: LexiconEntry): string[] {
   return out.filter((s): s is string => typeof s === "string" && s.length > 0);
 }
 
+/** 사전을 이루는 세 층. 자세한 설명은 `ward-pack.ts` 머리말 참고. */
+export interface LexiconSources {
+  /** 내가 직접 만들거나 고친 용어. 가장 우선한다. */
+  userTerms?: readonly LexiconEntry[];
+  /** 병동에서 받은 사전들. 뒤에 오는 것이 앞을 덮는다. */
+  packs?: readonly WardPack[];
+}
+
 /**
- * 사전을 만든다. 사용자 정의 항목이 내장 항목보다 우선하도록 앞에 둔다.
- * (병동마다 은어가 다르므로 사용자가 덮어쓸 수 있어야 한다.)
+ * 사전을 만든다.
+ *
+ * 우선순위: **내 사전 > 병동 사전 > 내장 사전**
+ * 구체적인 쪽이 일반적인 쪽을 이긴다. 같은 id를 쓰면 앞선 층이 뒤를 가린다.
+ *
+ * 예전 호출부와의 호환을 위해 배열도 그대로 받는다 (그 경우 `userTerms`로 본다).
  */
-export function buildLexicon(userTerms: readonly LexiconEntry[] = []): Lexicon {
-  const seen = new Set(userTerms.map((t) => t.id));
-  const merged = [
-    ...userTerms,
-    ...BUILTIN_TERMS.filter((t) => !seen.has(t.id)),
+export function buildLexicon(
+  sources: readonly LexiconEntry[] | LexiconSources = [],
+): Lexicon {
+  const opts: LexiconSources = Array.isArray(sources)
+    ? { userTerms: sources as readonly LexiconEntry[] }
+    : (sources as LexiconSources);
+
+  const layers: readonly (readonly LexiconEntry[])[] = [
+    opts.userTerms ?? [],
+    mergeWardPacks(opts.packs ?? []),
+    BUILTIN_TERMS,
   ];
+
+  const seen = new Set<string>();
+  const merged: LexiconEntry[] = [];
+  for (const layer of layers) {
+    for (const term of layer) {
+      if (seen.has(term.id)) continue;
+      seen.add(term.id);
+      merged.push(term);
+    }
+  }
   return new Lexicon(merged);
 }
 

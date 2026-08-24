@@ -53,6 +53,7 @@ function Gate() {
       <Stack.Screen name="duty" options={{ title: "듀티표" }} />
       <Stack.Screen name="study" options={{ title: "학습" }} />
       <Stack.Screen name="glossary" options={{ title: "용어와 자료" }} />
+      <Stack.Screen name="ward-dict" options={{ title: "병동 사전" }} />
       <Stack.Screen name="settings" options={{ title: "설정" }} />
       <Stack.Screen name="shift/[id]" options={{ title: "근무 기록" }} />
     </Stack>

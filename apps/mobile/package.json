@@ -11,8 +11,8 @@
     "fix-deps": "expo install --fix"
   },
   "dependencies": {
-    "@nsr/core": "file:../../packages/core",
     "@anthropic-ai/sdk": "^0.120.0",
+    "@nsr/core": "file:../../packages/core",
     "expo": "^57.0.15",
     "expo-audio": "^57.0.4",
     "expo-background-task": "^57.0.12",
@@ -20,6 +20,7 @@
     "expo-local-authentication": "^57.0.2",
     "expo-router": "^57.0.15",
     "expo-secure-store": "^57.0.1",
+    "expo-sharing": "^57.0.14",
     "expo-sqlite": "^57.0.1",
     "expo-status-bar": "^57.0.0",
     "expo-task-manager": "^57.0.12",

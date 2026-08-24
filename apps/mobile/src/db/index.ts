@@ -17,6 +17,8 @@ import type {
   TermAnnotation,
   TranscriptSegment,
   CorrectionMemory,
+  WardPack,
+  PackCorrection,
   Edit,
 } from "@nsr/core";
 import { SCHEMA_SQL } from "./schema";
@@ -664,4 +666,169 @@ export async function getShiftReportMarkdown(shiftId: string): Promise<string | 
     [shiftId],
   );
   return row?.markdown ?? null;
+}
+
+
+// ── 병동 사전 ───────────────────────────────────────────
+
+export interface StoredPack {
+  pack: WardPack;
+  enabled: boolean;
+  priority: number;
+  importedAt: number;
+}
+
+interface PackRow {
+  id: string;
+  name: string;
+  hospital: string | null;
+  ward: string | null;
+  payload: string;
+  enabled: number;
+  priority: number;
+  updated_at: number;
+  imported_at: number;
+}
+
+function toStoredPack(row: PackRow): StoredPack | null {
+  try {
+    return {
+      pack: JSON.parse(row.payload) as WardPack,
+      enabled: row.enabled === 1,
+      priority: row.priority,
+      importedAt: row.imported_at,
+    };
+  } catch {
+    // 손상된 사전 하나 때문에 나머지를 못 쓰게 만들지 않는다.
+    return null;
+  }
+}
+
+export async function listWardPacks(): Promise<StoredPack[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<PackRow>(
+    "SELECT * FROM ward_packs ORDER BY priority, imported_at",
+  );
+  return rows.map(toStoredPack).filter((p): p is StoredPack => p !== null);
+}
+
+/** 사전에 실제로 실릴 것들. 우선순위 오름차순 — 뒤에 오는 것이 이긴다. */
+export async function enabledWardPacks(): Promise<WardPack[]> {
+  return (await listWardPacks()).filter((p) => p.enabled).map((p) => p.pack);
+}
+
+export async function saveWardPack(
+  pack: WardPack,
+  options: { enabled?: boolean; priority?: number; now?: number } = {},
+): Promise<void> {
+  const db = await getDb();
+  const now = options.now ?? Date.now();
+  await db.runAsync(
+    `INSERT INTO ward_packs
+       (id, name, hospital, ward, payload, enabled, priority, updated_at, imported_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = excluded.name,
+       hospital = excluded.hospital,
+       ward = excluded.ward,
+       payload = excluded.payload,
+       updated_at = excluded.updated_at`,
+    [
+      pack.id,
+      pack.name,
+      pack.hospital ?? null,
+      pack.ward ?? null,
+      JSON.stringify(pack),
+      options.enabled === false ? 0 : 1,
+      options.priority ?? 0,
+      pack.updatedAt || now,
+      now,
+    ],
+  );
+}
+
+export async function setWardPackEnabled(id: string, enabled: boolean): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("UPDATE ward_packs SET enabled = ? WHERE id = ?", [enabled ? 1 : 0, id]);
+}
+
+export async function deleteWardPack(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM ward_packs WHERE id = ?", [id]);
+  await db.runAsync("DELETE FROM pending_corrections WHERE source = ?", [id]);
+}
+
+// ── 확인 대기 치환 규칙 ─────────────────────────────────
+
+export interface PendingCorrection extends PackCorrection {
+  key: string;
+  source: string;
+  addedAt: number;
+}
+
+export async function addPendingCorrections(
+  corrections: readonly PackCorrection[],
+  source: string,
+  now = Date.now(),
+): Promise<void> {
+  if (corrections.length === 0) return;
+  const db = await getDb();
+  await db.withTransactionAsync(async () => {
+    for (const c of corrections) {
+      await db.runAsync(
+        `INSERT INTO pending_corrections (key, from_text, to_text, source, count, added_at)
+         VALUES (?, ?, ?, ?, ?, ?)
+         ON CONFLICT(key) DO NOTHING`,
+        [`${c.from}|${c.to}`, c.from, c.to, source, c.count ?? 1, now],
+      );
+    }
+  });
+}
+
+export async function listPendingCorrections(): Promise<PendingCorrection[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{
+    key: string;
+    from_text: string;
+    to_text: string;
+    source: string;
+    count: number;
+    added_at: number;
+  }>("SELECT * FROM pending_corrections ORDER BY count DESC, added_at");
+  return rows.map((r) => ({
+    key: r.key,
+    from: r.from_text,
+    to: r.to_text,
+    source: r.source,
+    count: r.count,
+    addedAt: r.added_at,
+  }));
+}
+
+/**
+ * 대기 중인 치환 규칙을 사람이 승인했다.
+ * 여기서 비로소 실제 교정 규칙이 된다. 승인 전까지는 전사에 아무 영향이 없다.
+ */
+export async function approvePendingCorrection(
+  key: string,
+  now = Date.now(),
+): Promise<void> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ from_text: string; to_text: string; count: number }>(
+    "SELECT from_text, to_text, count FROM pending_corrections WHERE key = ?",
+    [key],
+  );
+  if (!row) return;
+  await db.runAsync(
+    `INSERT INTO correction_rules (key, from_text, to_text, count, last_used_at)
+     VALUES (?, ?, ?, ?, ?)
+     ON CONFLICT(key) DO UPDATE SET count = MAX(correction_rules.count, excluded.count)`,
+    [key, row.from_text, row.to_text, Math.max(row.count, 2), now],
+  );
+  await db.runAsync("DELETE FROM pending_corrections WHERE key = ?", [key]);
+}
+
+export async function rejectPendingCorrection(key: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM pending_corrections WHERE key = ?", [key]);
 }

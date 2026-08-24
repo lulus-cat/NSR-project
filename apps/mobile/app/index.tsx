@@ -279,6 +279,12 @@ export default function Home() {
           <Divider />
           <Row label="용어와 자료" onPress={() => router.push("/glossary")} value="사전·공식 출처" />
           <Divider />
+          <Row
+            label="병동 사전"
+            onPress={() => router.push("/ward-dict")}
+            value="우리 병동 말·주고받기"
+          />
+          <Divider />
           <Row label="설정" onPress={() => router.push("/settings")} value="녹음·개인정보" />
         </Card>
 

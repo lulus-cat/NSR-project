@@ -15,7 +15,7 @@
  * 오래된 녹음을 안 지우는 것이 가장 큰 위험이다.
  */
 
-export const SCHEMA_VERSION = 1;
+export const SCHEMA_VERSION = 2;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -131,10 +131,39 @@ CREATE TABLE IF NOT EXISTS correction_rules (
   last_used_at  INTEGER NOT NULL
 );
 
--- 사용자 정의 용어 (병동마다 은어가 다르다)
+-- 사용자 정의 용어 — 내가 직접 만들거나 고친 것. 사전 세 층 중 가장 우선한다.
 CREATE TABLE IF NOT EXISTS user_terms (
   id      TEXT PRIMARY KEY,
   payload TEXT NOT NULL                      -- LexiconEntry JSON
+);
+
+-- 병동 사전 — 동료와 파일로 주고받는 그 병동만의 말.
+-- 내장 사전과 내 사전 사이 층에 놓인다 (packages/core/src/lexicon/ward-pack.ts).
+CREATE TABLE IF NOT EXISTS ward_packs (
+  id          TEXT PRIMARY KEY,
+  name        TEXT NOT NULL,
+  hospital    TEXT,
+  ward        TEXT,
+  payload     TEXT NOT NULL,                 -- WardPack JSON
+  -- 꺼두면 사전에 안 실린다. 다른 병동으로 옮겼을 때 지우지 않고 끄기만 하면 된다.
+  enabled     INTEGER NOT NULL DEFAULT 1,
+  -- 같은 병동의 사전이 여럿이면 큰 값이 뒤에 얹힌다(=이긴다).
+  priority    INTEGER NOT NULL DEFAULT 0,
+  updated_at  INTEGER NOT NULL,
+  imported_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_packs_enabled ON ward_packs(enabled, priority);
+
+-- 가져온 글자 치환 규칙의 확인 대기 목록.
+-- 남이 만든 파일의 치환을 그대로 켜면 "십 밀리그램"이 "백 밀리그램"이 될 수 있다.
+-- 그래서 사람이 하나씩 승인해야 correction_rules 로 넘어간다.
+CREATE TABLE IF NOT EXISTS pending_corrections (
+  key        TEXT PRIMARY KEY,               -- "from|to"
+  from_text  TEXT NOT NULL,
+  to_text    TEXT NOT NULL,
+  source     TEXT NOT NULL,                  -- 어느 사전에서 왔는지 (pack id)
+  count      INTEGER NOT NULL DEFAULT 1,
+  added_at   INTEGER NOT NULL
 );
 
 -- 근무별 태움 지표. 원본 이벤트를 함께 보관해야 나중에 인용을 다시 볼 수 있다.
