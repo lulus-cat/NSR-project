@@ -1,5 +1,5 @@
 {
   "_안내": "이 파일은 앱이 하루 한 번 읽어 가는 공유 설정입니다. publicDataKey 에 공공데이터포털 일반 인증키(Decoding)를, kakaoKey 에 카카오 REST API 키를 넣어 두면 키를 따로 등록하지 않은 모든 설치자가 병원 검색·의약품 검색을 바로 씁니다. 공개 저장소이므로 여기 넣은 키는 공개됩니다 — 무료 키만 넣으세요. 트래픽 한도(공공데이터 일 1,000회, 카카오 일 10만 회)를 전 사용자가 나눠 씁니다.",
-  "publicDataKey": "",
-  "kakaoKey": ""
+  "publicDataKey": "rHB6Mj5MVz9h+LYK4PtKB6LGCp4vNzvt07fV0wj3WYEFO751GzFnAMzAM3pLnp1H3BjBLrwlpbVB3Re6lgwIqQ==",
+  "kakaoKey": "077b1b47b3734e2176401afd425bc716"
 }

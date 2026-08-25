@@ -12,9 +12,14 @@
  */
 export const BUILT_IN = {
   /** 카카오 REST API 키 (developers.kakao.com → 내 애플리케이션 → 앱 키). 근무지 검색. */
-  kakaoKey: "",
-  /** 공공데이터포털 일반 인증키(Decoding). 심평원 병원 목록 + 식약처 e약은요. */
-  publicDataKey: "",
+  kakaoKey: "077b1b47b3734e2176401afd425bc716",
+  /**
+   * 공공데이터포털 일반 인증키. 심평원 병원 목록 + 식약처 e약은요.
+   * 반드시 Decoding 형태(+, ==)로 둔다 — 요청 때 코드가 encodeURIComponent 를
+   * 한 번 하므로, Encoding 형태(%2B…)를 넣으면 이중 인코딩으로 인증이 깨진다.
+   */
+  publicDataKey:
+    "rHB6Mj5MVz9h+LYK4PtKB6LGCp4vNzvt07fV0wj3WYEFO751GzFnAMzAM3pLnp1H3BjBLrwlpbVB3Re6lgwIqQ==",
   /** HuggingFace 읽기 전용 토큰 (hf_...). 모델 다운로드가 429/401 로 막힐 때만 필요. */
   huggingFaceToken: "",
 } as const;
