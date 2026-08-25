@@ -16,6 +16,10 @@ on:
       name:
         description: "파일 이름 (예: ggml-ko-medium-q5_0.bin)"
         required: true
+      quantize:
+        description: "양자화 종류 (예: q5_0). 비우면 원본 그대로 올린다."
+        required: false
+        default: ""
 
 permissions:
   contents: write
@@ -27,6 +31,18 @@ jobs:
       - name: 받기
         run: |
           curl -L --fail --retry 3 -o "${{ inputs.name }}" "${{ inputs.url }}"
+          ls -lh "${{ inputs.name }}"
+      # f16 ggml 은 1.5GB 라 폰에 못 넣는다. 러너가 q5_0 으로 줄이면 1/3 이 된다.
+      - name: 양자화
+        if: ${{ inputs.quantize != '' }}
+        run: |
+          git clone --depth 1 https://github.com/ggml-org/whisper.cpp
+          cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build whisper.cpp/build -j --target quantize \
+            || cmake --build whisper.cpp/build -j
+          mv "${{ inputs.name }}" input-f16.bin
+          ./whisper.cpp/build/bin/quantize input-f16.bin "${{ inputs.name }}" "${{ inputs.quantize }}"
+          rm input-f16.bin
           ls -lh "${{ inputs.name }}"
       - name: 릴리스에 붙이기
         uses: softprops/action-gh-release@v2
