@@ -256,7 +256,9 @@ export function HeaderScreen({
     <View style={{ flex: 1, backgroundColor: t.headerBg }}>
       <ScrollView
         style={{ flex: 1 }}
-        contentContainerStyle={{ backgroundColor: t.bg }}
+        // flexGrow 1 + 패널 flex 1 — 내용이 짧아도 패널이 화면 끝까지 내려간다.
+        // 없으면 패널 아래로 헤더 초록색이 새어 보인다.
+        contentContainerStyle={{ backgroundColor: t.bg, flexGrow: 1 }}
         refreshControl={refreshControl as never}
       >
         {/* 색면. 상태바 아래까지 꽉 채운다. */}
@@ -325,6 +327,7 @@ export function HeaderScreen({
         {/* 패널. 음수 마진으로 색면을 물고 올라온다. */}
         <View
           style={{
+            flex: 1,
             backgroundColor: t.bg,
             marginTop: -24,
             borderTopLeftRadius: 24,

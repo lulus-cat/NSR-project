@@ -171,8 +171,8 @@ export default function Duty() {
             flexDirection: "row",
             alignItems: "center",
             paddingHorizontal: space.lg,
-            paddingTop: space.md,
-            paddingBottom: space.sm,
+            paddingTop: space.xs,
+            paddingBottom: space.xs,
             gap: space.sm,
           }}
         >
@@ -243,12 +243,12 @@ export default function Duty() {
           ))}
         </View>
 
-        {/* 날짜 그리드 — 셀이 커야 달력답다 */}
+        {/* 날짜 그리드 — 코드 시트가 스크롤 없이 같이 보여야 하므로 셀을 조인다 */}
         <View style={{ paddingHorizontal: space.xs, paddingTop: space.xs }}>
           {Array.from({ length: cells.length / 7 }, (_, row) => (
             <View key={row} style={{ flexDirection: "row" }}>
               {cells.slice(row * 7, row * 7 + 7).map((date, col) => {
-                if (!date) return <View key={col} style={{ flex: 1, height: 84 }} />;
+                if (!date) return <View key={col} style={{ flex: 1, height: 58 }} />;
                 const entry = byDate.get(date);
                 const temp = temps.get(date);
                 const isSelected = date === selected;
@@ -260,13 +260,13 @@ export default function Duty() {
                     onPress={() => setSelected(date)}
                     style={{
                       flex: 1,
-                      height: 84,
+                      height: 58,
                       borderRadius: radius.md,
                       borderWidth: isToday ? 1.5 : 0,
                       borderColor: t.text,
                       backgroundColor: isSelected ? t.surfaceAlt : "transparent",
-                      paddingTop: 5,
-                      gap: 3,
+                      paddingTop: 3,
+                      gap: 2,
                     }}
                   >
                     <Text

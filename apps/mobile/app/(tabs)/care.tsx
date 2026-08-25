@@ -43,7 +43,13 @@ const CHAT_SETTING = "care.chat";
 const SCALE_MIN = 35.5;
 const SCALE_MAX = 42;
 
-/** 수은 체온계. 수은주가 스프링으로 차오른다. */
+/**
+ * 수은 체온계. 수은주가 스프링으로 차오른다.
+ *
+ * 전부 한 좌표계(래퍼 바닥 기준 절대 위치)로 그린다 — 이전 판은 눈금이
+ * 관과 다른 기준으로 놓여 36이 전구 위에 겹쳤다. 눈금 위치와 수은 높이가
+ * 같은 함수 h(f)를 쓰므로, 체온이 38이면 수은 꼭대기가 정확히 38 눈금에 선다.
+ */
 function Thermometer({
   celsius,
   color,
@@ -52,115 +58,121 @@ function Thermometer({
   color: string;
 }) {
   const t = useTheme();
-  const TUBE_W = 22;
-  const TUBE_H = 132;
-  const BULB = 44;
-  const MIN_MERCURY = 12;
+  const W = 96;
+  const H = 188;
+  const TUBE_W = 26;
+  const BULB = 48;
+  const OVERLAP = 14; // 관이 전구 속으로 잠기는 깊이
+  const tubeBottom = BULB - OVERLAP; // 래퍼 바닥에서 관 바닥까지
+  const tubeH = H - tubeBottom;
+  const tubeX = (W - TUBE_W) / 2 - 12; // 눈금 자리를 오른쪽에 남긴다
+  const baseH = OVERLAP + 6; // 수은 최소 높이(전구에 잠긴 몫 + 살짝)
+  const maxH = tubeH - 18; // 관 꼭대기 둥근 부분은 남겨 둔다
+  const h = (f: number) => baseH + f * (maxH - baseH);
 
-  const ratio =
+  const f =
     celsius === null
       ? 0
       : Math.min(1, Math.max(0, (celsius - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)));
   const v = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.spring(v, {
-      toValue: ratio,
+      toValue: f,
       friction: 10,
       tension: 26,
       // height 애니메이션이라 JS 드라이버. 화면당 한 번 차오르는 것이 전부다.
       useNativeDriver: false,
     }).start();
-  }, [v, ratio]);
+  }, [v, f]);
 
   return (
-    <View style={{ width: 92, alignItems: "center" }}>
-      <View style={{ width: 64 }}>
-        {/* 유리관 */}
-        <View
+    <View style={{ width: W, height: H }}>
+      {/* 유리관 */}
+      <View
+        style={{
+          position: "absolute",
+          left: tubeX,
+          bottom: tubeBottom,
+          width: TUBE_W,
+          height: tubeH,
+          borderRadius: TUBE_W / 2,
+          backgroundColor: t.surfaceAlt,
+          overflow: "hidden",
+        }}
+      >
+        <Animated.View
           style={{
-            width: TUBE_W,
-            height: TUBE_H,
-            alignSelf: "center",
-            borderTopLeftRadius: TUBE_W / 2,
-            borderTopRightRadius: TUBE_W / 2,
-            backgroundColor: t.surfaceAlt,
-            overflow: "hidden",
-          }}
-        >
-          <Animated.View
-            style={{
-              position: "absolute",
-              bottom: 0,
-              left: 0,
-              right: 0,
-              height: v.interpolate({
-                inputRange: [0, 1],
-                outputRange: [MIN_MERCURY, TUBE_H - 6],
-              }),
-              backgroundColor: color,
-              borderTopLeftRadius: TUBE_W / 2,
-              borderTopRightRadius: TUBE_W / 2,
-            }}
-          />
-          {/* 유리 반사광 */}
-          <View
-            style={{
-              position: "absolute",
-              top: 8,
-              bottom: 0,
-              left: 4,
-              width: 3,
-              borderRadius: 2,
-              backgroundColor: "rgba(255,255,255,0.22)",
-            }}
-          />
-        </View>
-        {/* 눈금 — 36·38·40·42 */}
-        {[36, 38, 40, 42].map((deg) => {
-          const y = ((deg - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * (TUBE_H - 6);
-          return (
-            <View
-              key={deg}
-              pointerEvents="none"
-              style={{
-                position: "absolute",
-                right: 0,
-                bottom: BULB / 2 - 10 + y,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 3,
-              }}
-            >
-              <View style={{ width: 7, height: 1.5, backgroundColor: t.border }} />
-              <Text style={{ fontSize: 10, lineHeight: 12, color: t.textMuted, fontWeight: "600" }}>
-                {deg}
-              </Text>
-            </View>
-          );
-        })}
-        {/* 수은 저장고 */}
-        <View
-          style={{
-            width: BULB,
-            height: BULB,
-            borderRadius: BULB / 2,
+            position: "absolute",
+            left: 4,
+            right: 4,
+            bottom: 0,
+            height: v.interpolate({ inputRange: [0, 1], outputRange: [h(0), h(1)] }),
+            borderTopLeftRadius: 9,
+            borderTopRightRadius: 9,
             backgroundColor: color,
-            alignSelf: "center",
-            marginTop: -10,
           }}
-        >
+        />
+        {/* 유리 반사광 */}
+        <View
+          style={{
+            position: "absolute",
+            top: 8,
+            bottom: 8,
+            left: 4,
+            width: 3,
+            borderRadius: 2,
+            backgroundColor: "rgba(255,255,255,0.18)",
+          }}
+        />
+      </View>
+
+      {/* 눈금 — 수은과 같은 h(f) 로 놓는다 */}
+      {[36, 38, 40, 42].map((deg) => {
+        const df = (deg - SCALE_MIN) / (SCALE_MAX - SCALE_MIN);
+        return (
           <View
+            key={deg}
+            pointerEvents="none"
             style={{
               position: "absolute",
-              top: 8,
-              left: 9,
-              width: 10,
-              height: 10,
-              borderRadius: 5,
-              backgroundColor: "rgba(255,255,255,0.3)",
+              left: tubeX + TUBE_W + 5,
+              bottom: tubeBottom + h(df) - 6,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 4,
             }}
-          />
-        </View>
+          >
+            <View style={{ width: 8, height: 1.5, backgroundColor: t.border }} />
+            <Text style={{ fontSize: 10, lineHeight: 12, color: t.textMuted, fontWeight: "600" }}>
+              {deg}
+            </Text>
+          </View>
+        );
+      })}
+
+      {/* 수은 저장고 — 관 중심선에 맞춘다 */}
+      <View
+        style={{
+          position: "absolute",
+          left: tubeX + TUBE_W / 2 - BULB / 2,
+          bottom: 0,
+          width: BULB,
+          height: BULB,
+          borderRadius: BULB / 2,
+          backgroundColor: color,
+        }}
+      >
+        <View
+          style={{
+            position: "absolute",
+            top: 9,
+            left: 10,
+            width: 10,
+            height: 10,
+            borderRadius: 5,
+            backgroundColor: "rgba(255,255,255,0.3)",
+          }}
+        />
       </View>
     </View>
   );
@@ -438,7 +450,13 @@ export default function Care() {
         <ScrollView
           ref={scrollRef}
           style={{ flex: 1 }}
-          contentContainerStyle={{ padding: space.lg, gap: space.sm, flexGrow: 1 }}
+          contentContainerStyle={{
+            padding: space.lg,
+            gap: space.sm,
+            flexGrow: 1,
+            // 대화가 없을 때는 안내를 화면 가운데로 — 위에 붙어 있으면 아래가 휑하다.
+            justifyContent: msgs.length === 0 && !busy ? "center" : "flex-start",
+          }}
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
           keyboardShouldPersistTaps="handled"
         >

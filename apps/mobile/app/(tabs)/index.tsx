@@ -271,7 +271,7 @@ function FolderStack({ sections }: { sections: FolderSection[] }) {
           backgroundColor: t.surface,
           borderRadius: 18,
           padding: space.lg,
-          minHeight: 128,
+          minHeight: 96,
         }}
       >
         <Animated.View
@@ -303,6 +303,9 @@ export default function Home() {
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [needsModel, setNeedsModel] = useState(false);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
+  const [weekStrip, setWeekStrip] = useState<
+    { date: string; day: number; code?: string; label?: string }[]
+  >([]);
 
   const load = useCallback(async () => {
     const today = toDateString(Date.now());
@@ -314,6 +317,19 @@ export default function Home() {
     const weekEnd = Date.now() + 4 * 24 * 3600_000;
     setWeekShifts(shifts.filter((s) => s.startAt >= weekStart && s.startAt <= weekEnd));
     setRecent(shifts.filter((s) => s.startAt <= Date.now()).slice(-6).reverse());
+
+    // 이번 주 스트립 — 일요일부터 7칸.
+    const base = new Date();
+    const sunday = new Date(base.getFullYear(), base.getMonth(), base.getDate() - base.getDay());
+    setWeekStrip(
+      Array.from({ length: 7 }, (_, i) => {
+        const ds = toDateString(
+          new Date(sunday.getFullYear(), sunday.getMonth(), sunday.getDate() + i).getTime(),
+        );
+        const s = shifts.find((x) => x.date === ds);
+        return { date: ds, day: i, code: s?.code, label: s?.label };
+      }),
+    );
 
     setDueCount(dueStates(await listReviewStates(), Date.now(), 9999).length);
     setPendingCount((await pendingTranscriptions()).length);
@@ -547,6 +563,85 @@ export default function Home() {
       {/* ── 서류철: 견출지가 겹쳐 꽂힌 한 개의 서랍 ── */}
       <Enter index={0}>
         <FolderStack sections={folders} />
+      </Enter>
+
+      {/* 이번 주 — 일~토 한 줄 스트립 */}
+      <Enter index={1}>
+        <Pressable
+          accessibilityRole="button"
+          onPress={() => router.push("/duty")}
+          style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.98 : 1 }] })}
+        >
+          <Card>
+            <View
+              style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}
+            >
+              <Text style={[type.heading, { color: t.text }]}>이번 주</Text>
+              <Text style={[type.small, { color: t.textMuted }]}>듀티표 ›</Text>
+            </View>
+            <View style={{ flexDirection: "row" }}>
+              {weekStrip.map((d, i) => {
+                const isToday = d.date === today;
+                const short: Record<string, string> = {
+                  D: "D", E: "E", N: "N", OFF: "휴",
+                  ADM: "상", SPC: "스", EDU: "교", ANNUAL: "연", SICK: "병", OTHER: "기",
+                };
+                return (
+                  <View
+                    key={d.date}
+                    style={{
+                      flex: 1,
+                      alignItems: "center",
+                      gap: 4,
+                      paddingVertical: space.xs,
+                      borderRadius: radius.md,
+                      backgroundColor: isToday ? t.surfaceAlt : "transparent",
+                    }}
+                  >
+                    <Text
+                      style={[
+                        type.caption,
+                        { color: i === 0 ? t.danger : i === 6 ? t.night : t.textMuted },
+                      ]}
+                    >
+                      {WEEKDAYS_KO[i]}
+                    </Text>
+                    <Text style={[type.small, TABULAR, { color: t.text, fontWeight: "600" }]}>
+                      {Number(d.date.slice(-2))}
+                    </Text>
+                    {d.code && d.code !== "OFF" ? (
+                      <View
+                        style={{
+                          minWidth: 22,
+                          borderRadius: 5,
+                          backgroundColor: codeColor(d.code),
+                          paddingHorizontal: 4,
+                          paddingVertical: 1,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontSize: 10,
+                            lineHeight: 14,
+                            color: "#FFF",
+                            fontWeight: "700",
+                            textAlign: "center",
+                          }}
+                        >
+                          {short[d.code] ?? d.code}
+                        </Text>
+                      </View>
+                    ) : (
+                      <Text style={{ fontSize: 10, lineHeight: 16, color: t.textMuted }}>
+                        {d.code === "OFF" ? "휴" : "·"}
+                      </Text>
+                    )}
+                  </View>
+                );
+              })}
+            </View>
+          </Card>
+        </Pressable>
       </Enter>
 
       {update?.show ? (
