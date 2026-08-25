@@ -7,7 +7,9 @@ import { Body, Button, Card, Heading, Small } from "../src/components/ui";
 import { useApp } from "../src/state/AppContext";
 import { TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { setSetting } from "../src/db";
-import { searchHospitals, setWorkplacePlace, type PlaceHit } from "../src/services/geofence";
+import { searchWorkplace, setWorkplacePlace, type PlaceHit } from "../src/services/geofence";
+import { requestRecordingPermissionsAsync } from "expo-audio";
+import * as Location from "expo-location";
 
 /**
  * 초기 설정 — 근무지 → 파트 → 전사 모델 → 필수 확인.
@@ -107,6 +109,8 @@ export default function Onboarding() {
   const [model, setModel] = useState<string | null>(null);
   // 4단계 — 고지
   const [checked, setChecked] = useState<Record<string, boolean>>({});
+  const [micGranted, setMicGranted] = useState(false);
+  const [locGranted, setLocGranted] = useState(false);
   const [starting, setStarting] = useState(false);
   const allChecked = ITEMS.every((i) => checked[i.key]);
 
@@ -179,11 +183,11 @@ export default function Onboarding() {
                 tone="primary"
                 onPress={async () => {
                   try {
-                    const found = await searchHospitals(query);
-                    setHits(found);
-                    setSearchMsg(found.length === 0 ? "찾지 못했습니다. 정식 명칭으로 다시 시도해 보십시오." : null);
-                  } catch {
-                    setSearchMsg("검색에 실패했습니다. 네트워크를 확인해 주십시오.");
+                    const r = await searchWorkplace(query);
+                    setHits(r.hits);
+                    setSearchMsg(r.hits.length === 0 ? "찾지 못했습니다. 정식 명칭으로 다시 시도해 보십시오. 설정 > 공공데이터 키를 등록하면 전국 병원에서 검색됩니다." : null);
+                  } catch (e) {
+                    setSearchMsg(e instanceof Error ? e.message : "검색에 실패했습니다.");
                   }
                 }}
               />
@@ -320,6 +324,30 @@ export default function Onboarding() {
                 </Pressable>
               );
             })}
+            {/* 권한 — 여기서 미리 받아 두면 첫 녹음에서 안 막힌다 */}
+            <Card>
+              <Heading>권한 허용</Heading>
+              <Small>
+                마이크는 필수입니다. 위치는 근무지 자동 녹음을 쓸 때만 필요하고,
+                지금 건너뛰어도 설정에서 켤 수 있습니다.
+              </Small>
+              <Button
+                label={micGranted ? "✓ 마이크 허용됨" : "마이크 허용 (필수)"}
+                tone={micGranted ? "default" : "primary"}
+                onPress={async () => {
+                  const r = await requestRecordingPermissionsAsync();
+                  setMicGranted(r.granted);
+                }}
+              />
+              <Button
+                label={locGranted ? "✓ 위치 허용됨" : "위치 허용 (선택 — 근무지 자동 녹음)"}
+                onPress={async () => {
+                  const r = await Location.requestForegroundPermissionsAsync();
+                  setLocGranted(r.granted);
+                }}
+              />
+            </Card>
+
             <Button
               label={starting ? "준비하는 중" : allChecked ? "확인했습니다 — 시작" : "위 항목을 모두 확인하십시오."}
               tone="primary"

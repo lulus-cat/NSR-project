@@ -14,6 +14,8 @@ import {
 import { Badge, Body, Card, Divider, Heading, Small, HeaderScreen } from "../../src/components/ui";
 import { radius, space, type, useTheme } from "../../src/theme";
 import { enabledWardPacks, listUserTerms } from "../../src/db";
+import { searchDrug, type DrugInfo } from "../../src/services/publicdata";
+import { Button } from "../../src/components/ui";
 
 const CATEGORY_LABELS: Record<TermCategory, string> = {
   assessment: "사정",
@@ -38,6 +40,8 @@ export default function Glossary() {
   const [query, setQuery] = useState("");
   const [userTerms, setUserTerms] = useState<LexiconEntry[]>([]);
   const [packs, setPacks] = useState<WardPack[]>([]);
+  const [drugs, setDrugs] = useState<DrugInfo[] | null>(null);
+  const [drugMsg, setDrugMsg] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -195,8 +199,55 @@ export default function Glossary() {
   병동 사전에 이 용어 추가하기 →
 </Text>
               </Pressable>
+              <Divider />
+              <Button
+                label="의약품에서 찾기 (e약은요)"
+                onPress={async () => {
+                  setDrugMsg(null);
+                  setDrugs(null);
+                  try {
+                    const found = await searchDrug(query);
+                    if (found === null) {
+                      setDrugMsg("설정 > 공공데이터 키를 등록하면 식약처 의약품 정보를 검색할 수 있습니다.");
+                    } else if (found.length === 0) {
+                      setDrugMsg("의약품에서도 찾지 못했습니다. 제품명(예: 타이레놀정500밀리그람)으로 시도해 보십시오.");
+                    } else {
+                      setDrugs(found);
+                    }
+                  } catch (e) {
+                    setDrugMsg(e instanceof Error ? e.message : "의약품 검색에 실패했습니다.");
+                  }
+                }}
+              />
+              {drugMsg ? <Small muted={false}>{drugMsg}</Small> : null}
             </Card>
           ) : null}
+
+          {/* 식약처 e약은요 결과 */}
+          {drugs?.map((d) => (
+            <Card key={d.name}>
+              <Heading>{d.name}</Heading>
+              <Small>{d.company} · 식약처 e약은요</Small>
+              {d.effect ? (
+                <>
+                  <Small muted={false}>효능</Small>
+                  <Body muted>{d.effect}</Body>
+                </>
+              ) : null}
+              {d.usage ? (
+                <>
+                  <Small muted={false}>용법</Small>
+                  <Body muted>{d.usage}</Body>
+                </>
+              ) : null}
+              {d.caution ? (
+                <>
+                  <Small muted={false}>주의</Small>
+                  <Body muted>{d.caution}</Body>
+                </>
+              ) : null}
+            </Card>
+          ))}
         </>
       ) : (
         <>

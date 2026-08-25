@@ -30,12 +30,31 @@ import { redactForNetwork } from "./export";
  * 베타이고, Anthropic 은 서드파티 앱용 OAuth 자체가 없다. 그래서 양쪽 다
  * API 키 방식이다. 키는 기기 보안 저장소에만 있다.
  */
-export type LlmProvider = "anthropic" | "openai";
+export type LlmProvider = "anthropic" | "openai" | "custom";
+
+/** 내 서버(VPS 의 Ollama·vLLM·LM Studio 등 OpenAI 호환 API) 설정. */
+export interface CustomServer {
+  /** 예: http://100.x.y.z:11434/v1 (Ollama), https://내도메인/v1 */
+  baseUrl: string;
+  /** 예: qwen2.5:14b, exaone3.5:7.8b — 서버에 내려받아 둔 모델 이름 */
+  model: string;
+}
+
+const CUSTOM_SERVER_SETTING = "llm.customServer";
+
+export async function getCustomServer(): Promise<CustomServer | null> {
+  return getSetting<CustomServer | null>(CUSTOM_SERVER_SETTING, null);
+}
+
+export async function setCustomServer(server: CustomServer | null): Promise<void> {
+  await setSetting(CUSTOM_SERVER_SETTING, server);
+}
 
 const PROVIDER_SETTING = "llm.provider";
 const SECURE_KEYS: Record<LlmProvider, string> = {
   anthropic: "anthropic.apiKey",
   openai: "openai.apiKey",
+  custom: "custom.apiKey",
 };
 
 export async function getProvider(): Promise<LlmProvider> {
@@ -125,21 +144,29 @@ async function callOpenAi(input: {
   maxTokens: number;
   schema?: { name: string; schema: unknown };
 }): Promise<string> {
-  const apiKey = await getApiKey("openai");
-  if (!apiKey) {
+  // "custom" 이면 내 서버(OpenAI 호환)로 간다. Ollama 는 키가 없어도 되므로
+  // 키는 있을 때만 붙인다. 이 경로 덕에 유료 API 없이도 보조 기능이 돈다.
+  const provider = await getProvider();
+  const custom = provider === "custom" ? await getCustomServer() : null;
+  if (provider === "custom" && !custom) {
+    throw new Error("내 서버 주소가 없습니다. 설정 > 보조 기능에서 서버 주소와 모델을 입력해 주세요.");
+  }
+  const apiKey = await getApiKey(provider === "custom" ? "custom" : "openai");
+  if (!custom && !apiKey) {
     throw new Error(
       "OpenAI API 키가 설정되어 있지 않습니다. 설정 > 보조 기능에서 입력해 주세요.",
     );
   }
 
-  const res = await fetch("https://api.openai.com/v1/chat/completions", {
+  const base = custom ? custom.baseUrl.replace(/\/+$/, "") : "https://api.openai.com/v1";
+  const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${apiKey}`,
+      ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     },
     body: JSON.stringify({
-      model: OPENAI_MODEL,
+      model: custom ? custom.model : OPENAI_MODEL,
       max_completion_tokens: input.maxTokens,
       messages: [
         { role: "system", content: input.system },
@@ -195,7 +222,7 @@ export async function postEditTranscript(
   const redacted = await redactForNetwork(correctedText);
   const glossary = buildGlossaryForLLM(lexicon);
 
-  if ((await getProvider()) === "openai") {
+  if ((await getProvider()) !== "anthropic") {
     const text = await callOpenAi({
       system: `${POST_EDIT_SYSTEM}\n\n참고 용어집:\n${glossary}`,
       user: redacted.text,
@@ -277,7 +304,7 @@ export async function summarizeShift(
   const redacted = await redactForNetwork(transcriptText);
   const glossary = buildGlossaryForLLM(lexicon);
 
-  if ((await getProvider()) === "openai") {
+  if ((await getProvider()) !== "anthropic") {
     const raw = await callOpenAi({
       system: `${INSIGHT_SYSTEM}\n\n참고 용어집:\n${glossary}`,
       user: redacted.text,
@@ -337,7 +364,7 @@ export async function summarizeShift(
 /** 키가 유효한지 가볍게 확인한다. 설정 화면의 "연결 테스트" 버튼용. */
 export async function testConnection(): Promise<{ ok: boolean; message: string }> {
   try {
-    if ((await getProvider()) === "openai") {
+    if ((await getProvider()) !== "anthropic") {
       await callOpenAi({ system: "ping 에 pong 으로만 답한다.", user: "ping", maxTokens: 16 });
     } else {
       await callAnthropic({

@@ -13,17 +13,21 @@ import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../../
 import { SETTINGS_KEYS, platformCapability } from "../../src/services/scheduler";
 import { deleteAllRecordings } from "../../src/services/files";
 import {
+  hasPublicDataKey,
+  setPublicDataKey,
+} from "../../src/services/publicdata";
+import {
   clearWorkplace,
   geofenceEnabled,
   getWorkplace,
-  searchHospitals,
+  searchWorkplace,
   setGeofence,
   setWorkplaceHere,
   setWorkplacePlace,
   type PlaceHit,
   type Workplace,
 } from "../../src/services/geofence";
-import { getApiKey, getProvider, setApiKey, setProvider, testConnection, type LlmProvider } from "../../src/services/llm";
+import { getApiKey, getCustomServer, getProvider, setApiKey, setCustomServer, setProvider, testConnection, type LlmProvider } from "../../src/services/llm";
 import {
   MASKABLE_KINDS,
   loadPrivacySettings,
@@ -119,11 +123,15 @@ export default function Settings() {
   const [geoMsg, setGeoMsg] = useState<string | null>(null);
   const [hospitalQuery, setHospitalQuery] = useState("");
   const [hospitalHits, setHospitalHits] = useState<PlaceHit[]>([]);
+  const [publicKeyInput, setPublicKeyInput] = useState("");
+  const [hasPublicKey, setHasPublicKey] = useState(false);
   const [discardWithoutSelf, setDiscardWithoutSelf] = useState(true);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [llmProvider, setLlmProvider] = useState<LlmProvider>("anthropic");
+  const [serverUrl, setServerUrl] = useState("");
+  const [serverModel, setServerModel] = useState("");
   const [connectionMsg, setConnectionMsg] = useState<string | null>(null);
   const [storageMb, setStorageMb] = useState(0);
   const [cloudAsr, setCloudAsr] = useState<{ enabled: boolean; endpoint: string }>({
@@ -145,6 +153,7 @@ export default function Settings() {
     setAppLock(await getSetting<boolean>(SETTINGS_KEYS.appLock, false));
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
     setWorkplace(await getWorkplace());
+    setHasPublicKey(await hasPublicDataKey());
     setGeoOn(await geofenceEnabled());
     setDiscardWithoutSelf(await getSetting<boolean>(SETTINGS_KEYS.discardWithoutSelf, true));
     setLlmEnabled(await getSetting<boolean>(SETTINGS_KEYS.llmPostEdit, false));
@@ -152,6 +161,11 @@ export default function Settings() {
       await getSetting(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" }),
     );
     const provider = await getProvider();
+    const custom = await getCustomServer();
+    if (custom) {
+      setServerUrl(custom.baseUrl);
+      setServerModel(custom.model);
+    }
     setLlmProvider(provider);
     setHasKey((await getApiKey(provider)) !== null);
     setStorageMb(Math.round(((await totalStorageBytes()) / (1024 * 1024)) * 10) / 10);
@@ -407,11 +421,17 @@ export default function Settings() {
                 tone="primary"
                 onPress={async () => {
                   try {
-                    const hits = await searchHospitals(hospitalQuery);
-                    setHospitalHits(hits);
-                    setGeoMsg(hits.length === 0 ? "찾지 못했습니다. 정식 명칭으로 다시 시도해 보십시오." : null);
-                  } catch {
-                    setGeoMsg("검색에 실패했습니다. 네트워크를 확인해 주십시오.");
+                    const r = await searchWorkplace(hospitalQuery);
+                    setHospitalHits(r.hits);
+                    setGeoMsg(
+                      r.hits.length === 0
+                        ? r.source === "hira"
+                          ? "찾지 못했습니다. 정식 명칭(요양기관명)으로 다시 시도해 보십시오."
+                          : "찾지 못했습니다. 아래 공공데이터 키를 등록하면 전국 병원 전체에서 검색됩니다."
+                        : null,
+                    );
+                  } catch (e) {
+                    setGeoMsg(e instanceof Error ? e.message : "검색에 실패했습니다.");
                   }
                 }}
               />
@@ -431,8 +451,8 @@ export default function Settings() {
               />
             ))}
             <Small>
-              검색어만 OpenStreetMap 서버로 갑니다. 내 위치는 보내지 않습니다. 지도
-              데이터에 없는 병원이면 아래 버튼으로 병동에서 직접 지정하십시오.
+              공공데이터 키를 등록하면 심평원 전국 병원 목록에서, 없으면
+              OpenStreetMap 에서 찾습니다. 검색어만 나가고 내 위치는 보내지 않습니다.
             </Small>
             <Button
               label="지금 있는 곳을 근무지로"
@@ -651,6 +671,58 @@ export default function Settings() {
 
       {/* 전사 */}
       <Card>
+      {/* 공공데이터 */}
+      <Card>
+        <GroupHead icon="server-outline" color="#3E7BB6" title="공공데이터 키 (무료)" />
+        <Small>
+          키 하나로 두 가지가 켜집니다 — 심평원 전국 병원 검색(근무지 지정),
+          식약처 e약은요 의약품 정보(용어 탭). data.go.kr 가입 후 두 서비스에
+          &lsquo;활용신청&rsquo;하고 마이페이지의 일반 인증키(Decoding)를 붙여넣으십시오.
+          키는 이 기기에만 저장되고 요청은 정부 서버로 직접 갑니다.
+        </Small>
+        <TextInput
+          value={publicKeyInput}
+          onChangeText={setPublicKeyInput}
+          placeholder={hasPublicKey ? "키가 저장되어 있습니다" : "공공데이터포털 인증키 입력"}
+          placeholderTextColor={t.textMuted}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={{
+            color: t.text,
+            backgroundColor: t.surfaceAlt,
+            borderRadius: radius.md,
+            padding: space.md,
+            fontSize: 14,
+          }}
+        />
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="저장"
+              tone="primary"
+              onPress={async () => {
+                if (!publicKeyInput.trim()) return;
+                await setPublicDataKey(publicKeyInput.trim());
+                setPublicKeyInput("");
+                setHasPublicKey(true);
+              }}
+            />
+          </View>
+          {hasPublicKey ? (
+            <View style={{ flex: 1 }}>
+              <Button
+                label="삭제"
+                onPress={async () => {
+                  await setPublicDataKey(null);
+                  setHasPublicKey(false);
+                }}
+              />
+            </View>
+          ) : null}
+        </View>
+      </Card>
+
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
         <Small>
           
@@ -723,6 +795,7 @@ export default function Settings() {
                 [
                   ["anthropic", "Claude"],
                   ["openai", "GPT"],
+                  ["custom", "내 서버"],
                 ] as [LlmProvider, string][]
               ).map(([p, label]) => (
                 <View key={p} style={{ flex: 1 }}>
@@ -740,9 +813,57 @@ export default function Settings() {
               ))}
             </View>
             <Small>
-              
-  두 서비스 모두 API 키 방식을 사용합니다. 서드파티 앱용 OAuth 미지원으로 API 키를 직접 입력해야 합니다.
-</Small>
+              Claude·GPT 는 API 키 방식입니다. &lsquo;내 서버&rsquo;는 VPS 나 집
+              컴퓨터의 Ollama·vLLM 같은 OpenAI 호환 서버로 보냅니다 — 유료 API 없이
+              보조 기능을 쓸 수 있고, 전사본이 내 서버 밖으로 나가지 않습니다.
+            </Small>
+            {llmProvider === "custom" ? (
+              <>
+                <TextInput
+                  value={serverUrl}
+                  onChangeText={setServerUrl}
+                  placeholder="서버 주소 (예: http://100.64.0.2:11434/v1)"
+                  placeholderTextColor={t.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    color: t.text,
+                    backgroundColor: t.surfaceAlt,
+                    borderRadius: radius.md,
+                    padding: space.md,
+                    fontSize: 14,
+                  }}
+                />
+                <TextInput
+                  value={serverModel}
+                  onChangeText={setServerModel}
+                  placeholder="모델 이름 (예: qwen2.5:14b)"
+                  placeholderTextColor={t.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    color: t.text,
+                    backgroundColor: t.surfaceAlt,
+                    borderRadius: radius.md,
+                    padding: space.md,
+                    fontSize: 14,
+                  }}
+                />
+                <Button
+                  label="서버 저장"
+                  tone="primary"
+                  onPress={async () => {
+                    if (!serverUrl.trim() || !serverModel.trim()) return;
+                    await setCustomServer({ baseUrl: serverUrl.trim(), model: serverModel.trim() });
+                    setConnectionMsg("저장했습니다. 아래 연결 테스트로 확인하십시오.");
+                  }}
+                />
+                <Small>
+                  집 밖에서도 쓰려면 Tailscale 로 서버에 고정 주소를 붙이는 것이 가장
+                  쉽습니다. 키가 필요한 서버라면 아래 칸에 키를 저장하십시오.
+                </Small>
+              </>
+            ) : null}
             <TextInput
               value={apiKeyInput}
               onChangeText={setApiKeyInput}

@@ -28,6 +28,7 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { createSchedule, resolveAll, toDateString } from "@nsr/core";
 import { getSetting, listDutyEntries, setSetting } from "../db";
+import { searchHospitalsHira } from "./publicdata";
 import { currentSession, startManual, stopManual } from "./scheduler";
 
 export const GEOFENCE_TASK = "nsr-workplace-geofence";
@@ -152,6 +153,27 @@ export async function searchHospitals(query: string): Promise<PlaceHit[]> {
       latitude: Number(d.lat),
       longitude: Number(d.lon),
     }));
+}
+
+/**
+ * 병원 검색 — 공공데이터 키가 있으면 심평원(전국 병원 전수), 없으면 OSM.
+ * 반환에 어느 쪽을 썼는지 실어서 화면이 안내할 수 있게 한다.
+ */
+export async function searchWorkplace(
+  query: string,
+): Promise<{ hits: PlaceHit[]; source: "hira" | "osm" }> {
+  const hira = await searchHospitalsHira(query);
+  if (hira) {
+    return {
+      hits: hira.map((h) => ({
+        name: h.address ? `${h.name} — ${h.address}` : h.name,
+        latitude: h.latitude,
+        longitude: h.longitude,
+      })),
+      source: "hira",
+    };
+  }
+  return { hits: await searchHospitals(query), source: "osm" };
 }
 
 /** 검색 결과를 근무지로 저장한다. 반경은 병원 부지를 감안해 넉넉히 250m. */
