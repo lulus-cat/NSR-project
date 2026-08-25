@@ -4,7 +4,7 @@
   "text": "듀티",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/_layout.tsx:51"
+   "apps/mobile/app/(tabs)/_layout.tsx:50"
   ]
  },
  {
@@ -12,7 +12,7 @@
   "text": "마음",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/_layout.tsx:52",
+   "apps/mobile/app/(tabs)/_layout.tsx:51",
    "apps/mobile/app/(tabs)/care.tsx:62"
   ]
  },
@@ -21,8 +21,8 @@
   "text": "학습",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/_layout.tsx:53",
-   "apps/mobile/app/(tabs)/study.tsx:118"
+   "apps/mobile/app/(tabs)/_layout.tsx:52",
+   "apps/mobile/app/(tabs)/study.tsx:151"
   ]
  },
  {
@@ -30,7 +30,7 @@
   "text": "용어",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/_layout.tsx:54"
+   "apps/mobile/app/(tabs)/_layout.tsx:53"
   ]
  },
  {
@@ -38,13 +38,13 @@
   "text": "설정",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/_layout.tsx:55",
-   "apps/mobile/app/(tabs)/settings.tsx:187"
+   "apps/mobile/app/(tabs)/_layout.tsx:54",
+   "apps/mobile/app/(tabs)/settings.tsx:230"
   ]
  },
  {
   "id": "T006",
-  "text": "최근 근무의 체온",
+  "text": "최근 근무 체온",
   "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/care.tsx:63"
@@ -63,7 +63,8 @@
   "text": "기록 없음",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:66"
+   "apps/mobile/app/(tabs)/care.tsx:66",
+   "apps/mobile/app/(tabs)/index.tsx:204"
   ]
  },
  {
@@ -95,10 +96,10 @@
  },
  {
   "id": "T012",
-  "text": "점수보다 인용문이 중요합니다. 근무 기록에서 실제 말을 확인하세요.",
+  "text": "점수보다 인용문이 중요합니다. 근무 기록에서 실제 발언을 확인하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:82"
+   "apps/mobile/app/(tabs)/care.tsx:83"
   ]
  },
  {
@@ -106,15 +107,15 @@
   "text": "아직 기록이 없습니다",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:86"
+   "apps/mobile/app/(tabs)/care.tsx:88"
   ]
  },
  {
   "id": "T014",
-  "text": "근무를 녹음하고 전사하면, 그 근무의 환경이 체온으로 여기에 쌓입니다. 36.5°C 면 괜찮은 병동입니다.",
+  "text": "근무를 녹음하고 전사하면 근무 환경이 체온으로 기록됩니다. 36.5°C면 안정적인 병동입니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:88"
+   "apps/mobile/app/(tabs)/care.tsx:91"
   ]
  },
  {
@@ -122,7 +123,7 @@
   "text": "체온 기록",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:97"
+   "apps/mobile/app/(tabs)/care.tsx:99"
   ]
  },
  {
@@ -130,7 +131,7 @@
   "text": "36.5° 정상 · 37.0° 미열 · 37.6° 발열 · 38.6° 고열",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:142"
+   "apps/mobile/app/(tabs)/care.tsx:144"
   ]
  },
  {
@@ -138,15 +139,15 @@
   "text": "열이 계속되면",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:148"
+   "apps/mobile/app/(tabs)/care.tsx:150"
   ]
  },
  {
   "id": "T018",
-  "text": "체온이 며칠씩 37.6°C 를 넘는 병동이라면, 그건 견디는 힘의 문제가 아니라 환경의 문제입니다. 기록이 쌓이는 것 자체가 이미 대비입니다 — 날짜·상황·실제 인용문이 이 앱에 남습니다.",
+  "text": "체온이 며칠씩 37.6°C를 넘는다면 개인 버티기의 문제가 아닌 환경 문제입니다. 기록 자체가 대비입니다 — 날짜·상황·실제 인용문이 앱에 남습니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:150"
+   "apps/mobile/app/(tabs)/care.tsx:153"
   ]
  },
  {
@@ -154,15 +155,15 @@
   "text": "직장 내 괴롭힘 상담",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:156"
+   "apps/mobile/app/(tabs)/care.tsx:157"
   ]
  },
  {
   "id": "T020",
-  "text": "고용노동부 직장 내 괴롭힘 상담센터. 익명 상담이 됩니다.",
+  "text": "고용노동부 직장 내 괴롭힘 상담센터입니다. 익명 상담이 가능합니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:160"
+   "apps/mobile/app/(tabs)/care.tsx:162"
   ]
  },
  {
@@ -170,7 +171,7 @@
   "text": "정신건강 위기상담",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:163"
+   "apps/mobile/app/(tabs)/care.tsx:166"
   ]
  },
  {
@@ -178,220 +179,330 @@
   "text": "마음이 많이 힘든 날",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:169"
+   "apps/mobile/app/(tabs)/care.tsx:172"
   ]
  },
  {
   "id": "T023",
-  "text": "24시간, 전국 어디서나. 전화 한 통이면 됩니다.",
+  "text": "24시간 전국 어디서나 전화 한 통이면 연결됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/care.tsx:173"
+   "apps/mobile/app/(tabs)/care.tsx:177"
   ]
  },
  {
   "id": "T024",
-  "text": "붙여넣기를 읽지 못했습니다.",
+  "text": "데이",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:120"
+   "apps/mobile/app/(tabs)/duty.tsx:31",
+   "apps/mobile/app/(tabs)/study.tsx:54",
+   "packages/core/src/duty/types.ts:49"
   ]
  },
  {
   "id": "T025",
-  "text": "듀티표",
+  "text": "이브닝",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:156"
+   "apps/mobile/app/(tabs)/duty.tsx:31",
+   "apps/mobile/app/(tabs)/study.tsx:54",
+   "packages/core/src/duty/types.ts:59"
   ]
  },
  {
   "id": "T026",
-  "text": "등록된 근무",
+  "text": "나이트",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:157"
+   "apps/mobile/app/(tabs)/duty.tsx:31",
+   "apps/mobile/app/(tabs)/duty.tsx:431",
+   "apps/mobile/app/(tabs)/study.tsx:54",
+   "packages/core/src/duty/types.ts:69"
   ]
  },
  {
   "id": "T027",
-  "text": "${workDays}일",
-  "kind": "template",
+  "text": "오프",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:158"
+   "apps/mobile/app/(tabs)/duty.tsx:31",
+   "apps/mobile/app/(tabs)/index.tsx:123"
   ]
  },
  {
   "id": "T028",
-  "text": "오프·연차",
+  "text": "상근",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:160"
+   "apps/mobile/app/(tabs)/duty.tsx:32",
+   "packages/core/src/duty/types.ts:89"
   ]
  },
  {
   "id": "T029",
-  "text": "${entries.length - workDays}일",
-  "kind": "template",
+  "text": "스페셜",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:160"
+   "apps/mobile/app/(tabs)/duty.tsx:32",
+   "packages/core/src/duty/types.ts:100"
   ]
  },
  {
   "id": "T030",
-  "text": "전체 입력",
+  "text": "교육",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:161"
+   "apps/mobile/app/(tabs)/duty.tsx:32",
+   "packages/core/src/duty/types.ts:112"
   ]
  },
  {
   "id": "T031",
-  "text": "${entries.length}일",
-  "kind": "template",
+  "text": "연차",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:161"
+   "apps/mobile/app/(tabs)/duty.tsx:32",
+   "packages/core/src/duty/types.ts:122"
   ]
  },
  {
   "id": "T032",
-  "text": "지난달",
+  "text": "병가",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:169"
+   "apps/mobile/app/(tabs)/duty.tsx:32",
+   "packages/core/src/duty/types.ts:132"
   ]
  },
  {
   "id": "T033",
-  "text": "다음달",
+  "text": "기타",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:180"
+   "apps/mobile/app/(tabs)/duty.tsx:32",
+   "apps/mobile/app/onboarding.tsx:25",
+   "apps/mobile/app/shift/[id].tsx:39",
+   "apps/mobile/app/shift/[id].tsx:48",
+   "packages/core/src/duty/types.ts:142",
+   "packages/core/src/study/report.ts:186"
   ]
  },
  {
   "id": "T034",
-  "text": ") — 누르면 다음날로 넘어갑니다",
-  "kind": "jsx",
+  "text": "지난달",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:277"
+   "apps/mobile/app/(tabs)/duty.tsx:178"
   ]
  },
  {
   "id": "T035",
-  "text": "이 날 지우기",
+  "text": "다음달",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:307"
+   "apps/mobile/app/(tabs)/duty.tsx:192"
   ]
  },
  {
   "id": "T036",
-  "text": "근무 없음",
+  "text": "오늘로 이동",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:319"
+   "apps/mobile/app/(tabs)/duty.tsx:202"
   ]
  },
  {
   "id": "T037",
-  "text": "인계 포함 실제 체류 예상",
+  "text": "일 (",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:326"
+   "apps/mobile/app/(tabs)/duty.tsx:321"
   ]
  },
  {
   "id": "T038",
-  "text": "이 근무 기록 보기",
-  "kind": "string",
+  "text": "· 실제 체류 예상",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:330"
+   "apps/mobile/app/(tabs)/duty.tsx:328"
   ]
  },
  {
   "id": "T039",
-  "text": "듀티표 통째로 붙여넣기",
-  "kind": "string",
+  "text": "누르면 다음 날로 넘어갑니다. 한 달을 쭉 찍으세요.",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:342"
+   "apps/mobile/app/(tabs)/duty.tsx:332"
   ]
  },
  {
   "id": "T040",
-  "text": "접기",
+  "text": "근무 기록",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:343"
+   "apps/mobile/app/(tabs)/duty.tsx:364",
+   "apps/mobile/app/_layout.tsx:123"
   ]
  },
  {
   "id": "T041",
-  "text": "펼치기",
+  "text": "지우기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:343"
+   "apps/mobile/app/(tabs)/duty.tsx:371",
+   "apps/mobile/app/models.tsx:149",
+   "apps/mobile/app/models.tsx:234",
+   "apps/mobile/app/ward-dict.tsx:133",
+   "apps/mobile/app/ward-dict.tsx:334"
   ]
  },
  {
   "id": "T042",
-  "text": "`DDEENNOO`, `데데이이나나오오`, `상상상상상오오` 모두 읽습니다. 첫 글자가 시작 날짜에 대응합니다.",
+  "text": "월 근무 통계",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:348"
+   "apps/mobile/app/(tabs)/duty.tsx:380"
   ]
  },
  {
   "id": "T043",
-  "text": "시작 날짜",
+  "text": "일 근무 ·",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:351"
+   "apps/mobile/app/(tabs)/duty.tsx:382"
   ]
  },
  {
   "id": "T044",
-  "text": "적용",
-  "kind": "string",
+  "text": "시간",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:384",
-   "apps/mobile/app/ward-dict.tsx:258"
+   "apps/mobile/app/(tabs)/duty.tsx:382"
   ]
  },
  {
   "id": "T045",
-  "text": "근무 시간 설정",
+  "text": "이번 달 듀티가 아직 없습니다. 위 달력에서 찍어 주세요.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:390"
+   "apps/mobile/app/(tabs)/duty.tsx:386"
   ]
  },
  {
   "id": "T046",
-  "text": "병원마다 근무 시간이 다릅니다. 아래는 현재 적용 중인 기본값입니다. 스페셜은 병동마다 달라서 자리만 잡아 둔 값입니다.",
+  "text": "근무량 분석",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:392"
+   "apps/mobile/app/(tabs)/duty.tsx:428"
   ]
  },
  {
   "id": "T047",
-  "text": "· 인계 앞",
-  "kind": "jsx",
+  "text": "${nightCount}번",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:404"
+   "apps/mobile/app/(tabs)/duty.tsx:431"
   ]
  },
  {
   "id": "T048",
-  "text": "분 / 뒤",
-  "kind": "jsx",
+  "text": "주말 근무",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/duty.tsx:404"
+   "apps/mobile/app/(tabs)/duty.tsx:432"
   ]
  },
  {
   "id": "T049",
+  "text": "${weekendWork}번",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:432"
+  ]
+ },
+ {
+  "id": "T050",
+  "text": "최장 연속",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:433"
+  ]
+ },
+ {
+  "id": "T051",
+  "text": "${longestRun}일",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:433"
+  ]
+ },
+ {
+  "id": "T052",
+  "text": "연속",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:453"
+  ]
+ },
+ {
+  "id": "T053",
+  "text": "일 근무가 있습니다. 몸이 먼저입니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:453"
+  ]
+ },
+ {
+  "id": "T054",
+  "text": "폰 캘린더에 넣기",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:460"
+  ]
+ },
+ {
+  "id": "T055",
+  "text": "이번 달 듀티를 폰의 캘린더에 &lsquo;NSR 듀티&rsquo;로 씁니다. 구글 계정 캘린더를 쓰는 폰이면 구글 캘린더에서도 보입니다. 다시 내보내면 해당 월을 새로 씁니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:462"
+  ]
+ },
+ {
+  "id": "T056",
+  "text": "${month + 1}월 듀티 내보내기",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:467"
+  ]
+ },
+ {
+  "id": "T057",
+  "text": "근무 시간 설정",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:479"
+  ]
+ },
+ {
+  "id": "T058",
+  "text": "· 인계 앞",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:487"
+  ]
+ },
+ {
+  "id": "T059",
+  "text": "분 / 뒤",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/duty.tsx:487"
+  ]
+ },
+ {
+  "id": "T060",
   "text": "사정",
   "kind": "string",
   "where": [
@@ -399,7 +510,7 @@
   ]
  },
  {
-  "id": "T050",
+  "id": "T061",
   "text": "처치",
   "kind": "string",
   "where": [
@@ -407,7 +518,7 @@
   ]
  },
  {
-  "id": "T051",
+  "id": "T062",
   "text": "기구",
   "kind": "string",
   "where": [
@@ -415,7 +526,7 @@
   ]
  },
  {
-  "id": "T052",
+  "id": "T063",
   "text": "투약",
   "kind": "string",
   "where": [
@@ -423,7 +534,7 @@
   ]
  },
  {
-  "id": "T053",
+  "id": "T064",
   "text": "검사",
   "kind": "string",
   "where": [
@@ -431,7 +542,7 @@
   ]
  },
  {
-  "id": "T054",
+  "id": "T065",
   "text": "상태",
   "kind": "string",
   "where": [
@@ -439,7 +550,7 @@
   ]
  },
  {
-  "id": "T055",
+  "id": "T066",
   "text": "응급",
   "kind": "string",
   "where": [
@@ -447,7 +558,7 @@
   ]
  },
  {
-  "id": "T056",
+  "id": "T067",
   "text": "기록",
   "kind": "string",
   "where": [
@@ -455,7 +566,7 @@
   ]
  },
  {
-  "id": "T057",
+  "id": "T068",
   "text": "업무",
   "kind": "string",
   "where": [
@@ -463,7 +574,7 @@
   ]
  },
  {
-  "id": "T058",
+  "id": "T069",
   "text": "역할",
   "kind": "string",
   "where": [
@@ -471,7 +582,7 @@
   ]
  },
  {
-  "id": "T059",
+  "id": "T070",
   "text": "용어와 자료",
   "kind": "string",
   "where": [
@@ -479,7 +590,7 @@
   ]
  },
  {
-  "id": "T060",
+  "id": "T071",
   "text": "용어 검색 (예: 폴리, 엔피오, 욕창)",
   "kind": "string",
   "where": [
@@ -487,7 +598,7 @@
   ]
  },
  {
-  "id": "T061",
+  "id": "T072",
   "text": "자료 검색",
   "kind": "string",
   "where": [
@@ -495,7 +606,7 @@
   ]
  },
  {
-  "id": "T062",
+  "id": "T073",
   "text": "용어·은어",
   "kind": "string",
   "where": [
@@ -503,7 +614,7 @@
   ]
  },
  {
-  "id": "T063",
+  "id": "T074",
   "text": "공식 자료",
   "kind": "string",
   "where": [
@@ -511,1539 +622,1592 @@
   ]
  },
  {
-  "id": "T064",
-  "text": "검색은 발음으로도 됩니다. \"카데타\"라고 쳐도 \"카테터\"가 나옵니다.",
+  "id": "T075",
+  "text": "발음으로도 검색할 수 있습니다. \"카데타\"를 입력해도 \"카테터\"가 검색됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:113"
+   "apps/mobile/app/(tabs)/glossary.tsx:114"
   ]
  },
  {
-  "id": "T065",
+  "id": "T076",
   "text": "은어",
   "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:143"
-  ]
- },
- {
-  "id": "T066",
-  "text": "기록에는 &ldquo;",
-  "kind": "jsx",
   "where": [
    "apps/mobile/app/(tabs)/glossary.tsx:144"
   ]
  },
  {
-  "id": "T067",
-  "text": "자주 놓치는 지점",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:153"
-  ]
- },
- {
-  "id": "T068",
-  "text": "이렇게도 부릅니다:",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:158"
-  ]
- },
- {
-  "id": "T069",
-  "text": "근거 자료",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:162"
-  ]
- },
- {
-  "id": "T070",
-  "text": "찾는 말이 없습니다. 병동마다 쓰는 말이 다릅니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:185"
-  ]
- },
- {
-  "id": "T071",
-  "text": "병동 사전에 이 말을 담으러 가기 →",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:192"
-  ]
- },
- {
-  "id": "T072",
-  "text": "검색 상단에 뜨는 블로그 대신 여기서 시작하세요. 지침 본문은 각 기관에 저작권이 있어 앱은 링크만 보관합니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:201"
-  ]
- },
- {
-  "id": "T073",
-  "text": "기관 계정",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:221"
-  ]
- },
- {
-  "id": "T074",
-  "text": "유료",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:221"
-  ]
- },
- {
-  "id": "T075",
-  "text": "주의",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/glossary.tsx:228",
-   "packages/core/src/taeum/score.ts:81"
-  ]
- },
- {
-  "id": "T076",
-  "text": "오늘 밤도 무사히",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:54"
-  ]
- },
- {
   "id": "T077",
-  "text": "좋은 아침입니다",
-  "kind": "string",
+  "text": "기록에는 &ldquo;",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:55"
+   "apps/mobile/app/(tabs)/glossary.tsx:145"
   ]
  },
  {
   "id": "T078",
-  "text": "좋은 오후입니다",
-  "kind": "string",
+  "text": "자주 놓치는 지점",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:56"
+   "apps/mobile/app/(tabs)/glossary.tsx:154"
   ]
  },
  {
   "id": "T079",
+  "text": "이렇게도 부릅니다:",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/glossary.tsx:159"
+  ]
+ },
+ {
+  "id": "T080",
+  "text": "근거 자료",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/glossary.tsx:163"
+  ]
+ },
+ {
+  "id": "T081",
+  "text": "검색 결과가 없습니다. 병동마다 용어가 다를 수 있습니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/glossary.tsx:187"
+  ]
+ },
+ {
+  "id": "T082",
+  "text": "병동 사전에 이 용어 추가하기 →",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/glossary.tsx:195"
+  ]
+ },
+ {
+  "id": "T083",
+  "text": "포털 검색 블로그 대신 여기서 확인하십시오. 지침 본문 저작권 문제로 앱에는 링크만 저장됩니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/glossary.tsx:205"
+  ]
+ },
+ {
+  "id": "T084",
+  "text": "기관 계정",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/glossary.tsx:224"
+  ]
+ },
+ {
+  "id": "T085",
+  "text": "유료",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/glossary.tsx:224"
+  ]
+ },
+ {
+  "id": "T086",
+  "text": "주의",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/glossary.tsx:231",
+   "packages/core/src/taeum/score.ts:81"
+  ]
+ },
+ {
+  "id": "T087",
+  "text": "오늘 밤도 무사히",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:47"
+  ]
+ },
+ {
+  "id": "T088",
+  "text": "좋은 아침입니다",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:48"
+  ]
+ },
+ {
+  "id": "T089",
+  "text": "좋은 오후입니다",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:49"
+  ]
+ },
+ {
+  "id": "T090",
   "text": "좋은 저녁입니다",
   "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:50"
+  ]
+ },
+ {
+  "id": "T091",
+  "text": "고요한 밤입니다",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:51"
+  ]
+ },
+ {
+  "id": "T092",
+  "text": "${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAYS_KO[now.getDay()]}요일",
+  "kind": "template",
   "where": [
    "apps/mobile/app/(tabs)/index.tsx:57"
   ]
  },
  {
-  "id": "T080",
-  "text": "고요한 밤입니다",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:58"
-  ]
- },
- {
-  "id": "T081",
-  "text": "${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAYS_KO[now.getDay()]}요일",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:64"
-  ]
- },
- {
-  "id": "T082",
+  "id": "T093",
   "text": "${koreanDate(now)}${todayShift ? ` · ${todayShift.label} 근무` : \" · 근무 없음\"}",
   "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:129"
+   "apps/mobile/app/(tabs)/index.tsx:121"
   ]
  },
  {
-  "id": "T083",
+  "id": "T094",
   "text": "· ${todayShift.label} 근무",
   "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:129"
+   "apps/mobile/app/(tabs)/index.tsx:121"
   ]
  },
  {
-  "id": "T084",
+  "id": "T095",
   "text": "· 근무 없음",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:129"
+   "apps/mobile/app/(tabs)/index.tsx:121"
   ]
  },
  {
-  "id": "T085",
+  "id": "T096",
   "text": "오늘",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:130"
+   "apps/mobile/app/(tabs)/index.tsx:122"
   ]
  },
  {
-  "id": "T086",
-  "text": "오프",
+  "id": "T097",
+  "text": "녹음 정지",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:131"
+   "apps/mobile/app/(tabs)/index.tsx:127"
   ]
  },
  {
-  "id": "T087",
+  "id": "T098",
+  "text": "녹음 시작",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:127"
+  ]
+ },
+ {
+  "id": "T099",
   "text": "이번 주 근무",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:133"
-  ]
- },
- {
-  "id": "T088",
-  "text": "${stats.onSiteHours}시간",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:133"
-  ]
- },
- {
-  "id": "T089",
-  "text": "근무표 밖",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:135"
-  ]
- },
- {
-  "id": "T090",
-  "text": "${stats.offTheBooksHours}시간",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:136"
-  ]
- },
- {
-  "id": "T091",
-  "text": "주 40시간 초과",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:140"
-  ]
- },
- {
-  "id": "T092",
-  "text": "${stats.overtimeHours}시간",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:141"
-  ]
- },
- {
-  "id": "T093",
-  "text": "최근 근무 체온",
   "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/index.tsx:146"
   ]
  },
  {
-  "id": "T094",
-  "text": "설정 필요",
+  "id": "T100",
+  "text": "${stats.onSiteHours}시간",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:146"
+  ]
+ },
+ {
+  "id": "T101",
+  "text": "주 40시간 초과",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:161"
+   "apps/mobile/app/(tabs)/index.tsx:148"
   ]
  },
  {
-  "id": "T095",
-  "text": "전사 모델을 받아야 합니다",
+  "id": "T102",
+  "text": "${stats.overtimeHours}시간",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:149"
+  ]
+ },
+ {
+  "id": "T103",
+  "text": "새 버전이 출시되었습니다",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:162"
+   "apps/mobile/app/(tabs)/index.tsx:158"
   ]
  },
  {
-  "id": "T096",
-  "text": "녹음은 지금도 되지만, 모델이 없으면 글자로 옮기지 못합니다. Wi-Fi 에서 한 번만 받으면 됩니다.",
-  "kind": "jsx",
+  "id": "T104",
+  "text": "설정에서 받기",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:160"
+  ]
+ },
+ {
+  "id": "T105",
+  "text": "근무 후 브리핑",
+  "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/index.tsx:165"
   ]
  },
  {
-  "id": "T097",
-  "text": "모델 받으러 가기",
+  "id": "T106",
+  "text": "오늘의 서류",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:169"
+   "apps/mobile/app/(tabs)/index.tsx:165"
   ]
  },
  {
-  "id": "T098",
-  "text": "새 판이 나왔습니다",
+  "id": "T107",
+  "text": "기록 열기",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:170"
+  ]
+ },
+ {
+  "id": "T108",
+  "text": "실제 체류 ${formatClock(todayShift.onSiteStartAt)}~",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/index.tsx:170"
+  ]
+ },
+ {
+  "id": "T109",
+  "text": "오늘의 오버타임",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:179"
+   "apps/mobile/app/(tabs)/index.tsx:181"
   ]
  },
  {
-  "id": "T099",
-  "text": "설정에서 받기",
-  "kind": "string",
+  "id": "T110",
+  "text": "+${overtimeToday}시간",
+  "kind": "template",
   "where": [
    "apps/mobile/app/(tabs)/index.tsx:184"
   ]
  },
  {
-  "id": "T100",
-  "text": "녹음 중",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:199"
-  ]
- },
- {
-  "id": "T101",
-  "text": "녹음 대기",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:199"
-  ]
- },
- {
-  "id": "T102",
-  "text": "다음 예정:",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:209"
-  ]
- },
- {
-  "id": "T103",
-  "text": "시작",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:210"
-  ]
- },
- {
-  "id": "T104",
-  "text": "예정된 근무가 없습니다. 듀티표를 입력해 주세요.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:215"
-  ]
- },
- {
-  "id": "T105",
-  "text": "자동 녹음이 꺼져 있습니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:216"
-  ]
- },
- {
-  "id": "T106",
-  "text": "녹음 정지",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:228"
-  ]
- },
- {
-  "id": "T107",
-  "text": "지금 녹음 시작",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:239"
-  ]
- },
- {
-  "id": "T108",
-  "text": "출근 전 브리핑",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:254"
-  ]
- },
- {
-  "id": "T109",
-  "text": "실제 체류 ${formatClock(todayShift.onSiteStartAt)}~",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:259"
-  ]
- },
- {
-  "id": "T110",
-  "text": "오늘 근무 없음",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/index.tsx:266"
-  ]
- },
- {
   "id": "T111",
-  "text": "듀티표 입력",
+  "text": "없음",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:266"
+   "apps/mobile/app/(tabs)/index.tsx:184",
+   "apps/mobile/app/(tabs)/index.tsx:226"
   ]
  },
  {
   "id": "T112",
-  "text": "복습할 카드",
-  "kind": "string",
+  "text": "불타는 지수",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:271"
+   "apps/mobile/app/(tabs)/index.tsx:201"
   ]
  },
  {
   "id": "T113",
-  "text": "${dueCount}장",
-  "kind": "template",
+  "text": "전사할 녹음",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:272"
+   "apps/mobile/app/(tabs)/index.tsx:213"
   ]
  },
  {
   "id": "T114",
-  "text": "없음",
-  "kind": "string",
+  "text": "${pendingCount}건",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:272"
+   "apps/mobile/app/(tabs)/index.tsx:214"
   ]
  },
  {
   "id": "T115",
-  "text": "지난 근무 체온",
+  "text": "복습할 카드",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:279"
+   "apps/mobile/app/(tabs)/index.tsx:225"
   ]
  },
  {
   "id": "T116",
-  "text": "병동 사전",
-  "kind": "string",
+  "text": "${dueCount}장",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:290",
-   "apps/mobile/app/_layout.tsx:55",
-   "apps/mobile/app/ward-dict.tsx:149"
+   "apps/mobile/app/(tabs)/index.tsx:226"
   ]
  },
  {
   "id": "T117",
-  "text": "우리 병동 말",
+  "text": "근로 경고",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/index.tsx:291"
+   "apps/mobile/app/(tabs)/index.tsx:233"
   ]
  },
  {
   "id": "T118",
-  "text": "확인 중",
+  "text": "병동 사전",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:97"
+   "apps/mobile/app/(tabs)/index.tsx:246",
+   "apps/mobile/app/_layout.tsx:121",
+   "apps/mobile/app/ward-dict.tsx:149"
   ]
  },
  {
   "id": "T119",
-  "text": "받아 둔 모델 없음",
+  "text": "우리 병동 말",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:122"
+   "apps/mobile/app/(tabs)/index.tsx:246"
   ]
  },
  {
   "id": "T120",
-  "text": "${active.model.name} · 받아 둔 것 ${installed.length}개",
-  "kind": "template",
+  "text": "확인 중",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:123"
+   "apps/mobile/app/(tabs)/settings.tsx:139"
   ]
  },
  {
   "id": "T121",
-  "text": "고른 모델 미설치 · 받아 둔 것 ${installed.length}개",
-  "kind": "template",
+  "text": "설치된 모델 없음",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:124"
+   "apps/mobile/app/(tabs)/settings.tsx:164"
   ]
  },
  {
   "id": "T122",
-  "text": "모든 데이터를 지웁니다",
-  "kind": "string",
+  "text": "${active.model.name} · 보유 ${installed.length}개",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:153"
+   "apps/mobile/app/(tabs)/settings.tsx:165"
   ]
  },
  {
   "id": "T123",
-  "text": "녹음 파일, 전사본, 학습카드, 근무 기록이 전부 삭제됩니다. 되돌릴 수 없습니다.",
-  "kind": "string",
+  "text": "선택 모델 미설치 · 보유 ${installed.length}개",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:154"
+   "apps/mobile/app/(tabs)/settings.tsx:166"
   ]
  },
  {
   "id": "T124",
-  "text": "취소",
+  "text": "모든 데이터를 지웁니다",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:156",
-   "apps/mobile/app/(tabs)/settings.tsx:419",
-   "apps/mobile/app/models.tsx:128",
-   "apps/mobile/app/models.tsx:215",
-   "apps/mobile/app/models.tsx:232",
-   "apps/mobile/app/models.tsx:419",
-   "apps/mobile/app/shift/[id].tsx:586",
-   "apps/mobile/app/ward-dict.tsx:131",
-   "apps/mobile/app/ward-dict.tsx:229",
-   "apps/mobile/src/state/AppContext.tsx:93"
+   "apps/mobile/app/(tabs)/settings.tsx:195"
   ]
  },
  {
   "id": "T125",
-  "text": "전부 삭제",
+  "text": "녹음 파일, 전사본, 학습 카드, 근무 기록이 모두 삭제되며 복구할 수 없습니다.",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:158"
+   "apps/mobile/app/(tabs)/settings.tsx:196"
   ]
  },
  {
   "id": "T126",
-  "text": "저장된 녹음",
+  "text": "취소",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:188"
+   "apps/mobile/app/(tabs)/settings.tsx:198",
+   "apps/mobile/app/(tabs)/settings.tsx:527",
+   "apps/mobile/app/models.tsx:128",
+   "apps/mobile/app/models.tsx:215",
+   "apps/mobile/app/models.tsx:232",
+   "apps/mobile/app/models.tsx:426",
+   "apps/mobile/app/shift/[id].tsx:601",
+   "apps/mobile/app/ward-dict.tsx:131",
+   "apps/mobile/app/ward-dict.tsx:231",
+   "apps/mobile/src/state/AppContext.tsx:93"
   ]
  },
  {
   "id": "T127",
-  "text": "보관 한도",
+  "text": "전부 삭제",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:191"
+   "apps/mobile/app/(tabs)/settings.tsx:200"
   ]
  },
  {
   "id": "T128",
-  "text": "보관 기간",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:192",
-   "apps/mobile/app/(tabs)/settings.tsx:299"
-  ]
- },
- {
-  "id": "T129",
-  "text": "${policy.retentionDays}일",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:192",
-   "apps/mobile/app/(tabs)/settings.tsx:299"
-  ]
- },
- {
-  "id": "T130",
-  "text": "앱 버전",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:198"
-  ]
- },
- {
-  "id": "T131",
-  "text": "알파",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:199"
-  ]
- },
- {
-  "id": "T132",
-  "text": "지금 ${version}",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:201"
-  ]
- },
- {
-  "id": "T133",
-  "text": "개발 중 실행",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:201"
-  ]
- },
- {
-  "id": "T134",
-  "text": "스토어가 아니라 APK 로 나눠 쓰는 앱이라, 새 판이 나오면 여기서 알려 드립니다. 받은 뒤 기존 앱 위에 덮어 설치하면 녹음과 전사본이 그대로 남습니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:203"
-  ]
- },
- {
-  "id": "T135",
-  "text": "내려받을 크기 약",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:215"
-  ]
- },
- {
-  "id": "T136",
-  "text": "받으러 가기",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:220"
-  ]
- },
- {
-  "id": "T137",
-  "text": "받는 곳을 열지 못했습니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:225"
-  ]
- },
- {
-  "id": "T138",
-  "text": "이 판 건너뛰기",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:231"
-  ]
- },
- {
-  "id": "T139",
-  "text": "건너뛰기로 해 두었습니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:235"
-  ]
- },
- {
-  "id": "T140",
-  "text": "지금 확인",
+  "text": "근무지 미지정",
   "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:244"
   ]
  },
  {
-  "id": "T141",
-  "text": "새 판이 나오면 알려주기",
+  "id": "T129",
+  "text": "저장된 녹음",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:246"
+  ]
+ },
+ {
+  "id": "T130",
+  "text": "MB · 보관",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:246"
+  ]
+ },
+ {
+  "id": "T131",
+  "text": "앱 버전",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:250"
+   "apps/mobile/app/(tabs)/settings.tsx:253"
+  ]
+ },
+ {
+  "id": "T132",
+  "text": "알파",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:253"
+  ]
+ },
+ {
+  "id": "T133",
+  "text": "지금 ${version}",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:254"
+  ]
+ },
+ {
+  "id": "T134",
+  "text": "개발 중 실행",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:254"
+  ]
+ },
+ {
+  "id": "T135",
+  "text": "스토어가 아닌 APK 설치 앱이므로 새 버전이 나오면 알려 드립니다. 다운로드 후 덮어 설치하면 기존 기록이 유지됩니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:257"
+  ]
+ },
+ {
+  "id": "T136",
+  "text": "다운로드 크기 약",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:269"
+  ]
+ },
+ {
+  "id": "T137",
+  "text": "받으러 가기",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:275"
+  ]
+ },
+ {
+  "id": "T138",
+  "text": "다운로드 페이지를 열지 못했습니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:280"
+  ]
+ },
+ {
+  "id": "T139",
+  "text": "이 버전 건너뛰기",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:286"
+  ]
+ },
+ {
+  "id": "T140",
+  "text": "이번 버전을 건너뜁니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:290"
+  ]
+ },
+ {
+  "id": "T141",
+  "text": "지금 확인",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:299"
   ]
  },
  {
   "id": "T142",
-  "text": "하루에 몇 번만 확인합니다. 배터리와 데이터를 거의 쓰지 않습니다.",
+  "text": "새 버전 알림 받기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:251"
+   "apps/mobile/app/(tabs)/settings.tsx:305"
   ]
  },
  {
   "id": "T143",
-  "text": "릴리스: github.com/",
-  "kind": "jsx",
+  "text": "하루 몇 회만 확인하여 배터리와 데이터를 거의 사용하지 않습니다.",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:258"
+   "apps/mobile/app/(tabs)/settings.tsx:306"
   ]
  },
  {
   "id": "T144",
-  "text": "자동 녹음",
+  "text": "릴리스: github.com/",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:263"
+   "apps/mobile/app/(tabs)/settings.tsx:313"
   ]
  },
  {
   "id": "T145",
-  "text": "듀티표에 따라 자동 녹음",
+  "text": "자동 녹음",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:265"
+   "apps/mobile/app/(tabs)/settings.tsx:318"
   ]
  },
  {
   "id": "T146",
-  "text": "녹음할 근무",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:271"
-  ]
- },
- {
-  "id": "T147",
-  "text": "근무 시작 전 녹음 시작",
+  "text": "듀티표에 따라 자동 녹음",
   "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:287"
-  ]
- },
- {
-  "id": "T148",
-  "text": "${policy.leadMinutes}분 전",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:288"
-  ]
- },
- {
-  "id": "T149",
-  "text": "인계는 근무표 시각보다 이르게 시작합니다. 이 값이 인계 시간보다 짧으면 가장 중요한 부분을 놓칩니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:291"
-  ]
- },
- {
-  "id": "T150",
-  "text": "파일 분할",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:294"
-  ]
- },
- {
-  "id": "T151",
-  "text": "${policy.segmentMinutes}분",
-  "kind": "template",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:294"
-  ]
- },
- {
-  "id": "T152",
-  "text": "8시간을 한 파일에 담지 않습니다. 손상 시 전부 잃고, 근무 중 전사도 못 합니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:296"
-  ]
- },
- {
-  "id": "T153",
-  "text": "기간이 지난 녹음은 자동으로 지워집니다. 오래된 녹음을 쌓아두는 것이 가장 큰 위험입니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:301"
-  ]
- },
- {
-  "id": "T154",
-  "text": "현재 사용 중",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:304"
-  ]
- },
- {
-  "id": "T155",
-  "text": "근무지에서 자동 녹음",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:309"
-  ]
- },
- {
-  "id": "T156",
-  "text": "병원 반경에 들어오면 녹음을 켜고, 나가면 끕니다. 근무표가 모르는 출근 전·퇴근 후 오버타임까지 실제 있었던 시간이 그대로 덮입니다. 근무일(오늘·어제 나이트)에만 켜지므로 오프 날 병원 근처를 지나가도 녹음되지 않습니다. 위치는 기기 밖으로 나가지 않습니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:311"
-  ]
- },
- {
-  "id": "T157",
-  "text": "근무지",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:319",
-   "apps/mobile/src/services/geofence.ts:112"
-  ]
- },
- {
-  "id": "T158",
-  "text": "지정됨 · 반경 ${workplace.radius}m",
-  "kind": "template",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:320"
   ]
  },
  {
-  "id": "T159",
-  "text": "지금 서 있는 곳을 근무지로 지정",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:329"
-  ]
- },
- {
-  "id": "T160",
-  "text": "위치 권한이 없어 지정하지 못했습니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:337"
-  ]
- },
- {
-  "id": "T161",
-  "text": "지정된 항목을 누르면 해제됩니다. 병동에서 누르는 것이 가장 정확합니다.",
+  "id": "T147",
+  "text": "녹음할 근무",
   "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:326"
+  ]
+ },
+ {
+  "id": "T148",
+  "text": "근무 시작 전 녹음 시작",
+  "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:342"
   ]
  },
  {
-  "id": "T162",
-  "text": "지오펜스 자동 녹음",
-  "kind": "string",
+  "id": "T149",
+  "text": "${policy.leadMinutes}분 전",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:344"
+   "apps/mobile/app/(tabs)/settings.tsx:343"
   ]
  },
  {
-  "id": "T163",
-  "text": "위치를 '항상 허용'으로 두어야 합니다. 안드로이드 14부터는 백그라운드 마이크 시작이 막힐 수 있어, 그때는 앱을 여는 순간 이어받습니다.",
-  "kind": "string",
+  "id": "T150",
+  "text": "인계는 근무표 시각보다 일찍 시작합니다. 설정 시간이 인계보다 짧으면 주요 내용을 놓칠 수 있습니다.",
+  "kind": "jsx",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:347"
   ]
  },
  {
-  "id": "T164",
-  "text": "위치를 '항상'으로 허용해야 합니다.",
+  "id": "T151",
+  "text": "파일 분할",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:348"
+   "apps/mobile/app/(tabs)/settings.tsx:350"
   ]
  },
  {
-  "id": "T165",
-  "text": "조용히 동작",
+  "id": "T152",
+  "text": "${policy.segmentMinutes}분",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:350"
+  ]
+ },
+ {
+  "id": "T153",
+  "text": "8시간을 한 파일로 저장하지 않습니다. 파일 손실을 막고 근무 중 전사를 가능하게 합니다.",
   "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:353"
+  ]
+ },
+ {
+  "id": "T154",
+  "text": "보관 기간",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:356"
+  ]
+ },
+ {
+  "id": "T155",
+  "text": "${policy.retentionDays}일",
+  "kind": "template",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:356"
+  ]
+ },
+ {
+  "id": "T156",
+  "text": "보관 기간이 지난 녹음은 자동 삭제됩니다. 오래된 녹음 보관은 보안상 위험합니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:359"
+  ]
+ },
+ {
+  "id": "T157",
+  "text": "현재 사용 중",
+  "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:362"
   ]
  },
  {
-  "id": "T166",
-  "text": "시작·종료 소리와 진동 없음",
+  "id": "T158",
+  "text": "근무지에서 자동 녹음",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:364"
+   "apps/mobile/app/(tabs)/settings.tsx:367"
   ]
  },
  {
-  "id": "T167",
-  "text": "앱 알림 표시 안 함",
-  "kind": "string",
+  "id": "T159",
+  "text": "병원 반경 진입 시 녹음을 시작하고 벗어나면 종료합니다. 출퇴근 전후 오버타임까지 실제 체류 시간을 기록합니다. 근무일에만 작동하여 오프에는 녹음되지 않으며 위치 정보는 외부로 유출되지 않습니다.",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:369"
+   "apps/mobile/app/(tabs)/settings.tsx:370"
   ]
  },
  {
-  "id": "T168",
-  "text": "끌 수 없는 것",
+  "id": "T160",
+  "text": "근무지",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:374"
+   "apps/mobile/app/(tabs)/settings.tsx:376",
+   "apps/mobile/app/onboarding.tsx:92",
+   "apps/mobile/src/services/geofence.ts:112"
   ]
  },
  {
-  "id": "T169",
-  "text": "iOS의 주황색 마이크 표시와 제어센터의 사용 기록은 OS가 강제하는 것이라 어떤 앱도 끌 수 없습니다.",
-  "kind": "string",
+  "id": "T161",
+  "text": "반경 ${workplace.radius}m · 해제",
+  "kind": "template",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:377"
   ]
  },
  {
-  "id": "T170",
-  "text": "Android의 마이크 인디케이터와 개인정보 대시보드 기록은 OS가 강제합니다. 또 백그라운드 녹음에는 알림 하나가 반드시 떠 있어야 하며, 이 알림은 소리·진동 없이 목록 안쪽에만 표시되도록 설정되어 있습니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:378"
-  ]
- },
- {
-  "id": "T171",
-  "text": "연속 세션 유지 (배터리 소모 큼)",
-  "kind": "string",
+  "id": "T162",
+  "text": "누르면 해제됩니다.",
+  "kind": "jsx",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:384"
   ]
  },
  {
-  "id": "T172",
-  "text": "근무 사이에도 오디오 세션을 놓지 않아 앱을 열지 않아도 자동으로 시작됩니다. 배터리가 빠르게 답니다.",
+  "id": "T163",
+  "text": "병원 이름으로 찾기",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:388"
+  ]
+ },
+ {
+  "id": "T164",
+  "text": "예: 서울아산병원",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:385"
+   "apps/mobile/app/(tabs)/settings.tsx:393"
+  ]
+ },
+ {
+  "id": "T165",
+  "text": "검색",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:406",
+   "apps/mobile/app/onboarding.tsx:178"
+  ]
+ },
+ {
+  "id": "T166",
+  "text": "찾지 못했습니다. 정식 명칭으로 다시 시도해 보십시오.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:412",
+   "apps/mobile/app/onboarding.tsx:184"
+  ]
+ },
+ {
+  "id": "T167",
+  "text": "검색에 실패했습니다. 네트워크를 확인해 주십시오.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:414",
+   "apps/mobile/app/onboarding.tsx:186"
+  ]
+ },
+ {
+  "id": "T168",
+  "text": "이곳으로",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:423"
+  ]
+ },
+ {
+  "id": "T169",
+  "text": "검색어만 OpenStreetMap 서버로 갑니다. 내 위치는 보내지 않습니다. 지도 데이터에 없는 병원이면 아래 버튼으로 병동에서 직접 지정하십시오.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:434"
+  ]
+ },
+ {
+  "id": "T170",
+  "text": "지금 있는 곳을 근무지로",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:438"
+  ]
+ },
+ {
+  "id": "T171",
+  "text": "위치 권한이 없어 지정하지 못했습니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:445"
+  ]
+ },
+ {
+  "id": "T172",
+  "text": "지오펜스 자동 녹음",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:452"
   ]
  },
  {
   "id": "T173",
-  "text": "개인정보",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:398"
-  ]
- },
- {
-  "id": "T174",
-  "text": "앱 잠금",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:400"
-  ]
- },
- {
-  "id": "T175",
-  "text": "열 때마다 생체인증을 요구합니다. 녹음에는 환자 정보가 포함될 수 있습니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:401"
-  ]
- },
- {
-  "id": "T176",
-  "text": "본인 음성이 없는 구간 자동 폐기",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:410"
-  ]
- },
- {
-  "id": "T177",
-  "text": "통신비밀보호법은 내가 참여하지 않은 타인간 대화의 녹음을 금지합니다. 이 설정을 끄면 그 위험을 본인이 지게 됩니다. 켜두시는 것을 강하게 권합니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:411"
-  ]
- },
- {
-  "id": "T178",
-  "text": "정말 끄시겠습니까",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:416"
-  ]
- },
- {
-  "id": "T179",
-  "text": "내가 없는 자리에서 남들끼리 나눈 대화가 녹음되면 통신비밀보호법 위반이며, 벌금형 없이 1년 이상의 징역형 대상입니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:417"
-  ]
- },
- {
-  "id": "T180",
-  "text": "그래도 끄기",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:421"
-  ]
- },
- {
-  "id": "T181",
-  "text": "환자 정보 가리기",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:440"
-  ]
- },
- {
-  "id": "T182",
-  "text": "전사본이 기기 밖으로 나갈 때 — 보고서를 내보내거나 공유할 때, 보조 기능으로 보낼 때 — 이름·전화번호·등록번호를 자동으로 가립니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:442"
-  ]
- },
- {
-  "id": "T183",
-  "text": "저장할 때는 가리지 않습니다",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:446"
-  ]
- },
- {
-  "id": "T184",
-  "text": "전사본은 증거입니다. 태움 신고나 노동위원회 절차에서 쓰일 수 있고, 그때 누구에 대한 이야기였는지가 통째로 지워져 있으면 증거로서 값이 떨어집니다. 그래서 원본은 그대로 두고 나갈 때만 가립니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:448"
-  ]
- },
- {
-  "id": "T185",
-  "text": "내보낼 때 가리기",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:454"
-  ]
- },
- {
-  "id": "T186",
-  "text": "꺼도 무엇이 들어 있는지는 내보내기 전에 알려 드립니다.",
+  "text": "위치 권한을 '항상 허용'으로 설정해야 합니다. Android 14 이상에서는 백그라운드 녹음 제한으로 앱 실행 시 시작될 수 있습니다.",
   "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:455"
   ]
  },
  {
-  "id": "T187",
-  "text": "무엇을 가릴지",
-  "kind": "jsx",
+  "id": "T174",
+  "text": "위치 권한을 '항상 허용'으로 변경해야 합니다.",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:462"
+   "apps/mobile/app/(tabs)/settings.tsx:456"
   ]
  },
  {
-  "id": "T188",
-  "text": "반드시 가릴 말",
-  "kind": "jsx",
+  "id": "T175",
+  "text": "조용히 동작",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:470"
+  ]
+ },
+ {
+  "id": "T176",
+  "text": "시작·종료 소리와 진동 없음",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:472"
+  ]
+ },
+ {
+  "id": "T177",
+  "text": "앱 알림 표시 안 함",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:477"
+  ]
+ },
+ {
+  "id": "T178",
+  "text": "끌 수 없는 것",
+  "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:482"
   ]
  },
  {
-  "id": "T189",
-  "text": "자동으로는 못 잡는 이름이 있습니다. 호칭 없이 부르는 이름(&ldquo;영희야&rdquo;)이 특히 그렇습니다. 여기 적어 두면 항상 가립니다.",
-  "kind": "jsx",
+  "id": "T179",
+  "text": "iOS 주황색 마이크 표시와 제어센터 기록은 OS 정책상 임의로 끌 수 없습니다.",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:484"
+   "apps/mobile/app/(tabs)/settings.tsx:485"
+  ]
+ },
+ {
+  "id": "T180",
+  "text": "Android 마이크 표시와 개인정보 기록은 OS 정책입니다. 백그라운드 녹음 시 필수 알림이 발생하며, 소리·진동 없이 무음으로 표시됩니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:486"
+  ]
+ },
+ {
+  "id": "T181",
+  "text": "연속 세션 유지 (배터리 소모 큼)",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:492"
+  ]
+ },
+ {
+  "id": "T182",
+  "text": "오디오 세션을 계속 유지하여 앱을 열지 않아도 녹음이 시작됩니다. 배터리 소모가 큽니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:493"
+  ]
+ },
+ {
+  "id": "T183",
+  "text": "개인정보",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:506"
+  ]
+ },
+ {
+  "id": "T184",
+  "text": "앱 잠금",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:508"
+  ]
+ },
+ {
+  "id": "T185",
+  "text": "앱 실행 시 생체인증을 확인합니다. 녹음 내용에 환자 정보가 포함될 수 있습니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:509"
+  ]
+ },
+ {
+  "id": "T186",
+  "text": "본인 음성이 없는 구간 자동 폐기",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:518"
+  ]
+ },
+ {
+  "id": "T187",
+  "text": "통신비밀보호법상 대화 당사자가 아닌 타인 간 대화 녹음은 금지됩니다. 법적 보호를 위해 이 설정을 유지하십시오.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:519"
+  ]
+ },
+ {
+  "id": "T188",
+  "text": "정말 해제하시겠습니까",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:524"
+  ]
+ },
+ {
+  "id": "T189",
+  "text": "본인이 참여하지 않은 타인 간 대화 녹음은 통신비밀보호법 위반이며, 벌금형 없이 1년 이상 징역형 대상입니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:525"
   ]
  },
  {
   "id": "T190",
-  "text": "가릴 말 (2글자 이상)",
+  "text": "그래도 끄기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:507"
+   "apps/mobile/app/(tabs)/settings.tsx:529"
   ]
  },
  {
   "id": "T191",
-  "text": "추가",
+  "text": "환자 정보 가리기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:519",
-   "apps/mobile/app/models.tsx:415"
+   "apps/mobile/app/(tabs)/settings.tsx:548"
   ]
  },
  {
   "id": "T192",
-  "text": "가리기는 완전하지 않습니다. 한국어 이름은 일반명사와 겹치고, 호칭 없이 이름만 부르면 잡을 방법이 사실상 없습니다. 그리고",
+  "text": "보고서 내보내기, 공유, 외부 기능 송신 시 이름·전화번호·등록번호를 자동으로 마스킹합니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:533"
+   "apps/mobile/app/(tabs)/settings.tsx:551"
   ]
  },
  {
   "id": "T193",
-  "text": "음성 파일 자체는 가릴 수 없습니다",
-  "kind": "jsx",
+  "text": "기기 내 저장 시에는 마스킹하지 않습니다",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:535"
+   "apps/mobile/app/(tabs)/settings.tsx:554"
   ]
  },
  {
   "id": "T194",
-  "text": "— 목소리에는 이름과 진단이 그대로 담깁니다.",
+  "text": "전사본은 직장 내 괴롭힘 신고나 노동위원회 제출 시 증거가 됩니다. 대상자 정보가 지워지면 증거 효력이 낮아지므로 원본은 유지하고 내보낼 때만 가립니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:535"
+   "apps/mobile/app/(tabs)/settings.tsx:557"
   ]
  },
  {
   "id": "T195",
-  "text": "전사",
-  "kind": "jsx",
+  "text": "내보낼 때 가리기",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:541",
-   "apps/mobile/app/shift/[id].tsx:340",
-   "apps/mobile/app/shift/[id].tsx:416"
+   "apps/mobile/app/(tabs)/settings.tsx:561"
   ]
  },
  {
   "id": "T196",
-  "text": "기본은 기기 안에서 처리합니다. 병동 대화에는 환자 정보가 들어 있어 외부로 보내는 것은 의료법 제19조가 걸리는 행위입니다.",
-  "kind": "jsx",
+  "text": "기능을 꺼도 내보내기 전 포함된 개인정보를 미리 안내합니다.",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:543"
+   "apps/mobile/app/(tabs)/settings.tsx:562"
   ]
  },
  {
   "id": "T197",
-  "text": "전사 모델",
-  "kind": "string",
+  "text": "무엇을 가릴지",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:548",
-   "apps/mobile/app/_layout.tsx:56",
-   "apps/mobile/app/models.tsx:279"
+   "apps/mobile/app/(tabs)/settings.tsx:569"
   ]
  },
  {
   "id": "T198",
-  "text": "기기 성능과 상황에 따라 골라 씁니다. 크기를 키우는 것보다 한국어로 학습된 모델을 쓰는 쪽이 훨씬 크게 먹힙니다.",
+  "text": "필수 마스킹 단어",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:553"
+   "apps/mobile/app/(tabs)/settings.tsx:590"
   ]
  },
  {
   "id": "T199",
-  "text": "자체 서버로 전사",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:558"
-  ]
- },
- {
-  "id": "T200",
-  "text": "본인이 띄운 faster-whisper 서버나 병원 내부 서버를 쓸 때만 켜세요. 임의의 상용 API로 보내는 경로는 제공하지 않습니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:559"
-  ]
- },
- {
-  "id": "T201",
-  "text": "https://내서버/transcribe",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:575"
-  ]
- },
- {
-  "id": "T202",
-  "text": "보조 기능 (선택)",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:592"
-  ]
- },
- {
-  "id": "T203",
-  "text": "규칙으로 못 푸는 것 — 문맥에 따라 뜻이 갈리는 약어, 흩어진 지시를 하나로 묶기, 근무 요약 — 에만 모델을 씁니다. 켜면 전사본이 기기를 벗어나며, 전송 직전 비식별화가 자동 적용됩니다. 비식별화는 완전하지 않습니다.",
+  "text": "호칭 없는 이름 등 자동 인식이 어려운 단어를 등록하면 항상 마스킹 처리합니다.",
   "kind": "jsx",
   "where": [
    "apps/mobile/app/(tabs)/settings.tsx:594"
   ]
  },
  {
-  "id": "T204",
-  "text": "문맥 교정·근무 요약 사용",
+  "id": "T200",
+  "text": "마스킹 단어 (2자 이상)",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:599"
+   "apps/mobile/app/(tabs)/settings.tsx:616"
+  ]
+ },
+ {
+  "id": "T201",
+  "text": "추가",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:628",
+   "apps/mobile/app/models.tsx:422"
+  ]
+ },
+ {
+  "id": "T202",
+  "text": "자동 마스킹은 완벽하지 않습니다. 일반명사와 겹치거나 호칭이 없는 이름은 누락될 수 있으며,",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:643"
+  ]
+ },
+ {
+  "id": "T203",
+  "text": "음성 파일 자체는 마스킹할 수 없습니다",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:646"
+  ]
+ },
+ {
+  "id": "T204",
+  "text": "— 음성에는 이름과 진단명이 그대로 포함됩니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:648"
   ]
  },
  {
   "id": "T205",
-  "text": "모델 공급자",
-  "kind": "jsx",
+  "text": "전사",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:608"
+   "apps/mobile/app/(tabs)/settings.tsx:654",
+   "apps/mobile/app/shift/[id].tsx:340",
+   "apps/mobile/app/shift/[id].tsx:423"
   ]
  },
  {
   "id": "T206",
-  "text": "둘 다 API 키 방식입니다. OpenAI 의 &ldquo;ChatGPT 로 로그인&rdquo;(OAuth)은 승인받은 앱만 쓸 수 있는 베타이고, Anthropic 은 서드파티 앱용 OAuth 가 없습니다. 그래서 정직하게 키 입력입니다.",
+  "text": "전사는 기본적으로 기기 내에서 처리됩니다. 환자 정보 유출은 의료법 제19조 위반 대상입니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:631"
+   "apps/mobile/app/(tabs)/settings.tsx:657"
   ]
  },
  {
   "id": "T207",
-  "text": "키가 저장되어 있습니다",
+  "text": "전사 모델",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:638"
+   "apps/mobile/app/(tabs)/settings.tsx:661",
+   "apps/mobile/app/_layout.tsx:122",
+   "apps/mobile/app/models.tsx:279",
+   "apps/mobile/app/onboarding.tsx:92"
   ]
  },
  {
   "id": "T208",
-  "text": "API 키 입력",
-  "kind": "string",
+  "text": "기기 성능에 맞춰 선택하십시오. 모델 크기보다 한국어 학습 모델을 사용하는 것이 정확도 향상에 훨씬 효과적입니다.",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:638"
+   "apps/mobile/app/(tabs)/settings.tsx:667"
   ]
  },
  {
   "id": "T209",
-  "text": "키는 이 기기의 보안 저장소(iOS 키체인 / Android 키스토어)에만 저장되고 앱 번들에는 들어가지 않습니다.",
-  "kind": "jsx",
+  "text": "자체 서버로 전사",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:652"
+   "apps/mobile/app/(tabs)/settings.tsx:671"
   ]
  },
  {
   "id": "T210",
-  "text": "저장",
+  "text": "자체 구축한 faster-whisper 또는 병원 내부 서버 사용 시에만 활성화하십시오. 외부 상용 API 연동은 지원하지 않습니다.",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:658"
+   "apps/mobile/app/(tabs)/settings.tsx:672"
   ]
  },
  {
   "id": "T211",
-  "text": "연결 테스트",
+  "text": "https://내서버/transcribe",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:670"
+   "apps/mobile/app/(tabs)/settings.tsx:688"
   ]
  },
  {
   "id": "T212",
-  "text": "데이터 삭제",
-  "kind": "jsx",
+  "text": "보조 기능 (선택)",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:685"
+   "apps/mobile/app/(tabs)/settings.tsx:705"
   ]
  },
  {
   "id": "T213",
-  "text": "녹음 파일, 전사본, 학습카드, 근무 기록을 전부 지웁니다. 되돌릴 수 없습니다.",
+  "text": "문맥상 약어 해석, 지시사항 정돈, 근무 요약 등에 AI 모델을 사용합니다. 활성화 시 전사본이 외부로 전송되며, 자동 비식별화가 적용되나 완벽하지 않을 수 있습니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:687"
+   "apps/mobile/app/(tabs)/settings.tsx:708"
   ]
  },
  {
   "id": "T214",
-  "text": "모든 데이터 삭제",
+  "text": "문맥 교정·근무 요약 사용",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:689"
+   "apps/mobile/app/(tabs)/settings.tsx:711"
   ]
  },
  {
   "id": "T215",
-  "text": "기본 정책값: 근무",
+  "text": "모델 공급자",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:694"
+   "apps/mobile/app/(tabs)/settings.tsx:720"
   ]
  },
  {
   "id": "T216",
-  "text": "분 전 시작 ·",
+  "text": "두 서비스 모두 API 키 방식을 사용합니다. 서드파티 앱용 OAuth 미지원으로 API 키를 직접 입력해야 합니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:694"
+   "apps/mobile/app/(tabs)/settings.tsx:744"
   ]
  },
  {
   "id": "T217",
-  "text": "분 분할 ·",
-  "kind": "jsx",
+  "text": "키가 저장되어 있습니다",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:696"
+   "apps/mobile/app/(tabs)/settings.tsx:749"
   ]
  },
  {
   "id": "T218",
-  "text": "일 보관",
-  "kind": "jsx",
+  "text": "API 키 입력",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/settings.tsx:698"
+   "apps/mobile/app/(tabs)/settings.tsx:749"
   ]
  },
  {
   "id": "T219",
-  "text": "빈칸",
-  "kind": "string",
+  "text": "API 키는 기기의 보안 저장소(iOS 키체인 / Android 키스토어)에만 안전하게 보관됩니다.",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:28"
+   "apps/mobile/app/(tabs)/settings.tsx:764"
   ]
  },
  {
   "id": "T220",
-  "text": "주의점",
+  "text": "저장",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:29"
+   "apps/mobile/app/(tabs)/settings.tsx:769"
   ]
  },
  {
   "id": "T221",
-  "text": "기록 표현",
+  "text": "연결 테스트",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:30"
+   "apps/mobile/app/(tabs)/settings.tsx:781"
   ]
  },
  {
   "id": "T222",
-  "text": "몰랐다",
+  "text": "데이터 삭제",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:35"
+   "apps/mobile/app/(tabs)/settings.tsx:796"
   ]
  },
  {
   "id": "T223",
-  "text": "내일 다시",
+  "text": "녹음 파일, 전사본, 학습 카드, 근무 기록을 모두 삭제합니다. 복구할 수 없습니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:799"
+  ]
+ },
+ {
+  "id": "T224",
+  "text": "모든 데이터 삭제",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:801"
+  ]
+ },
+ {
+  "id": "T225",
+  "text": "기본 정책값: 근무",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:806"
+  ]
+ },
+ {
+  "id": "T226",
+  "text": "분 전 시작 ·",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:806"
+  ]
+ },
+ {
+  "id": "T227",
+  "text": "분 분할 ·",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:808"
+  ]
+ },
+ {
+  "id": "T228",
+  "text": "일 보관",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/settings.tsx:810"
+  ]
+ },
+ {
+  "id": "T229",
+  "text": "빈칸",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:34"
+  ]
+ },
+ {
+  "id": "T230",
+  "text": "주의점",
   "kind": "string",
   "where": [
    "apps/mobile/app/(tabs)/study.tsx:35"
   ]
  },
  {
-  "id": "T224",
-  "text": "겨우",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/study.tsx:36"
-  ]
- },
- {
-  "id": "T225",
-  "text": "곧 다시",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/study.tsx:36"
-  ]
- },
- {
-  "id": "T226",
-  "text": "맞음",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/study.tsx:37"
-  ]
- },
- {
-  "id": "T227",
-  "text": "쉬움",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/study.tsx:38"
-  ]
- },
- {
-  "id": "T228",
-  "text": "한참 뒤",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/study.tsx:38"
-  ]
- },
- {
-  "id": "T229",
-  "text": "오늘 복습",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/study.tsx:119"
-  ]
- },
- {
-  "id": "T230",
-  "text": "카드 없음",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/(tabs)/study.tsx:120"
-  ]
- },
- {
   "id": "T231",
-  "text": "${queue.length}장",
-  "kind": "template",
+  "text": "기록 표현",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:120"
+   "apps/mobile/app/(tabs)/study.tsx:36"
   ]
  },
  {
   "id": "T232",
-  "text": "전체 카드",
+  "text": "몰랐다",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:122"
+   "apps/mobile/app/(tabs)/study.tsx:41"
   ]
  },
  {
   "id": "T233",
-  "text": "${stats.total}장",
-  "kind": "template",
+  "text": "내일 다시",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:122"
+   "apps/mobile/app/(tabs)/study.tsx:41"
   ]
  },
  {
   "id": "T234",
-  "text": "익숙해진 카드",
+  "text": "겨우",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:123"
+   "apps/mobile/app/(tabs)/study.tsx:42"
   ]
  },
  {
   "id": "T235",
-  "text": "${stats.mature}장",
-  "kind": "template",
+  "text": "곧 다시",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:123"
+   "apps/mobile/app/(tabs)/study.tsx:42"
   ]
  },
  {
   "id": "T236",
-  "text": "계속 틀리는 카드",
+  "text": "맞음",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:125"
+   "apps/mobile/app/(tabs)/study.tsx:43"
   ]
  },
  {
   "id": "T237",
-  "text": "${stats.leeches}장",
-  "kind": "template",
+  "text": "쉬움",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:125"
+   "apps/mobile/app/(tabs)/study.tsx:44"
   ]
  },
  {
   "id": "T238",
-  "text": "아직 카드가 없습니다",
-  "kind": "jsx",
+  "text": "한참 뒤",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:131"
+   "apps/mobile/app/(tabs)/study.tsx:44"
   ]
  },
  {
   "id": "T239",
-  "text": "근무를 녹음하고 전사하면 그날 실제로 들은 문장으로 카드가 만들어집니다. 시중 암기장과 다른 점은, 여기 나오는 말이 내일도 그 병동에서 나온다는 것입니다.",
-  "kind": "jsx",
+  "text": "근무 밖에서 만든 카드",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:133"
+   "apps/mobile/app/(tabs)/study.tsx:51"
   ]
  },
  {
   "id": "T240",
-  "text": "오늘 복습 끝",
-  "kind": "jsx",
+  "text": "수동 녹음",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:140"
+   "apps/mobile/app/(tabs)/study.tsx:55"
   ]
  },
  {
   "id": "T241",
-  "text": "${done}장 봤습니다.",
+  "text": "${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일 · ${label}",
   "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:141"
+   "apps/mobile/app/(tabs)/study.tsx:56"
   ]
  },
  {
   "id": "T242",
-  "text": "지금 볼 카드가 없습니다.",
-  "kind": "string",
+  "text": "복습 ${queue.length}",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:141"
+   "apps/mobile/app/(tabs)/study.tsx:154"
   ]
  },
  {
   "id": "T243",
-  "text": "계속 틀리는 카드 ${stats.leeches}장",
-  "kind": "template",
+  "text": "복습",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:145"
+   "apps/mobile/app/(tabs)/study.tsx:154"
   ]
  },
  {
   "id": "T244",
-  "text": "반복해서 틀리는 카드는 대개 카드가 나쁜 게 아니라 그 앞의 개념이 비어 있다는 뜻입니다. 해당 용어의 공식 자료를 한 번 읽어보는 편이 빠릅니다.",
-  "kind": "jsx",
+  "text": "카드 세트",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:147"
+   "apps/mobile/app/(tabs)/study.tsx:155"
   ]
  },
  {
   "id": "T245",
-  "text": "남은",
-  "kind": "jsx",
+  "text": "근무 보고서",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:157"
+   "apps/mobile/app/(tabs)/study.tsx:156"
   ]
  },
  {
   "id": "T246",
-  "text": "그날 들은 문장",
+  "text": "근무를 녹음하고 전사하면 실제 들은 문장으로 암기 카드가 생성됩니다. 내일 병동에서 바로 쓰이는 실전 용어가 정리됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:173"
+   "apps/mobile/app/(tabs)/study.tsx:167"
   ]
  },
  {
   "id": "T247",
-  "text": "더 볼 자료",
-  "kind": "jsx",
+  "text": "오늘 ${done}장을 복습했습니다.",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:179"
+   "apps/mobile/app/(tabs)/study.tsx:174"
   ]
  },
  {
   "id": "T248",
-  "text": "답 보기",
+  "text": "현재 복습할 카드가 없습니다.",
   "kind": "string",
   "where": [
-   "apps/mobile/app/(tabs)/study.tsx:204"
+   "apps/mobile/app/(tabs)/study.tsx:174"
   ]
  },
  {
   "id": "T249",
-  "text": "잠겨 있습니다",
-  "kind": "string",
+  "text": "전체",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/_layout.tsx:30"
+   "apps/mobile/app/(tabs)/study.tsx:176"
   ]
  },
  {
   "id": "T250",
-  "text": "이 앱에는 근무 중 녹음과 환자 정보가 포함될 수 있는 전사본이 들어 있습니다. 본인 확인 후 열립니다.",
+  "text": "장 · 익숙해진 카드",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/_layout.tsx:33"
+   "apps/mobile/app/(tabs)/study.tsx:176"
   ]
  },
  {
   "id": "T251",
-  "text": "잠금 해제",
-  "kind": "string",
+  "text": "계속 틀리는 카드 ${stats.leeches}장",
+  "kind": "template",
   "where": [
-   "apps/mobile/app/_layout.tsx:36"
+   "apps/mobile/app/(tabs)/study.tsx:181"
   ]
  },
  {
   "id": "T252",
-  "text": "근무 기록",
-  "kind": "string",
+  "text": "반복해 틀리는 용어는 기초 개념 정리 부족일 수 있습니다. 해당 용어의 공식 자료를 확인해 보십시오.",
+  "kind": "jsx",
   "where": [
-   "apps/mobile/app/_layout.tsx:57"
+   "apps/mobile/app/(tabs)/study.tsx:183"
   ]
  },
  {
   "id": "T253",
+  "text": "남은",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:193"
+  ]
+ },
+ {
+  "id": "T254",
+  "text": "그날 들은 문장",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:207"
+  ]
+ },
+ {
+  "id": "T255",
+  "text": "더 볼 자료",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:213"
+  ]
+ },
+ {
+  "id": "T256",
+  "text": "답 보기",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:238"
+  ]
+ },
+ {
+  "id": "T257",
+  "text": "용어 검색",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:261"
+  ]
+ },
+ {
+  "id": "T258",
+  "text": "검색 결과가 없습니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:270"
+  ]
+ },
+ {
+  "id": "T259",
+  "text": "아직 카드가 없습니다. 근무를 전사하면 세트가 생깁니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:270"
+  ]
+ },
+ {
+  "id": "T260",
+  "text": "낱말카드",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:306"
+  ]
+ },
+ {
+  "id": "T261",
+  "text": "생성된 보고서가 없습니다. 근무 기록에서 전사를 마치고 &lsquo;카드·보고서 만들기&rsquo;를 실행하면, 그 근무의 평가 — 새로 배운 용어, 잘한 점, 확인이 필요한 점, 실수 언급 — 가 여기에 쌓입니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:347"
+  ]
+ },
+ {
+  "id": "T262",
+  "text": "보고서",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:382",
+   "apps/mobile/app/shift/[id].tsx:424"
+  ]
+ },
+ {
+  "id": "T263",
+  "text": "새 용어",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:385"
+  ]
+ },
+ {
+  "id": "T264",
+  "text": "· 확인 필요",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:385"
+  ]
+ },
+ {
+  "id": "T265",
+  "text": "· 실수 언급",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:385"
+  ]
+ },
+ {
+  "id": "T266",
+  "text": "잘한 점·근무 평가는 보조 기능(AI)을 켜면 보고서에 함께 담깁니다. 설정 &gt; 보조 기능에서 켤 수 있습니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/(tabs)/study.tsx:399"
+  ]
+ },
+ {
+  "id": "T267",
+  "text": "잠겨 있습니다",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/_layout.tsx:95"
+  ]
+ },
+ {
+  "id": "T268",
+  "text": "이 앱에는 환자 정보가 포함된 녹음 및 전사본이 저장되어 있습니다. 본인 인증 후 실행됩니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/_layout.tsx:99"
+  ]
+ },
+ {
+  "id": "T269",
+  "text": "잠금 해제",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/_layout.tsx:101"
+  ]
+ },
+ {
+  "id": "T270",
   "text": "한국어 학습됨",
   "kind": "string",
   "where": [
@@ -2051,7 +2215,7 @@
   ]
  },
  {
-  "id": "T254",
+  "id": "T271",
   "text": "직접 넣음",
   "kind": "string",
   "where": [
@@ -2059,7 +2223,7 @@
   ]
  },
  {
-  "id": "T255",
+  "id": "T272",
   "text": "원본",
   "kind": "string",
   "where": [
@@ -2067,7 +2231,7 @@
   ]
  },
  {
-  "id": "T256",
+  "id": "T273",
   "text": "사용 중",
   "kind": "string",
   "where": [
@@ -2075,7 +2239,7 @@
   ]
  },
  {
-  "id": "T257",
+  "id": "T274",
   "text": "크기",
   "kind": "jsx",
   "where": [
@@ -2083,7 +2247,7 @@
   ]
  },
  {
-  "id": "T258",
+  "id": "T275",
   "text": "약 ${model.approxSizeMb} MB",
   "kind": "template",
   "where": [
@@ -2091,7 +2255,7 @@
   ]
  },
  {
-  "id": "T259",
+  "id": "T276",
   "text": "· 받아 둠",
   "kind": "string",
   "where": [
@@ -2099,7 +2263,7 @@
   ]
  },
  {
-  "id": "T260",
+  "id": "T277",
   "text": "한국어 정확도",
   "kind": "jsx",
   "where": [
@@ -2107,7 +2271,7 @@
   ]
  },
  {
-  "id": "T261",
+  "id": "T278",
   "text": "문자 오류율 ${model.korean.cer}% (${model.korean.source})",
   "kind": "template",
   "where": [
@@ -2115,15 +2279,15 @@
   ]
  },
  {
-  "id": "T262",
-  "text": "공개된 실측이 없습니다",
+  "id": "T279",
+  "text": "공개된 실측 데이터가 없습니다",
   "kind": "string",
   "where": [
    "apps/mobile/app/models.tsx:109"
   ]
  },
  {
-  "id": "T263",
+  "id": "T280",
   "text": "8시간 근무 전사 예상 시간:",
   "kind": "jsx",
   "where": [
@@ -2131,23 +2295,23 @@
   ]
  },
  {
-  "id": "T264",
-  "text": "(다른 모델로 잰 값에서 환산)",
+  "id": "T281",
+  "text": "(타 모델 측정값 기준 환산)",
   "kind": "string",
   "where": [
    "apps/mobile/app/models.tsx:113"
   ]
  },
  {
-  "id": "T265",
-  "text": "${progress.receivedMb} MB 받는 중",
+  "id": "T282",
+  "text": "${progress.receivedMb} MB 다운로드 중",
   "kind": "template",
   "where": [
    "apps/mobile/app/models.tsx:126"
   ]
  },
  {
-  "id": "T266",
+  "id": "T283",
   "text": "내려받기",
   "kind": "string",
   "where": [
@@ -2155,7 +2319,7 @@
   ]
  },
  {
-  "id": "T267",
+  "id": "T284",
   "text": "주소 없음",
   "kind": "string",
   "where": [
@@ -2163,7 +2327,7 @@
   ]
  },
  {
-  "id": "T268",
+  "id": "T285",
   "text": "이걸로 전사",
   "kind": "string",
   "where": [
@@ -2171,18 +2335,7 @@
   ]
  },
  {
-  "id": "T269",
-  "text": "지우기",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/models.tsx:149",
-   "apps/mobile/app/models.tsx:234",
-   "apps/mobile/app/ward-dict.tsx:133",
-   "apps/mobile/app/ward-dict.tsx:331"
-  ]
- },
- {
-  "id": "T270",
+  "id": "T286",
   "text": "목록에서 빼기",
   "kind": "string",
   "where": [
@@ -2190,15 +2343,15 @@
   ]
  },
  {
-  "id": "T271",
-  "text": "내려받지 못했습니다",
+  "id": "T287",
+  "text": "다운로드에 실패했습니다",
   "kind": "string",
   "where": [
    "apps/mobile/app/models.tsx:196"
   ]
  },
  {
-  "id": "T272",
+  "id": "T288",
   "text": "알 수 없는 오류입니다.",
   "kind": "string",
   "where": [
@@ -2206,23 +2359,23 @@
   ]
  },
  {
-  "id": "T273",
-  "text": "${model.name} 내려받기",
+  "id": "T289",
+  "text": "${model.name} 다운로드",
   "kind": "template",
   "where": [
    "apps/mobile/app/models.tsx:212"
   ]
  },
  {
-  "id": "T274",
-  "text": "약 ${model.approxSizeMb} MB 를 받습니다. 셀룰러로 받으면 요금이 나갈 수 있으니 Wi-Fi 를 권합니다.",
+  "id": "T290",
+  "text": "약 ${model.approxSizeMb} MB를 다운로드합니다. 데이터 요금이 발생할 수 있으므로 Wi-Fi 사용을 권장합니다.",
   "kind": "template",
   "where": [
    "apps/mobile/app/models.tsx:213"
   ]
  },
  {
-  "id": "T275",
+  "id": "T291",
   "text": "받기",
   "kind": "string",
   "where": [
@@ -2230,31 +2383,31 @@
   ]
  },
  {
-  "id": "T276",
-  "text": "${model.name} 지우기",
+  "id": "T292",
+  "text": "${model.name} 삭제",
   "kind": "template",
   "where": [
    "apps/mobile/app/models.tsx:227"
   ]
  },
  {
-  "id": "T277",
-  "text": "지금 쓰는 모델입니다. 지우면 받아 둔 다른 모델로 전사합니다.",
+  "id": "T293",
+  "text": "현재 사용 중인 모델입니다. 삭제 시 저장된 다른 모델로 전사합니다.",
   "kind": "string",
   "where": [
    "apps/mobile/app/models.tsx:229"
   ]
  },
  {
-  "id": "T278",
-  "text": "파일만 지웁니다. 필요하면 다시 받을 수 있습니다.",
+  "id": "T294",
+  "text": "모델 파일만 삭제되며 필요시 재다운로드할 수 있습니다.",
   "kind": "string",
   "where": [
    "apps/mobile/app/models.tsx:230"
   ]
  },
  {
-  "id": "T279",
+  "id": "T295",
   "text": "추가하지 못했습니다.",
   "kind": "string",
   "where": [
@@ -2262,343 +2415,521 @@
   ]
  },
  {
-  "id": "T280",
-  "text": "전사는 기기 안에서 돌아갑니다. 어떤 모델로 돌릴지는 기기 성능과 상황에 따라 다르므로 여러 개를 놓고 골라 쓸 수 있게 했습니다.",
+  "id": "T296",
+  "text": "전사는 기기 내에서 실행됩니다. 기기 성능에 맞게 원하는 모델을 선택하여 사용할 수 있습니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:281"
+   "apps/mobile/app/models.tsx:282"
   ]
  },
  {
-  "id": "T281",
-  "text": "크기보다 한국어가 먼저입니다",
+  "id": "T297",
+  "text": "모델 크기보다 한국어 최적화가 중요합니다",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:285"
+   "apps/mobile/app/models.tsx:286"
   ]
  },
  {
-  "id": "T282",
-  "text": "모델을 키우는 것보다 한국어로 학습된 것을 쓰는 쪽이 훨씬 크게 먹힙니다.",
+  "id": "T298",
+  "text": "모델 크기를 늘리는 것보다 한국어로 학습된 모델을 사용하는 것이 성능 향상에 효과적입니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:287"
+   "apps/mobile/app/models.tsx:290"
   ]
  },
  {
-  "id": "T283",
-  "text": "아직 받아 둔 모델이 없습니다. 하나는 받아야 전사가 됩니다.",
+  "id": "T299",
+  "text": "설치된 전사 모델이 없습니다. 음성을 전사하려면 모델 다운로드가 필요합니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:294"
+   "apps/mobile/app/models.tsx:297"
   ]
  },
  {
-  "id": "T284",
-  "text": "이 기기에서 잰 속도를 기준으로 시간을 추정합니다. 다른 모델의 시간은 상대 속도로 환산한 값이라 오차가 있습니다.",
+  "id": "T300",
+  "text": "현재 기기의 측정 속도를 기준으로 추정합니다. 타 모델 기준 환산값은 오차가 발생할 수 있습니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:303"
+   "apps/mobile/app/models.tsx:307"
   ]
  },
  {
-  "id": "T285",
-  "text": "아직 이 기기에서 전사를 해 본 적이 없어 걸리는 시간을 알 수 없습니다. 남의 폰에서 잰 숫자를 이 폰의 숫자인 것처럼 보여주지 않습니다. 한 번 전사하고 나면 여기에 예상 시간이 나옵니다.",
+  "id": "T301",
+  "text": "전사 실행 이력이 없어 소요 시간을 측정할 수 없습니다. 최초 1회 전사 완료 후 예상 시간이 표시됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:310"
+   "apps/mobile/app/models.tsx:314"
   ]
  },
  {
-  "id": "T286",
-  "text": "한국어 파인튜닝 모델 넣기",
+  "id": "T302",
+  "text": "한국어 파인튜닝 모델 추가",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:335"
+   "apps/mobile/app/models.tsx:338"
   ]
  },
  {
-  "id": "T287",
-  "text": "공개된 한국어 재학습 모델이 여럿 있지만 주소를 앱에 박아 두지 않습니다. 모델은 사라지고 이름이 바뀌고 라이선스가 달라집니다. 죽은 링크를 넣어 두는 것보다 넣는 방법을 알려 드리는 편이 오래갑니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/models.tsx:337"
-  ]
- },
- {
-  "id": "T288",
-  "text": "1. 찾기",
+  "id": "T303",
+  "text": "외부 모델 링크의 변경 가능성 때문에 직접 등록 방식을 제공합니다. 안내에 따라 모델 파일이나 주소를 입력하십시오.",
   "kind": "jsx",
   "where": [
    "apps/mobile/app/models.tsx:342"
   ]
  },
  {
-  "id": "T289",
+  "id": "T304",
+  "text": "1. 찾기",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/models.tsx:345"
+  ]
+ },
+ {
+  "id": "T305",
   "text": "변환 불필요",
   "kind": "string",
   "where": [
-   "apps/mobile/app/models.tsx:347"
+   "apps/mobile/app/models.tsx:350"
   ]
  },
  {
-  "id": "T290",
+  "id": "T306",
   "text": "변환 필요",
   "kind": "string",
   "where": [
-   "apps/mobile/app/models.tsx:347"
+   "apps/mobile/app/models.tsx:350"
   ]
  },
  {
-  "id": "T291",
-  "text": "2. ggml 로 바꾸고 양자화하기",
+  "id": "T307",
+  "text": "2. ggml 변환 및 양자화",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:356"
+   "apps/mobile/app/models.tsx:360"
   ]
  },
  {
-  "id": "T292",
-  "text": "3. 아래에 등록하고, 파일을 모델 폴더에 넣거나 주소로 받기",
+  "id": "T308",
+  "text": "3. 아래 항목 등록 후 모델 폴더에 파일 이동 또는 URL 입력",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:374"
+   "apps/mobile/app/models.tsx:380"
   ]
  },
  {
-  "id": "T293",
+  "id": "T309",
   "text": "이름 (예: 한국어 Small 재학습)",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/models.tsx:382"
-  ]
- },
- {
-  "id": "T294",
-  "text": "파일 이름 (예: ggml-ko-small-q5_1.bin)",
   "kind": "string",
   "where": [
    "apps/mobile/app/models.tsx:389"
   ]
  },
  {
-  "id": "T295",
-  "text": "받을 주소 (https://…, 없으면 비워 두세요)",
+  "id": "T310",
+  "text": "파일 이름 (예: ggml-ko-small-q5_1.bin)",
   "kind": "string",
   "where": [
-   "apps/mobile/app/models.tsx:398"
+   "apps/mobile/app/models.tsx:396"
   ]
  },
  {
-  "id": "T296",
-  "text": "대략 크기 (MB, 몰라도 됩니다)",
+  "id": "T311",
+  "text": "다운로드 URL (https://…, 미입력 가능)",
   "kind": "string",
   "where": [
-   "apps/mobile/app/models.tsx:407"
+   "apps/mobile/app/models.tsx:405"
   ]
  },
  {
-  "id": "T297",
+  "id": "T312",
+  "text": "예상 크기 (MB, 선택 사항)",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/models.tsx:414"
+  ]
+ },
+ {
+  "id": "T313",
   "text": "직접 추가",
   "kind": "string",
   "where": [
-   "apps/mobile/app/models.tsx:429"
+   "apps/mobile/app/models.tsx:436"
   ]
  },
  {
-  "id": "T298",
-  "text": "모델 파일은 이 기기의 앱 폴더에만 있습니다. 어디로도 올라가지 않고, 앱을 지우면 함께 사라집니다.",
+  "id": "T314",
+  "text": "모델 파일은 기기 내부 저장소에만 보관되며, 앱 삭제 시 함께 제거됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/models.tsx:435"
+   "apps/mobile/app/models.tsx:443"
   ]
  },
  {
-  "id": "T299",
-  "text": "내가 없는 자리의 대화는 녹음하면 안 됩니다",
+  "id": "T315",
+  "text": "일반 병동",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:19"
+   "apps/mobile/app/onboarding.tsx:20"
   ]
  },
  {
-  "id": "T300",
-  "text": "통신비밀보호법은 '공개되지 아니한 타인간의 대화'의 녹음을 금지합니다. 내가 참여한 대화(인계, 나에게 하는 말)는 녹음해도 되지만, 내가 없는 자리에서 남들끼리 나눈 대화가 녹음되면 위법이며 벌금형 없이 1년 이상의 징역형 대상입니다. 그래서 기기를 몸에 지녀야 하고, 앱은 본인 음성이 없는 구간을 자동으로 버립니다.",
+  "id": "T316",
+  "text": "중환자실",
   "kind": "string",
   "where": [
    "apps/mobile/app/onboarding.tsx:21"
   ]
  },
  {
-  "id": "T301",
-  "text": "녹음에는 환자 정보가 들어갑니다",
+  "id": "T317",
+  "text": "응급실",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:25"
+   "apps/mobile/app/onboarding.tsx:22"
   ]
  },
  {
-  "id": "T302",
-  "text": "의료법 제19조는 업무상 알게 된 정보의 누설을 금지합니다. 이 앱은 전사와 분석을 기기 안에서 처리하고, 외부 전송은 기본으로 꺼져 있습니다. 내보내기·공유를 할 때는 항상 한 번 더 생각해 주세요.",
+  "id": "T318",
+  "text": "수술실",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:27"
+   "apps/mobile/app/onboarding.tsx:23"
   ]
  },
  {
-  "id": "T303",
-  "text": "병원 내규로 금지되어 있을 수 있습니다",
+  "id": "T319",
+  "text": "요양병원",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:24"
+  ]
+ },
+ {
+  "id": "T320",
+  "text": "Small (추천 시작점)",
   "kind": "string",
   "where": [
    "apps/mobile/app/onboarding.tsx:31"
   ]
  },
  {
-  "id": "T304",
-  "text": "법을 어기지 않아도 취업규칙 위반으로 징계 사유가 될 수 있습니다. 대부분의 병원이 원내 무단 녹음을 금지하는 내규를 두고 있습니다. 이건 앱이 해결해줄 수 없는 문제이며, 알고 선택하셔야 합니다.",
+  "id": "T321",
+  "text": "가장 빨리 시작할 수 있습니다. 한국어 인식률은 낮은 편이라 익숙해지면 아래로 바꾸십시오.",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:33"
+   "apps/mobile/app/onboarding.tsx:32"
   ]
  },
  {
-  "id": "T305",
-  "text": "마이크 표시는 끌 수 없습니다",
+  "id": "T322",
+  "text": "한국어 Medium (대화체)",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:36"
+  ]
+ },
+ {
+  "id": "T323",
+  "text": "실전 대화 데이터로 학습된 모델입니다. 정확도가 훨씬 높지만 파일 준비 단계가 필요합니다 — 설정 > 전사 모델의 안내를 따르십시오.",
   "kind": "string",
   "where": [
    "apps/mobile/app/onboarding.tsx:37"
   ]
  },
  {
-  "id": "T306",
-  "text": "iOS의 주황색 점, Android의 마이크 아이콘은 OS가 강제하는 것이라 어떤 앱도 끌 수 없습니다. 앱은 소리·진동·알림을 전부 없애고 화면이 꺼진 채로 동작하지만, OS 표시는 남습니다.",
+  "id": "T324",
+  "text": "나중에 정하기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:39"
+   "apps/mobile/app/onboarding.tsx:41",
+   "apps/mobile/app/onboarding.tsx:243"
   ]
  },
  {
-  "id": "T307",
-  "text": "태움 지표는 판정이 아니라 기록입니다",
+  "id": "T325",
+  "text": "지금은 넘어가고, 첫 전사 전에 설정 > 전사 모델에서 받으면 됩니다.",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:43"
+   "apps/mobile/app/onboarding.tsx:42"
   ]
  },
  {
-  "id": "T308",
-  "text": "어조·표정·맥락은 텍스트에 남지 않습니다. 점수는 '이 근무를 다시 볼 필요가 있는가'를 알려주는 표시등이고, 본체는 그 아래의 인용문입니다. 신고나 상담을 고려한다면 전문가와 상의하세요.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/onboarding.tsx:45"
-  ]
- },
- {
-  "id": "T309",
-  "text": "기기를 잃어버리면 그 안의 정보도 나갑니다",
+  "id": "T326",
+  "text": "당사자가 아닌 타인 간 대화 녹음 금지",
   "kind": "string",
   "where": [
    "apps/mobile/app/onboarding.tsx:49"
   ]
  },
  {
-  "id": "T310",
-  "text": "그래서 앱 잠금을 켜는 것을 강하게 권합니다. 보관기간이 지난 녹음은 자동으로 지워집니다. 오래된 녹음을 쌓아두는 것이 가장 큰 위험입니다.",
+  "id": "T327",
+  "text": "통신비밀보호법상 본인이 참여하지 않은 타인 간 대화 녹음은 불법이며 1년 이상 징역형 대상입니다. 항상 기기를 휴대해야 하며, 앱은 무음 및 타인 전용 구간을 자동 폐기합니다.",
   "kind": "string",
   "where": [
    "apps/mobile/app/onboarding.tsx:51"
   ]
  },
  {
-  "id": "T311",
-  "text": "알파 판입니다 — 아직 안 되는 것이 있습니다",
+  "id": "T328",
+  "text": "녹음 내 환자 개인정보 포함 주의",
   "kind": "string",
   "where": [
    "apps/mobile/app/onboarding.tsx:55"
   ]
  },
  {
-  "id": "T312",
-  "text": "기능이 자주 바뀌고 저장 형식도 바뀔 수 있습니다. 중요한 녹음은 이 앱에만 두지 마세요.",
+  "id": "T329",
+  "text": "의료법 제19조는 업무상 비밀 누설을 금지합니다. 모든 데이터는 기기 내에서 처리되며 외부 송신은 기본 차단됩니다. 공유 및 내보내기 시 신중을 기하십시오.",
   "kind": "string",
   "where": [
    "apps/mobile/app/onboarding.tsx:57"
   ]
  },
  {
-  "id": "T313",
-  "text": "특히 화자(누가 말했는지)는 자동으로 나뉘지 않습니다 — 기기 안에서 도는 Whisper는 목소리를",
+  "id": "T330",
+  "text": "원내 규정에 따른 녹음 금지 확인",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:58"
+   "apps/mobile/app/onboarding.tsx:61"
   ]
  },
  {
-  "id": "T314",
-  "text": "구별하지 못합니다. 전사 탭에서 구간을 직접 지정하셔야 근무 환경 지표가 나옵니다.",
+  "id": "T331",
+  "text": "취업규칙상 원내 무단 녹음은 징계 사유가 될 수 있습니다. 병원별 내규를 반드시 사전에 확인하십시오.",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:59"
+   "apps/mobile/app/onboarding.tsx:63"
   ]
  },
  {
-  "id": "T315",
-  "text": "그리고 전사를 하려면 설정에서 모델을 한 번 받아야 합니다.",
+  "id": "T332",
+  "text": "OS 마이크 상태 표시 안내",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:60"
+   "apps/mobile/app/onboarding.tsx:67"
   ]
  },
  {
-  "id": "T316",
-  "text": "시작하기 전에",
-  "kind": "jsx",
+  "id": "T333",
+  "text": "iOS 주황색 표시와 Android 마이크 아이콘은 OS 필수 시스템 표시입니다. 앱 자체 소리·진동은 없으나 OS 상태 아이콘은 숨길 수 없습니다.",
+  "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:77"
+   "apps/mobile/app/onboarding.tsx:69"
   ]
  },
  {
-  "id": "T317",
-  "text": "여섯 가지를 먼저 확인해 주세요. 하나씩 읽고 체크해야 다음으로 넘어갑니다.",
-  "kind": "jsx",
+  "id": "T334",
+  "text": "태움 지표는 판정이 아니라 기록입니다",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:73"
+  ]
+ },
+ {
+  "id": "T335",
+  "text": "텍스트만으로는 어조나 맥락이 담기지 않습니다. 점수는 참고용 지표이며 실제 발언 인용문 확인이 필요합니다. 문제 발생 시 전문가와 상담하십시오.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:75"
+  ]
+ },
+ {
+  "id": "T336",
+  "text": "기기 분실 시 데이터 유출 주의",
+  "kind": "string",
   "where": [
    "apps/mobile/app/onboarding.tsx:79"
   ]
  },
  {
-  "id": "T318",
+  "id": "T337",
+  "text": "개인정보 보호를 위해 앱 잠금 사용을 권장합니다. 보관 기간이 만료된 녹음 파일은 자동 삭제됩니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:81"
+  ]
+ },
+ {
+  "id": "T338",
+  "text": "알파 버전 안내",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:85"
+  ]
+ },
+ {
+  "id": "T339",
+  "text": "알파 버전은 기능 및 저장 형식이 변경될 수 있습니다. 중요 녹음 파일은 별도로 백업하십시오.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:87"
+  ]
+ },
+ {
+  "id": "T340",
+  "text": "화자는 자동 분리되지 않아 전사 화면에서 직접 지정해야 하며, 전사에는 모델 다운로드가 먼저 필요합니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:88"
+  ]
+ },
+ {
+  "id": "T341",
+  "text": "파트",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:92"
+  ]
+ },
+ {
+  "id": "T342",
+  "text": "필수 확인",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:92"
+  ]
+ },
+ {
+  "id": "T343",
+  "text": "어느 병원에서 일하십니까?",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:156"
+  ]
+ },
+ {
+  "id": "T344",
+  "text": "근무지를 지정하면 병원에 들어설 때 녹음이 자동으로 켜지고 나설 때 꺼집니다. 검색어만 지도 서버(OpenStreetMap)로 가고, 내 위치는 보내지 않습니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:158"
+  ]
+ },
+ {
+  "id": "T345",
+  "text": "병원 이름 (예: 서울아산병원)",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:165"
+  ]
+ },
+ {
+  "id": "T346",
+  "text": "이 병원으로 하기",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:203"
+  ]
+ },
+ {
+  "id": "T347",
+  "text": "나중에 지정하기",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:203"
+  ]
+ },
+ {
+  "id": "T348",
+  "text": "어느 파트입니까?",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:216"
+  ]
+ },
+ {
+  "id": "T349",
+  "text": "파트에 따라 용어 사전의 우선순위가 달라집니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:217"
+  ]
+ },
+ {
+  "id": "T350",
+  "text": "다음",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:243",
+   "apps/mobile/app/onboarding.tsx:273"
+  ]
+ },
+ {
+  "id": "T351",
+  "text": "어떤 모델로 전사할까요?",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:256"
+  ]
+ },
+ {
+  "id": "T352",
+  "text": "다운로드는 지금 하지 않습니다 — Wi-Fi 에서 설정 &gt; 전사 모델로 받으면 됩니다. 여기서는 방향만 정합니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:258"
+  ]
+ },
+ {
+  "id": "T353",
+  "text": "시작하기 전에",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:286"
+  ]
+ },
+ {
+  "id": "T354",
+  "text": "모든 항목에 동의해야 진행할 수 있습니다. 이것만은 건너뛸 수 없습니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:287"
+  ]
+ },
+ {
+  "id": "T355",
   "text": "준비하는 중",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:120"
+   "apps/mobile/app/onboarding.tsx:324"
   ]
  },
  {
-  "id": "T319",
-  "text": "확인했습니다",
+  "id": "T356",
+  "text": "확인했습니다 — 시작",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:120"
+   "apps/mobile/app/onboarding.tsx:324"
   ]
  },
  {
-  "id": "T320",
-  "text": "위 항목을 모두 읽어주세요",
+  "id": "T357",
+  "text": "위 항목을 모두 확인하십시오.",
   "kind": "string",
   "where": [
-   "apps/mobile/app/onboarding.tsx:120"
+   "apps/mobile/app/onboarding.tsx:324"
   ]
  },
  {
-  "id": "T321",
-  "text": "녹음 기능은 기본으로 꺼져 있습니다. 설정에서 직접 켜야 시작됩니다.",
+  "id": "T358",
+  "text": "녹음 기능은 기본으로 비활성화되어 있습니다. 설정에서 직접 활성화하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/onboarding.tsx:130"
+   "apps/mobile/app/onboarding.tsx:333"
   ]
  },
  {
-  "id": "T322",
+  "id": "T359",
+  "text": "이전",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/onboarding.tsx:338"
+  ]
+ },
+ {
+  "id": "T360",
   "text": "본인",
   "kind": "string",
   "where": [
@@ -2608,7 +2939,7 @@
   ]
  },
  {
-  "id": "T323",
+  "id": "T361",
   "text": "선배",
   "kind": "string",
   "where": [
@@ -2618,7 +2949,7 @@
   ]
  },
  {
-  "id": "T324",
+  "id": "T362",
   "text": "의사",
   "kind": "string",
   "where": [
@@ -2628,7 +2959,7 @@
   ]
  },
  {
-  "id": "T325",
+  "id": "T363",
   "text": "환자",
   "kind": "string",
   "where": [
@@ -2638,7 +2969,7 @@
   ]
  },
  {
-  "id": "T326",
+  "id": "T364",
   "text": "보호자",
   "kind": "string",
   "where": [
@@ -2648,18 +2979,7 @@
   ]
  },
  {
-  "id": "T327",
-  "text": "기타",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:39",
-   "apps/mobile/app/shift/[id].tsx:48",
-   "packages/core/src/duty/types.ts:142",
-   "packages/core/src/study/report.ts:186"
-  ]
- },
- {
-  "id": "T328",
+  "id": "T365",
   "text": "미확인",
   "kind": "string",
   "where": [
@@ -2668,15 +2988,15 @@
   ]
  },
  {
-  "id": "T329",
-  "text": "${word} — 길게 누르면 고칩니다",
+  "id": "T366",
+  "text": "${word} — 길게 눌러 수정",
   "kind": "template",
   "where": [
    "apps/mobile/app/shift/[id].tsx:113"
   ]
  },
  {
-  "id": "T330",
+  "id": "T367",
   "text": "원문:",
   "kind": "jsx",
   "where": [
@@ -2684,7 +3004,7 @@
   ]
  },
  {
-  "id": "T331",
+  "id": "T368",
   "text": "전사 중",
   "kind": "string",
   "where": [
@@ -2692,7 +3012,7 @@
   ]
  },
  {
-  "id": "T332",
+  "id": "T369",
   "text": "전사 중 (${rec.seq + 1}/${pending.length})",
   "kind": "template",
   "where": [
@@ -2700,7 +3020,7 @@
   ]
  },
  {
-  "id": "T333",
+  "id": "T370",
   "text": "전사에 실패했습니다.",
   "kind": "string",
   "where": [
@@ -2708,7 +3028,7 @@
   ]
  },
  {
-  "id": "T334",
+  "id": "T371",
   "text": "정리 중",
   "kind": "string",
   "where": [
@@ -2717,7 +3037,7 @@
   ]
  },
  {
-  "id": "T335",
+  "id": "T372",
   "text": "정리에 실패했습니다.",
   "kind": "string",
   "where": [
@@ -2725,16 +3045,16 @@
   ]
  },
  {
-  "id": "T336",
+  "id": "T373",
   "text": "공유 여는 중",
   "kind": "string",
   "where": [
    "apps/mobile/app/shift/[id].tsx:230",
-   "apps/mobile/app/shift/[id].tsx:581"
+   "apps/mobile/app/shift/[id].tsx:596"
   ]
  },
  {
-  "id": "T337",
+  "id": "T374",
   "text": "${date ?? \"근무\"}-${code ?? \"\"}-보고서",
   "kind": "template",
   "where": [
@@ -2742,15 +3062,15 @@
   ]
  },
  {
-  "id": "T338",
-  "text": "${dutyLabel} 보고서 보내기",
+  "id": "T375",
+  "text": "${dutyLabel} 보고서 내보내기",
   "kind": "template",
   "where": [
    "apps/mobile/app/shift/[id].tsx:235"
   ]
  },
  {
-  "id": "T339",
+  "id": "T376",
   "text": "공유하지 못했습니다.",
   "kind": "string",
   "where": [
@@ -2758,31 +3078,31 @@
   ]
  },
  {
-  "id": "T340",
-  "text": "두 글자 이상만 담을 수 있습니다.",
+  "id": "T377",
+  "text": "2자 이상 입력해야 합니다.",
   "kind": "string",
   "where": [
    "apps/mobile/app/shift/[id].tsx:310"
   ]
  },
  {
-  "id": "T341",
-  "text": "우리 병동에서 쓰는 말. 뜻을 채워 주세요.",
+  "id": "T378",
+  "text": "병동 전용 용어입니다. 의미를 입력하십시오.",
   "kind": "string",
   "where": [
    "apps/mobile/app/shift/[id].tsx:318"
   ]
  },
  {
-  "id": "T342",
-  "text": "'${surface}'${josa(surface, \"을\")} 내 사전에 담았습니다. 뜻은 병동 사전 화면에서 채우세요.",
+  "id": "T379",
+  "text": "'${surface}'${josa(surface, \"을\")} 사전에 추가했습니다. 의미는 병동 사전에서 입력하십시오.",
   "kind": "template",
   "where": [
    "apps/mobile/app/shift/[id].tsx:323"
   ]
  },
  {
-  "id": "T343",
+  "id": "T380",
   "text": "녹음",
   "kind": "jsx",
   "where": [
@@ -2790,7 +3110,7 @@
   ]
  },
  {
-  "id": "T344",
+  "id": "T381",
   "text": "개 · 총",
   "kind": "jsx",
   "where": [
@@ -2798,7 +3118,7 @@
   ]
  },
  {
-  "id": "T345",
+  "id": "T382",
   "text": "분 · 전사 세그먼트",
   "kind": "jsx",
   "where": [
@@ -2806,15 +3126,15 @@
   ]
  },
  {
-  "id": "T346",
-  "text": "전사하지 않은 녹음 ${pending.length}개 전사하기",
+  "id": "T383",
+  "text": "미전사 녹음 ${pending.length}건 전사하기",
   "kind": "template",
   "where": [
    "apps/mobile/app/shift/[id].tsx:338"
   ]
  },
  {
-  "id": "T347",
+  "id": "T384",
   "text": "다시 정리하기",
   "kind": "string",
   "where": [
@@ -2822,7 +3142,7 @@
   ]
  },
  {
-  "id": "T348",
+  "id": "T385",
   "text": "카드·보고서 만들기",
   "kind": "string",
   "where": [
@@ -2830,338 +3150,330 @@
   ]
  },
  {
-  "id": "T349",
-  "text": "누가 말했나요",
+  "id": "T386",
+  "text": "발언자 지정",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:359"
+   "apps/mobile/app/shift/[id].tsx:360"
   ]
  },
  {
-  "id": "T350",
+  "id": "T387",
   "text": "${coverage.total}개 중 ${coverage.labeled}개 지정",
   "kind": "template",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:361"
+   "apps/mobile/app/shift/[id].tsx:363"
   ]
  },
  {
-  "id": "T351",
-  "text": "기기 안에서 도는 Whisper 는",
+  "id": "T388",
+  "text": "온디바이스 Whisper는",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:367"
+   "apps/mobile/app/shift/[id].tsx:370"
   ]
  },
  {
-  "id": "T352",
+  "id": "T389",
   "text": "목소리를 구별하지 못합니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:368"
+   "apps/mobile/app/shift/[id].tsx:372"
   ]
  },
  {
-  "id": "T353",
-  "text": "음성을 글자로 옮기는 모델이지 누가 말했는지 가리는 모델이 아닙니다. 그건 별개의 모델이 하는 일이고 폰에 올릴 수 있는 물건이 아닙니다. 그래서 직접 지정하셔야 합니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:368"
-  ]
- },
- {
-  "id": "T354",
-  "text": "한 줄씩 누르지 마세요. 아래에서 역할을 고른 뒤 전사 탭에서",
+  "id": "T390",
+  "text": "음성 인식 전용 모델로 발언자 구별 기능은 지원하지 않습니다. 화자 라벨을 직접 지정해야 합니다.",
   "kind": "jsx",
   "where": [
    "apps/mobile/app/shift/[id].tsx:373"
   ]
  },
  {
-  "id": "T355",
+  "id": "T391",
+  "text": "문장별 선택 대신 역할 선택 후 전사 탭에서",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:377"
+  ]
+ },
+ {
+  "id": "T392",
   "text": "시작 문장과 끝 문장",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:374"
+   "apps/mobile/app/shift/[id].tsx:379"
   ]
  },
  {
-  "id": "T356",
-  "text": "을 누르면 그 사이가 한 번에 지정됩니다. 인계는 덩어리로 흐르니 대여섯 번이면 끝납니다.",
+  "id": "T393",
+  "text": "시작과 끝 문장을 선택하면 범위가 일괄 지정됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:374"
+   "apps/mobile/app/shift/[id].tsx:380"
   ]
  },
  {
-  "id": "T357",
-  "text": "시작 지점을 잡았습니다. 끝 문장을 누르면 그 사이가 &lsquo;",
+  "id": "T394",
+  "text": "시작 문장이 선택되었습니다. 끝 문장을 누르면 &lsquo;",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:403"
+   "apps/mobile/app/shift/[id].tsx:409"
   ]
  },
  {
-  "id": "T358",
-  "text": "&rsquo;로 지정됩니다.",
+  "id": "T395",
+  "text": "&rsquo;(으)로 일괄 지정됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:404"
+   "apps/mobile/app/shift/[id].tsx:411"
   ]
  },
  {
-  "id": "T359",
+  "id": "T396",
   "text": "구간 지정 취소",
   "kind": "string",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:406"
+   "apps/mobile/app/shift/[id].tsx:413"
   ]
  },
  {
-  "id": "T360",
-  "text": "보고서",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:417"
-  ]
- },
- {
-  "id": "T361",
+  "id": "T397",
   "text": "근무 환경",
   "kind": "string",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:418"
+   "apps/mobile/app/shift/[id].tsx:425"
   ]
  },
  {
-  "id": "T362",
-  "text": "아직 전사된 내용이 없습니다. 녹음이 있다면 위에서 전사를 실행하세요.",
+  "id": "T398",
+  "text": "전사된 내용이 없습니다. 녹음 파일이 있다면 전사를 실행하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:447"
+   "apps/mobile/app/shift/[id].tsx:455"
   ]
  },
  {
-  "id": "T363",
-  "text": "문장을 누르면 화자 구간을 지정하고,",
+  "id": "T399",
+  "text": "문장을 누르면 화자 구간을 지정하고",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:454"
+   "apps/mobile/app/shift/[id].tsx:463"
   ]
  },
  {
-  "id": "T364",
+  "id": "T400",
   "text": "단어를 길게 누르면",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:455"
+   "apps/mobile/app/shift/[id].tsx:465"
   ]
  },
  {
-  "id": "T365",
-  "text": "고치거나 병동 사전에 담을 수 있습니다. 고친 것은 다음 전사부터 자동으로 반영됩니다.",
+  "id": "T401",
+  "text": "수정하거나 병동 사전에 등록할 수 있습니다. 수정 내역은 다음 전사에 자동 적용됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:455"
+   "apps/mobile/app/shift/[id].tsx:466"
   ]
  },
  {
-  "id": "T366",
-  "text": "음성인식이 잘못 받아적었다면 고쳐 주세요. 두 번 넘게 같은 교정을 하면 다음 전사부터 앱이 알아서 바꿉니다.",
+  "id": "T402",
+  "text": "전사 오기를 수정해 주십시오. 동일 교정이 2회 이상 반복되면 다음 전사부터 자동 반영됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:479"
+   "apps/mobile/app/shift/[id].tsx:490"
   ]
  },
  {
-  "id": "T367",
+  "id": "T403",
   "text": "고치기",
-  "kind": "string",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:500"
-  ]
- },
- {
-  "id": "T368",
-  "text": "닫기",
   "kind": "string",
   "where": [
    "apps/mobile/app/shift/[id].tsx:510"
   ]
  },
  {
-  "id": "T369",
-  "text": "우리 병동에서만 쓰는 말인가요?",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:514"
-  ]
- },
- {
-  "id": "T370",
-  "text": "내 사전에 담아 두면 다음부터 이 말을 알아듣고, 학습카드에도 나옵니다. 뜻은 나중에 병동 사전 화면에서 채우면 됩니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:516"
-  ]
- },
- {
-  "id": "T371",
-  "text": "내 사전에 담기",
+  "id": "T404",
+  "text": "닫기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:519"
+   "apps/mobile/app/shift/[id].tsx:520"
   ]
  },
  {
-  "id": "T372",
-  "text": "아직 보고서가 없습니다. 전사를 마친 뒤 &lsquo;카드·보고서 만들기&rsquo;를 눌러주세요.",
+  "id": "T405",
+  "text": "병동 전용 용어입니까?",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:530"
+   "apps/mobile/app/shift/[id].tsx:525"
   ]
  },
  {
-  "id": "T373",
+  "id": "T406",
+  "text": "사전에 등록하면 전사 및 암기 카드에 자동 반영됩니다. 상세 의미는 병동 사전에서 편집할 수 있습니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:529"
+  ]
+ },
+ {
+  "id": "T407",
+  "text": "내 사전에 추가",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:531"
+  ]
+ },
+ {
+  "id": "T408",
+  "text": "생성된 보고서가 없습니다. 전사 완료 후 &lsquo;카드·보고서 만들기&rsquo;를 선택하십시오.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:543"
+  ]
+ },
+ {
+  "id": "T409",
   "text": "내보내기",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:537"
+   "apps/mobile/app/shift/[id].tsx:550"
   ]
  },
  {
-  "id": "T374",
-  "text": "환자 이름·전화번호·등록번호를 가린 뒤 무엇을 가렸는지 보여 드립니다. 확인하고 나서 보내세요.",
+  "id": "T410",
+  "text": "개인정보(이름·연락처·등록번호) 마스킹 내역을 확인한 후 전송하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:539"
+   "apps/mobile/app/shift/[id].tsx:553"
   ]
  },
  {
-  "id": "T375",
+  "id": "T411",
   "text": "내보낼 내용 확인",
   "kind": "string",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:542"
+   "apps/mobile/app/shift/[id].tsx:555"
   ]
  },
  {
-  "id": "T376",
-  "text": "이대로 나갑니다",
+  "id": "T412",
+  "text": "위 내용으로 내보냅니다",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:548"
+   "apps/mobile/app/shift/[id].tsx:562"
   ]
  },
  {
-  "id": "T377",
-  "text": "받는 사람의 폰에도 남습니다. 카카오톡으로 보내면 그 서버를 거칩니다. 꼭 보내야 하는 것인지 한 번만 더 생각해 주세요.",
+  "id": "T413",
+  "text": "수신자 기기 및 메신저 서버에 기록이 남습니다. 전송 전 포함된 정보를 다시 확인하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:573"
+   "apps/mobile/app/shift/[id].tsx:589"
   ]
  },
  {
-  "id": "T378",
+  "id": "T414",
   "text": "보내기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:579",
-   "apps/mobile/app/ward-dict.tsx:181",
-   "apps/mobile/app/ward-dict.tsx:215"
+   "apps/mobile/app/shift/[id].tsx:594",
+   "apps/mobile/app/ward-dict.tsx:183",
+   "apps/mobile/app/ward-dict.tsx:217"
   ]
  },
  {
-  "id": "T379",
+  "id": "T415",
   "text": "기록된 발언",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:624"
-  ]
- },
- {
-  "id": "T380",
-  "text": "점수가 아니라 여기가 본체입니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:625"
-  ]
- },
- {
-  "id": "T381",
-  "text": "어휘 기준으로 잡힌 발언이 없습니다.",
   "kind": "jsx",
   "where": [
    "apps/mobile/app/shift/[id].tsx:639"
   ]
  },
  {
-  "id": "T382",
-  "text": "잡히지 않았다고 아무 일도 없었다는 뜻은 아닙니다. 어조와 맥락은 텍스트에 남지 않습니다.",
+  "id": "T416",
+  "text": "수치보다 실제 인용문이 중요합니다.",
   "kind": "jsx",
   "where": [
    "apps/mobile/app/shift/[id].tsx:641"
   ]
  },
  {
-  "id": "T383",
+  "id": "T417",
+  "text": "감지된 특이 발언이 없습니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:657"
+  ]
+ },
+ {
+  "id": "T418",
+  "text": "발언 미감지가 문제 없음을 의미하지는 않습니다. 텍스트에는 어조와 맥락이 남지 않습니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:661"
+  ]
+ },
+ {
+  "id": "T419",
   "text": "환자·보호자 폭언",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:648"
+   "apps/mobile/app/shift/[id].tsx:668"
   ]
  },
  {
-  "id": "T384",
-  "text": "이건 동료 간 문제와 성격이 다릅니다. 산업안전보건법상 고객응대근로자 보호와 병원 보안 절차의 영역이며, 대응 경로도 다릅니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:650"
-  ]
- },
- {
-  "id": "T385",
-  "text": "참고",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:664"
-  ]
- },
- {
-  "id": "T386",
-  "text": "근로기준법 제76조의2는 지위·관계의 우위를 이용해 업무상 적정범위를 넘어 고통을 주거나 근무환경을 악화시키는 행위를 금지합니다. 제76조의3 제6항은 신고자에 대한 불리한 처우를 별도로 금지합니다.",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/shift/[id].tsx:666"
-  ]
- },
- {
-  "id": "T387",
-  "text": "상담·신고: 소속 병원 고충처리 부서 · 대한간호협회 간호사 인권센터 · 고용노동부 노동포털",
+  "id": "T420",
+  "text": "환자·보호자 폭언은 산업안전보건법상 보호 대상이며 병원 보안 절차에 따라 대응하십시오.",
   "kind": "jsx",
   "where": [
    "apps/mobile/app/shift/[id].tsx:671"
   ]
  },
  {
-  "id": "T388",
-  "text": "아직 계산되지 않았습니다. 화자 라벨을 지정하고 &lsquo;카드·보고서 만들기&rsquo;를 눌러주세요.",
+  "id": "T421",
+  "text": "참고",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/shift/[id].tsx:679"
+   "apps/mobile/app/shift/[id].tsx:684"
   ]
  },
  {
-  "id": "T389",
+  "id": "T422",
+  "text": "근로기준법 제76조의2는 직장 내 괴롭힘을 금지하며, 제76조의3 제6항은 신고자에 대한 불리한 처우를 금지합니다.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:687"
+  ]
+ },
+ {
+  "id": "T423",
+  "text": "상담·신고: 소속 병원 고충처리 부서 · 대한간호협회 간호사 인권센터 · 고용노동부 노동포털",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:690"
+  ]
+ },
+ {
+  "id": "T424",
+  "text": "화자 라벨 지정 후 &lsquo;카드·보고서 만들기&rsquo;를 실행하십시오.",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/shift/[id].tsx:699"
+  ]
+ },
+ {
+  "id": "T425",
   "text": "가져오는 중",
   "kind": "string",
   "where": [
    "apps/mobile/app/ward-dict.tsx:75",
-   "apps/mobile/app/ward-dict.tsx:165"
+   "apps/mobile/app/ward-dict.tsx:167"
   ]
  },
  {
-  "id": "T390",
+  "id": "T426",
   "text": "사전을 읽지 못했습니다.",
   "kind": "string",
   "where": [
@@ -3169,7 +3481,7 @@
   ]
  },
  {
-  "id": "T391",
+  "id": "T427",
   "text": "'${r.pack.name}' 사전을 가져왔습니다 (용어 ${r.pack.terms.length}개).",
   "kind": "template",
   "where": [
@@ -3177,7 +3489,7 @@
   ]
  },
  {
-  "id": "T392",
+  "id": "T428",
   "text": "가져오지 못했습니다.",
   "kind": "string",
   "where": [
@@ -3185,288 +3497,296 @@
   ]
  },
  {
-  "id": "T393",
-  "text": "'${name}' 사전을 만들었습니다. 아래 제안에서 말을 담아 보세요.",
+  "id": "T429",
+  "text": "'${name}' 사전을 생성했습니다. 아래 추천 용어를 추가하십시오.",
   "kind": "template",
   "where": [
    "apps/mobile/app/ward-dict.tsx:107"
   ]
  },
  {
-  "id": "T394",
-  "text": "${stored.pack.name}에서 쓰는 말. 뜻을 채워 주세요.",
+  "id": "T430",
+  "text": "${stored.pack.name} 용어입니다. 의미를 입력하십시오.",
   "kind": "template",
   "where": [
    "apps/mobile/app/ward-dict.tsx:116"
   ]
  },
  {
-  "id": "T395",
-  "text": "'${suggestion.surface}'${josa(suggestion.surface, \"을\")} ${stored.pack.name}에 담았습니다. 뜻을 채워 주세요.",
+  "id": "T431",
+  "text": "'${suggestion.surface}'${josa(suggestion.surface, \"을\")} ${stored.pack.name}에 추가했습니다. 의미를 입력하십시오.",
   "kind": "template",
   "where": [
    "apps/mobile/app/ward-dict.tsx:119"
   ]
  },
  {
-  "id": "T396",
-  "text": "'${stored.pack.name}' 사전을 지웁니다",
+  "id": "T432",
+  "text": "'${stored.pack.name}' 사전을 삭제합니다",
   "kind": "template",
   "where": [
    "apps/mobile/app/ward-dict.tsx:128"
   ]
  },
  {
-  "id": "T397",
-  "text": "이 사전의 용어는 더 이상 인식되지 않습니다. 잠시 안 쓸 거라면 지우지 말고 꺼두셔도 됩니다.",
+  "id": "T433",
+  "text": "해당 사전 용어가 인식되지 않습니다. 삭제 대신 비활성화할 수 있습니다.",
   "kind": "string",
   "where": [
    "apps/mobile/app/ward-dict.tsx:129"
   ]
  },
  {
-  "id": "T398",
-  "text": "내장 사전은 어느 병원에서나 통하는 말을 담습니다. 그런데 실제로 막히는 건 그 병동에서만 쓰는 말입니다. 그건 어떤 사전에도 안 실립니다.",
+  "id": "T434",
+  "text": "내장 사전은 표준 간호 용어를 제공합니다. 병동 전용 용어는 직접 등록하여 사용하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:151"
+   "apps/mobile/app/ward-dict.tsx:152"
   ]
  },
  {
-  "id": "T399",
-  "text": "사전은 세 층으로 겹칩니다",
+  "id": "T435",
+  "text": "사전 적용 우선순위",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:155"
+   "apps/mobile/app/ward-dict.tsx:156"
   ]
  },
  {
-  "id": "T400",
-  "text": "내 사전 &gt; 병동 사전 &gt; 내장 사전 — 구체적인 쪽이 일반적인 쪽을 이깁니다. 같은 말을 병동 사전이 다르게 정의하면 그쪽이 적용됩니다.",
+  "id": "T436",
+  "text": "내 사전 &gt; 병동 사전 &gt; 내장 사전 순으로 적용됩니다. 상위 사전의 정의가 우선 적용됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:157"
+   "apps/mobile/app/ward-dict.tsx:160"
   ]
  },
  {
-  "id": "T401",
+  "id": "T437",
   "text": "사전 받아오기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:163"
+   "apps/mobile/app/ward-dict.tsx:165"
   ]
  },
  {
-  "id": "T402",
+  "id": "T438",
   "text": "확인 필요",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:178",
-   "apps/mobile/app/ward-dict.tsx:239"
+   "apps/mobile/app/ward-dict.tsx:180",
+   "apps/mobile/app/ward-dict.tsx:241"
   ]
  },
  {
-  "id": "T403",
+  "id": "T439",
   "text": "확인됨",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:178"
+   "apps/mobile/app/ward-dict.tsx:180"
   ]
  },
  {
-  "id": "T404",
-  "text": "사전은 전사본에서 자랍니다. 뜻을 적다가 예문에 환자 이야기가 딸려 들어가기 쉽고, 사전은 애초에 남에게 주려고 만드는 물건이라 전사본보다 위험이 큽니다.",
+  "id": "T440",
+  "text": "사전 작성 시 예문에 환자 개인정보가 포함되지 않도록 주의하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:185"
+   "apps/mobile/app/ward-dict.tsx:188"
   ]
  },
  {
-  "id": "T405",
-  "text": "여기서 자동으로 지우지 않습니다. 이름만 빼면 문장이 이상해지고, 그건 지워야 하는 게 아니라 다시 써야 하는 것입니다. 아래를 보고 직접 고쳐 주세요.",
+  "id": "T441",
+  "text": "자동 삭제되지 않는 항목입니다. 문맥을 확인하여 직접 수정하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:193"
+   "apps/mobile/app/ward-dict.tsx:196"
   ]
  },
  {
-  "id": "T406",
+  "id": "T442",
   "text": "…그 외",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:207"
+   "apps/mobile/app/ward-dict.tsx:209"
   ]
  },
  {
-  "id": "T407",
+  "id": "T443",
   "text": "군데 더",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:207"
+   "apps/mobile/app/ward-dict.tsx:209"
   ]
  },
  {
-  "id": "T408",
+  "id": "T444",
   "text": "그래도 보내기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:215"
+   "apps/mobile/app/ward-dict.tsx:217"
   ]
  },
  {
-  "id": "T409",
+  "id": "T445",
   "text": "보내지 못했습니다.",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:223"
+   "apps/mobile/app/ward-dict.tsx:225"
   ]
  },
  {
-  "id": "T410",
+  "id": "T446",
   "text": "받은 교정 규칙",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:240"
+   "apps/mobile/app/ward-dict.tsx:242"
   ]
  },
  {
-  "id": "T411",
-  "text": "받은 사전에 글자를 바꾸는 규칙이 함께 왔습니다. 치환은 전사본의 글자를 그대로 바꾸는 일이라 자동으로 켜지 않습니다. 하나씩 보고 정해 주세요. 숫자가 바뀌는 규칙은 특히 조심하세요.",
+  "id": "T447",
+  "text": "사전에 포함된 텍스트 치환 규칙입니다. 전사 결과에 직접 영향을 주므로 확인 후 적용하십시오. 수치 변경 규칙은 주의가 필요합니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:243"
+   "apps/mobile/app/ward-dict.tsx:246"
   ]
  },
  {
-  "id": "T412",
-  "text": "숫자가 바뀝니다",
+  "id": "T448",
+  "text": "수치 변경 주의",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:253"
+   "apps/mobile/app/ward-dict.tsx:254"
   ]
  },
  {
-  "id": "T413",
+  "id": "T449",
+  "text": "적용",
+  "kind": "string",
+  "where": [
+   "apps/mobile/app/ward-dict.tsx:259"
+  ]
+ },
+ {
+  "id": "T450",
   "text": "버림",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:267"
+   "apps/mobile/app/ward-dict.tsx:268"
   ]
  },
  {
-  "id": "T414",
+  "id": "T451",
   "text": "꺼짐 — 인식 안 됨",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:304"
+   "apps/mobile/app/ward-dict.tsx:305"
   ]
  },
  {
-  "id": "T415",
+  "id": "T452",
   "text": "… 외",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:315"
+   "apps/mobile/app/ward-dict.tsx:316"
   ]
  },
  {
-  "id": "T416",
-  "text": "아직 담긴 말이 없습니다.",
+  "id": "T453",
+  "text": "등록된 용어가 없습니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:318"
+   "apps/mobile/app/ward-dict.tsx:320"
   ]
  },
  {
-  "id": "T417",
+  "id": "T454",
   "text": "동료에게 보내기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:324"
+   "apps/mobile/app/ward-dict.tsx:327"
   ]
  },
  {
-  "id": "T418",
+  "id": "T455",
   "text": "사전 만들기",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:340"
+   "apps/mobile/app/ward-dict.tsx:343"
   ]
  },
  {
-  "id": "T419",
-  "text": "우리 병동 말을 직접 모읍니다. 만들어 두면 다음에 들어오는 신규에게 파일 하나로 넘길 수 있습니다.",
+  "id": "T456",
+  "text": "병동 용어를 등록해 두면 신규 간호사에게 파일로 공유할 수 있습니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:342"
+   "apps/mobile/app/ward-dict.tsx:346"
   ]
  },
  {
-  "id": "T420",
+  "id": "T457",
   "text": "사전 이름 (예: ○○병원 71병동)",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:347"
+   "apps/mobile/app/ward-dict.tsx:351"
   ]
  },
  {
-  "id": "T421",
+  "id": "T458",
   "text": "병원 이름 (선택)",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:360"
+   "apps/mobile/app/ward-dict.tsx:364"
   ]
  },
  {
-  "id": "T422",
+  "id": "T459",
   "text": "만들기",
   "kind": "string",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:371"
+   "apps/mobile/app/ward-dict.tsx:375"
   ]
  },
  {
-  "id": "T423",
+  "id": "T460",
   "text": "사전에 없는 말",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:381"
+   "apps/mobile/app/ward-dict.tsx:385"
   ]
  },
  {
-  "id": "T424",
-  "text": "전사본에서 반복해서 고치신 말인데 어느 사전에도 없습니다. 이 병동에서만 쓰는 말일 가능성이 높습니다. 담아 두면 다음부터 자동으로 인식됩니다.",
+  "id": "T461",
+  "text": "전사에서 자주 수정된 미등록 용어입니다. 사전에 추가하면 다음 전사부터 자동 인식됩니다.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:383"
+   "apps/mobile/app/ward-dict.tsx:388"
   ]
  },
  {
-  "id": "T425",
+  "id": "T462",
   "text": "번 고치심",
-  "kind": "jsx",
-  "where": [
-   "apps/mobile/app/ward-dict.tsx:390"
-  ]
- },
- {
-  "id": "T426",
-  "text": "담을 사전이 없습니다. 위에서 사전을 먼저 만들어 주세요.",
   "kind": "jsx",
   "where": [
    "apps/mobile/app/ward-dict.tsx:394"
   ]
  },
  {
-  "id": "T427",
-  "text": "에 담기",
+  "id": "T463",
+  "text": "등록할 사전이 없습니다. 사전을 먼저 생성하십시오.",
   "kind": "jsx",
   "where": [
-   "apps/mobile/app/ward-dict.tsx:409"
+   "apps/mobile/app/ward-dict.tsx:399"
   ]
  },
  {
-  "id": "T428",
+  "id": "T464",
+  "text": "에 담기",
+  "kind": "jsx",
+  "where": [
+   "apps/mobile/app/ward-dict.tsx:415"
+  ]
+ },
+ {
+  "id": "T465",
   "text": "온디바이스 전사에는 whisper.rn 네이티브 모듈이 필요합니다.",
   "kind": "string",
   "where": [
@@ -3474,15 +3794,15 @@
   ]
  },
  {
-  "id": "T429",
-  "text": "`npx expo install whisper.rn` 후 개발 빌드를 만들어 주세요.",
+  "id": "T466",
+  "text": "`npx expo install whisper.rn` 실행 후 개발 빌드를 생성하십시오.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/asr.ts:132"
   ]
  },
  {
-  "id": "T430",
+  "id": "T467",
   "text": "설정에서 자체 서버 전사로 전환할 수도 있습니다.",
   "kind": "string",
   "where": [
@@ -3490,7 +3810,7 @@
   ]
  },
  {
-  "id": "T431",
+  "id": "T468",
   "text": "whisper.rn 초기화 함수를 찾을 수 없습니다.",
   "kind": "string",
   "where": [
@@ -3498,7 +3818,7 @@
   ]
  },
  {
-  "id": "T432",
+  "id": "T469",
   "text": "전사 서버 오류 ${response.status}: ${await response.text()}",
   "kind": "template",
   "where": [
@@ -3506,31 +3826,71 @@
   ]
  },
  {
-  "id": "T433",
-  "text": "전사에 쓸 모델이 아직 없습니다. 설정 → 전사 모델에서 하나 받아 주세요.",
+  "id": "T470",
+  "text": "전사 모델이 없습니다. 설정 → 전사 모델에서 다운로드하십시오.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/asr.ts:379"
   ]
  },
  {
-  "id": "T434",
-  "text": "호칭이 붙은 이름. \"김○○ 님\", \"○○ 선생님\"",
+  "id": "T471",
+  "text": "NSR 듀티",
+  "kind": "string",
+  "where": [
+   "apps/mobile/src/services/calendar-sync.ts:15"
+  ]
+ },
+ {
+  "id": "T472",
+  "text": "캘린더 권한이 필요합니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/src/services/calendar-sync.ts:50"
+  ]
+ },
+ {
+  "id": "T473",
+  "text": "${s.label} 근무",
+  "kind": "template",
+  "where": [
+   "apps/mobile/src/services/calendar-sync.ts:64"
+  ]
+ },
+ {
+  "id": "T474",
+  "text": "NSR 듀티표에서 내보냄",
+  "kind": "string",
+  "where": [
+   "apps/mobile/src/services/calendar-sync.ts:67"
+  ]
+ },
+ {
+  "id": "T475",
+  "text": "${month0 + 1}월 근무 ${shifts.length}건을 '${CAL_NAME}' 캘린더에 넣었습니다.",
+  "kind": "template",
+  "where": [
+   "apps/mobile/src/services/calendar-sync.ts:73"
+  ]
+ },
+ {
+  "id": "T476",
+  "text": "호칭이 포함된 성명 (\"김○○ 님\", \"○○ 선생님\")",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/export.ts:39"
   ]
  },
  {
-  "id": "T435",
-  "text": "휴대폰과 지역번호",
+  "id": "T477",
+  "text": "휴대전화 및 지역번호",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/export.ts:40"
   ]
  },
  {
-  "id": "T436",
+  "id": "T478",
   "text": "주민등록번호",
   "kind": "string",
   "where": [
@@ -3538,7 +3898,7 @@
   ]
  },
  {
-  "id": "T437",
+  "id": "T479",
   "text": "등록번호·차트번호",
   "kind": "string",
   "where": [
@@ -3546,7 +3906,7 @@
   ]
  },
  {
-  "id": "T438",
+  "id": "T480",
   "text": "생년월일",
   "kind": "string",
   "where": [
@@ -3554,56 +3914,48 @@
   ]
  },
  {
-  "id": "T439",
-  "text": "병실·침상 번호. 기본은 꺼져 있습니다 — 어느 방 이야기인지가 기록에 필요한 경우가 많습니다.",
+  "id": "T481",
+  "text": "병실·침상 번호 (기본 비활성화 — 기록 필요 시 설정)",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/export.ts:47"
   ]
  },
  {
-  "id": "T440",
-  "text": "가리기가 꺼져 있습니다. 이대로 내보내면 ${describeRedactions(result).replace( \"을(를) 가렸습니다.\", \"이 그대로 나갑니다.\", )}",
+  "id": "T482",
+  "text": "가리기가 꺼져 있습니다. 이대로 내보내면 ${describeRedactions(result).replace( /[을를] 가렸습니다\\.$/, \"이 그대로 포함됩니다.\", )}",
   "kind": "template",
-  "where": [
-   "apps/mobile/src/services/export.ts:107"
-  ]
- },
- {
-  "id": "T441",
-  "text": "을(를) 가렸습니다.",
-  "kind": "string",
-  "where": [
-   "apps/mobile/src/services/export.ts:108"
-  ]
- },
- {
-  "id": "T442",
-  "text": "이 그대로 나갑니다.",
-  "kind": "string",
   "where": [
    "apps/mobile/src/services/export.ts:109"
   ]
  },
  {
-  "id": "T443",
-  "text": "가리기가 꺼져 있습니다.",
+  "id": "T483",
+  "text": "이 그대로 포함됩니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/export.ts:111"
   ]
  },
  {
-  "id": "T444",
-  "text": "이 기기에서는 공유를 열 수 없습니다. 파일은 여기 있습니다: ${file.uri}",
+  "id": "T484",
+  "text": "마스킹이 비활성화되어 있습니다.",
+  "kind": "string",
+  "where": [
+   "apps/mobile/src/services/export.ts:113"
+  ]
+ },
+ {
+  "id": "T485",
+  "text": "이 기기에서는 공유 기능을 실행할 수 없습니다. 파일 위치: ${file.uri}",
   "kind": "template",
   "where": [
-   "apps/mobile/src/services/export.ts:189",
+   "apps/mobile/src/services/export.ts:191",
    "apps/mobile/src/services/ward-dict.ts:103"
   ]
  },
  {
-  "id": "T445",
+  "id": "T486",
   "text": "[NSR] 지오펜스 처리 실패",
   "kind": "string",
   "where": [
@@ -3611,71 +3963,71 @@
   ]
  },
  {
-  "id": "T446",
-  "text": "먼저 근무지를 지정해 주세요.",
+  "id": "T487",
+  "text": "먼저 근무지를 지정하십시오.",
   "kind": "string",
   "where": [
-   "apps/mobile/src/services/geofence.ts:138"
+   "apps/mobile/src/services/geofence.ts:189"
   ]
  },
  {
-  "id": "T447",
+  "id": "T488",
   "text": "위치 권한이 필요합니다.",
   "kind": "string",
   "where": [
-   "apps/mobile/src/services/geofence.ts:141"
+   "apps/mobile/src/services/geofence.ts:192"
   ]
  },
  {
-  "id": "T448",
-  "text": "백그라운드에서 감지하려면 위치를 '항상 허용'으로 바꿔야 합니다.",
+  "id": "T489",
+  "text": "백그라운드 감지를 위해 위치 권한을 '항상 허용'으로 변경하십시오.",
   "kind": "string",
   "where": [
-   "apps/mobile/src/services/geofence.ts:146"
+   "apps/mobile/src/services/geofence.ts:197"
   ]
  },
  {
-  "id": "T449",
+  "id": "T490",
   "text": "[NSR] 지오펜스 복구 실패",
   "kind": "string",
   "where": [
-   "apps/mobile/src/services/geofence.ts:173"
+   "apps/mobile/src/services/geofence.ts:224"
   ]
  },
  {
-  "id": "T450",
-  "text": "받을 주소가 없는 모델입니다. 파일을 직접 넣어 주세요.",
+  "id": "T491",
+  "text": "다운로드 URL이 없는 모델입니다. 모델 파일을 직접 추가하십시오.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/models.ts:175"
   ]
  },
  {
-  "id": "T451",
-  "text": "이미 받고 있습니다.",
+  "id": "T492",
+  "text": "이미 다운로드 중입니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/models.ts:179"
   ]
  },
  {
-  "id": "T452",
-  "text": "파일이 비어 있습니다. 다시 받아 주세요.",
+  "id": "T493",
+  "text": "파일이 비어 있습니다. 다시 다운로드하십시오.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/models.ts:206"
   ]
  },
  {
-  "id": "T453",
-  "text": "내려받기에 실패했습니다.",
+  "id": "T494",
+  "text": "다운로드에 실패했습니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/models.ts:220"
   ]
  },
  {
-  "id": "T454",
+  "id": "T495",
   "text": "같은 파일 이름의 모델이 이미 있습니다.",
   "kind": "string",
   "where": [
@@ -3683,7 +4035,7 @@
   ]
  },
  {
-  "id": "T455",
+  "id": "T496",
   "text": "녹음이 시작되지 않았습니다.",
   "kind": "string",
   "where": [
@@ -3691,7 +4043,7 @@
   ]
  },
  {
-  "id": "T456",
+  "id": "T497",
   "text": "[NSR] 녹음 오류",
   "kind": "string",
   "where": [
@@ -3699,7 +4051,7 @@
   ]
  },
  {
-  "id": "T457",
+  "id": "T498",
   "text": "수동",
   "kind": "string",
   "where": [
@@ -3707,7 +4059,7 @@
   ]
  },
  {
-  "id": "T458",
+  "id": "T499",
   "text": "[NSR] 백그라운드 틱 실패",
   "kind": "string",
   "where": [
@@ -3715,63 +4067,63 @@
   ]
  },
  {
-  "id": "T459",
-  "text": "근무 시각이 되면 자동으로 녹음이 시작됩니다. Android 규정상 알림 하나가 상시 떠 있어야 하며,",
+  "id": "T500",
+  "text": "근무 시각에 맞춰 녹음이 자동 시작됩니다. Android 정책상 포그라운드 알림이 유지되며,",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/scheduler.ts:264"
   ]
  },
  {
-  "id": "T460",
-  "text": "소리·진동·배너 없이 알림 목록 안쪽에만 표시되도록 설정되어 있습니다. 이 알림은 앱이 끌 수 없습니다.",
+  "id": "T501",
+  "text": "소리·진동 없이 상단 알림창에 무음으로 표시됩니다. 해당 알림은 해제할 수 없습니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/scheduler.ts:265"
   ]
  },
  {
-  "id": "T461",
-  "text": "연속 세션 유지가 켜져 있어 근무 시각에 자동으로 녹음이 시작됩니다.",
+  "id": "T502",
+  "text": "연속 세션 유지 설정으로 근무 시각에 녹음이 자동 시작됩니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/scheduler.ts:272"
   ]
  },
  {
-  "id": "T462",
-  "text": "대신 오디오 세션을 계속 붙잡고 있어 배터리 소모가 큽니다.",
+  "id": "T503",
+  "text": "오디오 세션 상시 유지로 배터리 소모가 증가할 수 있습니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/scheduler.ts:273"
   ]
  },
  {
-  "id": "T463",
-  "text": "iOS는 정해진 시각에 앱을 깨워 마이크를 새로 여는 것을 보장하지 않습니다.",
+  "id": "T504",
+  "text": "iOS 정책상 백그라운드 마이크 자동 활성화가 제한될 수 있습니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/scheduler.ts:279"
   ]
  },
  {
-  "id": "T464",
-  "text": "근무 시작 때 앱을 한 번 열어주세요. 한 번 시작하면 화면을 꺼도 계속 녹음됩니다.",
+  "id": "T505",
+  "text": "근무 시작 시 앱을 실행해 주십시오. 녹음이 시작되면 화면을 꺼도 유지됩니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/scheduler.ts:280"
   ]
  },
  {
-  "id": "T465",
-  "text": "완전 자동이 필요하면 설정에서 '연속 세션 유지'를 켤 수 있습니다(배터리 소모 큼).",
+  "id": "T506",
+  "text": "자동 녹음을 원하는 경우 설정에서 '연속 세션 유지'를 활성화하십시오 (배터리 소모 증가).",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/scheduler.ts:281"
   ]
  },
  {
-  "id": "T466",
+  "id": "T507",
   "text": "확인하지 못했습니다.",
   "kind": "string",
   "where": [
@@ -3779,7 +4131,7 @@
   ]
  },
  {
-  "id": "T467",
+  "id": "T508",
   "text": "자동 확인이 꺼져 있습니다.",
   "kind": "string",
   "where": [
@@ -3787,7 +4139,7 @@
   ]
  },
  {
-  "id": "T468",
+  "id": "T509",
   "text": "최근에 확인했습니다.",
   "kind": "string",
   "where": [
@@ -3795,15 +4147,15 @@
   ]
  },
  {
-  "id": "T469",
-  "text": "아직 올라온 판이 없습니다.",
+  "id": "T510",
+  "text": "등록된 새 버전이 없습니다.",
   "kind": "string",
   "where": [
    "apps/mobile/src/services/update.ts:93"
   ]
  },
  {
-  "id": "T470",
+  "id": "T511",
   "text": "확인하지 못했습니다 (${response.status}).",
   "kind": "template",
   "where": [
@@ -3811,15 +4163,15 @@
   ]
  },
  {
-  "id": "T471",
-  "text": "${pack.name} 사전 보내기",
+  "id": "T512",
+  "text": "${pack.name} 사전 내보내기",
   "kind": "template",
   "where": [
    "apps/mobile/src/services/ward-dict.ts:108"
   ]
  },
  {
-  "id": "T472",
+  "id": "T513",
   "text": "파일을 읽지 못했습니다: ${e instanceof Error ? e.message : e}",
   "kind": "template",
   "where": [
@@ -3827,7 +4179,7 @@
   ]
  },
  {
-  "id": "T473",
+  "id": "T514",
   "text": "용어 ${stats.terms}개",
   "kind": "template",
   "where": [
@@ -3835,7 +4187,7 @@
   ]
  },
  {
-  "id": "T474",
+  "id": "T515",
   "text": "표기 ${stats.surfaces}개",
   "kind": "template",
   "where": [
@@ -3843,15 +4195,15 @@
   ]
  },
  {
-  "id": "T475",
-  "text": "만든 사람 ${stored.pack.author}",
+  "id": "T516",
+  "text": "작성자 ${stored.pack.author}",
   "kind": "template",
   "where": [
    "apps/mobile/src/services/ward-dict.ts:177"
   ]
  },
  {
-  "id": "T476",
+  "id": "T517",
   "text": "AppProvider 안에서만 사용할 수 있습니다.",
   "kind": "string",
   "where": [
@@ -3859,15 +4211,15 @@
   ]
  },
  {
-  "id": "T477",
-  "text": "녹음에는 환자 정보가 포함될 수 있습니다",
+  "id": "T518",
+  "text": "녹음 내용에 환자 정보가 포함될 수 있습니다",
   "kind": "string",
   "where": [
    "apps/mobile/src/state/AppContext.tsx:92"
   ]
  },
  {
-  "id": "T478",
+  "id": "T519",
   "text": "잘못된 날짜/시각: ${date} ${time}",
   "kind": "template",
   "where": [
@@ -3875,7 +4227,7 @@
   ]
  },
  {
-  "id": "T479",
+  "id": "T520",
   "text": "알 수 없는 듀티 기호: \"${token}\"",
   "kind": "template",
   "where": [
@@ -3883,39 +4235,39 @@
   ]
  },
  {
-  "id": "T480",
-  "text": "근무 사이 간격이 11시간 미만인 경우가 ${stats.quickReturns.length}회 있습니다",
+  "id": "T521",
+  "text": "근무 간 휴식시간 11시간 미만 ${stats.quickReturns.length}회 발생",
   "kind": "template",
   "where": [
    "packages/core/src/duty/schedule.ts:407"
   ]
  },
  {
-  "id": "T481",
-  "text": "(가장 짧은 간격 ${worst.gapHours}시간). 이동·식사·수면을 빼면 실제 휴식은 더 짧습니다.",
+  "id": "T522",
+  "text": "(최단 간격 ${worst.gapHours}시간). 출퇴근 및 식사 시간을 제외하면 실질 휴식이 부족합니다.",
   "kind": "template",
   "where": [
    "packages/core/src/duty/schedule.ts:408"
   ]
  },
  {
-  "id": "T482",
-  "text": "근로기준법 제59조 제2항 — 근로시간 특례를 도입한 사업장은 근무일 사이에 연속 11시간 이상의 휴식시간을 주어야 합니다. 보건업은 특례업종에 포함됩니다.",
+  "id": "T523",
+  "text": "근로기준법 제59조 제2항 — 보건업 등 특례사업장은 근무일 간 11시간 이상의 연속 휴식시간을 보장해야 합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/duty/schedule.ts:410"
   ]
  },
  {
-  "id": "T483",
-  "text": "연속 근무가 최장 ${stats.longestConsecutiveDays}일입니다.",
+  "id": "T524",
+  "text": "최장 연속 근무일수는 ${stats.longestConsecutiveDays}일입니다.",
   "kind": "template",
   "where": [
    "packages/core/src/duty/schedule.ts:417"
   ]
  },
  {
-  "id": "T484",
+  "id": "T525",
   "text": "근로기준법 제55조 — 사용자는 1주에 평균 1회 이상의 유급휴일을 보장해야 합니다.",
   "kind": "string",
   "where": [
@@ -3923,63 +4275,39 @@
   ]
  },
  {
-  "id": "T485",
-  "text": "이 기간 야간근무가 ${stats.nightShiftCount}회, 야간근로 시간은 ${stats.nightHours}시간입니다.",
+  "id": "T526",
+  "text": "해당 기간 야간근무 ${stats.nightShiftCount}회, 야간근로 총 ${stats.nightHours}시간입니다.",
   "kind": "template",
   "where": [
    "packages/core/src/duty/schedule.ts:427"
   ]
  },
  {
-  "id": "T486",
-  "text": "근로기준법 제56조 제3항 — 야간근로(22시~06시)는 통상임금의 50% 이상을 가산해 지급해야 합니다. 급여명세서와 대조해보세요.",
+  "id": "T527",
+  "text": "근로기준법 제56조 제3항 — 야간근로(22시~06시)는 통상임금의 50% 이상을 가산 지급해야 합니다. 급여명세서를 확인하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/duty/schedule.ts:429"
   ]
  },
  {
-  "id": "T487",
-  "text": "집계 구간의 근무표상 근무시간이 ${stats.scheduledHours}시간입니다. 기간을 1주 단위로 나누어 확인해보세요.",
+  "id": "T528",
+  "text": "해당 구간의 예정 근무시간은 총 ${stats.scheduledHours}시간입니다. 주 단위 근로시간을 확인하십시오.",
   "kind": "template",
   "where": [
    "packages/core/src/duty/schedule.ts:436"
   ]
  },
  {
-  "id": "T488",
-  "text": "근로기준법 제50조·제53조 — 1주 소정근로 40시간, 연장근로를 더해 52시간이 원칙입니다. 다만 특례·탄력근로 도입 여부에 따라 달라질 수 있습니다.",
+  "id": "T529",
+  "text": "근로기준법 제50조·제53조 — 주당 소정근로 40시간, 연장근로 포함 최대 52시간 기준입니다 (탄력근로/특례 도입 시 변동 가능).",
   "kind": "string",
   "where": [
    "packages/core/src/duty/schedule.ts:438"
   ]
  },
  {
-  "id": "T489",
-  "text": "데이",
-  "kind": "string",
-  "where": [
-   "packages/core/src/duty/types.ts:49"
-  ]
- },
- {
-  "id": "T490",
-  "text": "이브닝",
-  "kind": "string",
-  "where": [
-   "packages/core/src/duty/types.ts:59"
-  ]
- },
- {
-  "id": "T491",
-  "text": "나이트",
-  "kind": "string",
-  "where": [
-   "packages/core/src/duty/types.ts:69"
-  ]
- },
- {
-  "id": "T492",
+  "id": "T530",
   "text": "휴무",
   "kind": "string",
   "where": [
@@ -3987,87 +4315,47 @@
   ]
  },
  {
-  "id": "T493",
-  "text": "상근",
-  "kind": "string",
-  "where": [
-   "packages/core/src/duty/types.ts:89"
-  ]
- },
- {
-  "id": "T494",
-  "text": "스페셜",
-  "kind": "string",
-  "where": [
-   "packages/core/src/duty/types.ts:100"
-  ]
- },
- {
-  "id": "T495",
-  "text": "교육",
-  "kind": "string",
-  "where": [
-   "packages/core/src/duty/types.ts:112"
-  ]
- },
- {
-  "id": "T496",
-  "text": "연차",
-  "kind": "string",
-  "where": [
-   "packages/core/src/duty/types.ts:122"
-  ]
- },
- {
-  "id": "T497",
-  "text": "병가",
-  "kind": "string",
-  "where": [
-   "packages/core/src/duty/types.ts:132"
-  ]
- },
- {
-  "id": "T498",
-  "text": "릴리스를 찾지 못했습니다.",
+  "id": "T531",
+  "text": "배포 버전을 찾지 못했습니다.",
   "kind": "string",
   "where": [
    "packages/core/src/release/update.ts:195"
   ]
  },
  {
-  "id": "T499",
-  "text": "최신 판은 ${latest.version} 입니다. 지금 쓰는 판을 알 수 없어 비교하지 못했습니다.",
+  "id": "T532",
+  "text": "최신 버전은 ${latest.version}입니다. 현재 설치 버전을 확인할 수 없습니다.",
   "kind": "template",
   "where": [
    "packages/core/src/release/update.ts:204"
   ]
  },
  {
-  "id": "T500",
-  "text": "최신입니다 (${latest.version}).",
+  "id": "T533",
+  "text": "최신 버전입니다 (${latest.version}).",
   "kind": "template",
   "where": [
    "packages/core/src/release/update.ts:212"
   ]
  },
  {
-  "id": "T501",
-  "text": "${latest.version} 은 건너뛰기로 해 두셨습니다.",
+  "id": "T534",
+  "text": "${latest.version} 버전을 건너뛰도록 설정했습니다.",
   "kind": "template",
   "where": [
    "packages/core/src/release/update.ts:220"
   ]
  },
  {
-  "id": "T502",
-  "text": "새 판 ${latest.version} 이 있습니다 (지금 ${input.current}).",
+  "id": "T535",
+  "text": "새 버전 ${latest.version}이 있습니다 (현재 버전 ${input.current}).",
   "kind": "template",
   "where": [
    "packages/core/src/release/update.ts:227"
   ]
  },
  {
-  "id": "T503",
+  "id": "T536",
   "text": "${m}분",
   "kind": "template",
   "where": [
@@ -4075,7 +4363,7 @@
   ]
  },
  {
-  "id": "T504",
+  "id": "T537",
   "text": "${h}시간 ${m}분",
   "kind": "template",
   "where": [
@@ -4083,7 +4371,7 @@
   ]
  },
  {
-  "id": "T505",
+  "id": "T538",
   "text": "# ${report.date} 근무 기록 — ${report.dutyLabel}",
   "kind": "template",
   "where": [
@@ -4091,7 +4379,7 @@
   ]
  },
  {
-  "id": "T506",
+  "id": "T539",
   "text": "- 녹음 길이: ${formatDuration(report.recordedSec)}",
   "kind": "template",
   "where": [
@@ -4099,23 +4387,23 @@
   ]
  },
  {
-  "id": "T507",
-  "text": "- 오늘 나온 용어: ${report.newTerms.length + report.reviewedTerms.length}개 (새로운 것 ${report.newTerms.length}개)",
+  "id": "T540",
+  "text": "- 감지된 용어: ${report.newTerms.length + report.reviewedTerms.length}개 (신규 ${report.newTerms.length}개)",
   "kind": "template",
   "where": [
    "packages/core/src/study/report.ts:196"
   ]
  },
  {
-  "id": "T508",
-  "text": "## 오늘 새로 나온 말",
+  "id": "T541",
+  "text": "## 신규 용어",
   "kind": "string",
   "where": [
    "packages/core/src/study/report.ts:200"
   ]
  },
  {
-  "id": "T509",
+  "id": "T542",
   "text": "## 지시·교육받은 내용",
   "kind": "string",
   "where": [
@@ -4123,55 +4411,55 @@
   ]
  },
  {
-  "id": "T510",
-  "text": "## 확인이 남은 것",
+  "id": "T543",
+  "text": "## 미확인·확인 필요 사항",
   "kind": "string",
   "where": [
    "packages/core/src/study/report.ts:219"
   ]
  },
  {
-  "id": "T511",
-  "text": "다음 근무 전에 찾아보거나 물어볼 것들입니다.",
+  "id": "T544",
+  "text": "다음 근무 전 확인 및 숙지가 필요한 사항입니다.",
   "kind": "string",
   "where": [
    "packages/core/src/study/report.ts:221"
   ]
  },
  {
-  "id": "T512",
-  "text": "## 실수·누락이 언급된 지점",
+  "id": "T545",
+  "text": "## 누락 및 특이사항 언급",
   "kind": "string",
   "where": [
    "packages/core/src/study/report.ts:230"
   ]
  },
  {
-  "id": "T513",
-  "text": "자책하라고 모은 게 아니라, 같은 일이 반복되는지 보려고 모읍니다. 반복되면 그건 개인 문제가 아니라 절차 문제일 가능성이 큽니다.",
+  "id": "T546",
+  "text": "업무 절차 개선 및 반복적 누락 방지를 위한 기록입니다.",
   "kind": "string",
   "where": [
    "packages/core/src/study/report.ts:233"
   ]
  },
  {
-  "id": "T514",
-  "text": "## 기록에 쓸 때 바꿔야 할 표현",
+  "id": "T547",
+  "text": "## 간호기록 용어 전환",
   "kind": "string",
   "where": [
    "packages/core/src/study/report.ts:243"
   ]
  },
  {
-  "id": "T515",
-  "text": "| 대화에서 쓴 말 | 간호기록 표현 |",
+  "id": "T548",
+  "text": "| 구어체 표현 | 간호기록 용어 |",
   "kind": "string",
   "where": [
    "packages/core/src/study/report.ts:245"
   ]
  },
  {
-  "id": "T516",
+  "id": "T549",
   "text": "## 근무 환경 기록",
   "kind": "string",
   "where": [
@@ -4179,7 +4467,7 @@
   ]
  },
  {
-  "id": "T517",
+  "id": "T550",
   "text": "- 지표: **${t.score}점 (${t.levelLabel})**",
   "kind": "template",
   "where": [
@@ -4187,15 +4475,15 @@
   ]
  },
  {
-  "id": "T518",
-  "text": "- 환자·보호자로부터의 폭언 ${t.patientAggression.length}건이 별도로 기록되었습니다. 이건 동료 간 문제와 대응 경로가 다릅니다(병원 안전요원·보안 절차).",
+  "id": "T551",
+  "text": "- 환자·보호자 폭언 ${t.patientAggression.length}건 별도 기록됨 (원내 보안 절차 적용 대상).",
   "kind": "template",
   "where": [
    "packages/core/src/study/report.ts:267"
   ]
  },
  {
-  "id": "T519",
+  "id": "T552",
   "text": "특이사항 없음",
   "kind": "string",
   "where": [
@@ -4203,7 +4491,7 @@
   ]
  },
  {
-  "id": "T520",
+  "id": "T553",
   "text": "관찰",
   "kind": "string",
   "where": [
@@ -4211,7 +4499,7 @@
   ]
  },
  {
-  "id": "T521",
+  "id": "T554",
   "text": "심각",
   "kind": "string",
   "where": [
@@ -4219,23 +4507,23 @@
   ]
  },
  {
-  "id": "T522",
-  "text": "이 점수는 법적 판단이 아니라 본인의 근무 기록입니다. 어조·표정·맥락은 텍스트에 남지 않으므로",
+  "id": "T555",
+  "text": "해당 수치는 참고용 지표이며 텍스트 특성상 어조나 맥락이 제외됩니다.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/score.ts:86"
   ]
  },
  {
-  "id": "T523",
-  "text": "실제와 다를 수 있습니다. 점수보다 아래 인용문을 직접 확인하세요.",
+  "id": "T556",
+  "text": "실제 상황과 차이가 있을 수 있으므로 하단 발언 인용문을 직접 확인하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/score.ts:87"
   ]
  },
  {
-  "id": "T524",
+  "id": "T557",
   "text": "신고나 상담을 고려한다면 병원 고충처리 부서, 대한간호협회 간호사 인권센터,",
   "kind": "string",
   "where": [
@@ -4243,15 +4531,15 @@
   ]
  },
  {
-  "id": "T525",
-  "text": "고용노동부 노동포털(직장 내 괴롭힘 신고)을 통해 전문가와 상의하는 것이 좋습니다.",
+  "id": "T558",
+  "text": "고용노동부 노동포털을 통해 전문가와 상담하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/score.ts:89"
   ]
  },
  {
-  "id": "T526",
+  "id": "T559",
   "text": "기록된 근무가 없습니다.",
   "kind": "string",
   "where": [
@@ -4259,7 +4547,7 @@
   ]
  },
  {
-  "id": "T527",
+  "id": "T560",
   "text": "최근 ${points.length}개 근무 평균 ${average}점.",
   "kind": "template",
   "where": [
@@ -4267,31 +4555,31 @@
   ]
  },
  {
-  "id": "T528",
-  "text": "'심각' 수준이 ${severeCount}회 있었습니다. 반복성은 직장 내 괴롭힘 판단에서 중요한 요소이므로,",
+  "id": "T561",
+  "text": "'심각' 단계가 ${severeCount}회 발생했습니다. 지속성 확인을 위해",
   "kind": "template",
   "where": [
    "packages/core/src/taeum/score.ts:360"
   ]
  },
  {
-  "id": "T529",
-  "text": "해당 근무의 인용문을 따로 보관해두는 것을 권합니다.",
+  "id": "T562",
+  "text": "해당 근무의 발언 인용문을 보관하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/score.ts:361"
   ]
  },
  {
-  "id": "T530",
-  "text": "특정 유형이 반복되고 있는지 인용문을 확인해보세요.",
+  "id": "T563",
+  "text": "반복되는 지표 패턴이 있는지 인용문을 확인하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/score.ts:364"
   ]
  },
  {
-  "id": "T531",
+  "id": "T564",
   "text": "두드러진 반복 패턴은 확인되지 않았습니다.",
   "kind": "string",
   "where": [
@@ -4299,7 +4587,7 @@
   ]
  },
  {
-  "id": "T532",
+  "id": "T565",
   "text": "가장 자주 나타난 유형: ${CATEGORY_LABELS[dominantCategory]}.",
   "kind": "template",
   "where": [
@@ -4307,7 +4595,7 @@
   ]
  },
  {
-  "id": "T533",
+  "id": "T566",
   "text": "저체온",
   "kind": "string",
   "where": [
@@ -4315,15 +4603,15 @@
   ]
  },
  {
-  "id": "T534",
-  "text": "더없이 평온한 근무였습니다.",
+  "id": "T567",
+  "text": "안정적인 근무 환경입니다.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/temperature.ts:52"
   ]
  },
  {
-  "id": "T535",
+  "id": "T568",
   "text": "정상체온",
   "kind": "string",
   "where": [
@@ -4331,15 +4619,15 @@
   ]
  },
  {
-  "id": "T536",
-  "text": "괜찮은 근무 환경입니다.",
+  "id": "T569",
+  "text": "양호한 근무 환경입니다.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/temperature.ts:60"
   ]
  },
  {
-  "id": "T537",
+  "id": "T570",
   "text": "미열",
   "kind": "string",
   "where": [
@@ -4347,15 +4635,15 @@
   ]
  },
  {
-  "id": "T538",
-  "text": "지켜볼 신호가 있었습니다. 인용문을 확인해 보세요.",
+  "id": "T571",
+  "text": "주의가 필요한 발언이 기록되었습니다. 인용문을 확인하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/temperature.ts:68"
   ]
  },
  {
-  "id": "T539",
+  "id": "T572",
   "text": "발열",
   "kind": "string",
   "where": [
@@ -4363,15 +4651,15 @@
   ]
  },
  {
-  "id": "T540",
-  "text": "반복되면 기록을 남겨 두세요. 날짜·상황·인용문이 힘이 됩니다.",
+  "id": "T573",
+  "text": "지속 발생 시 날짜·상황·인용문 기록을 보관하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/temperature.ts:76"
   ]
  },
  {
-  "id": "T541",
+  "id": "T574",
   "text": "고열",
   "kind": "string",
   "where": [
@@ -4379,15 +4667,15 @@
   ]
  },
  {
-  "id": "T542",
-  "text": "혼자 견딜 단계가 아닙니다. 기록을 모으고, 믿을 수 있는 사람과 상의하세요.",
+  "id": "T575",
+  "text": "전문적인 도움이 필요한 상태입니다. 기록을 취합하여 상담을 진행하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/taeum/temperature.ts:84"
   ]
  },
  {
-  "id": "T543",
+  "id": "T576",
   "text": "Tiny (양자화)",
   "kind": "string",
   "where": [
@@ -4395,15 +4683,15 @@
   ]
  },
  {
-  "id": "T544",
-  "text": "빠르지만 한국어는 많이 틀린다. 전사가 되는지 확인해 보는 용도로만 쓴다.",
+  "id": "T577",
+  "text": "속도가 빠르나 한국어 인식률이 낮습니다. 전사 동작 테스트 용도로 사용합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:86"
   ]
  },
  {
-  "id": "T545",
+  "id": "T578",
   "text": "Base (양자화)",
   "kind": "string",
   "where": [
@@ -4411,15 +4699,15 @@
   ]
  },
  {
-  "id": "T546",
-  "text": "구형 기기에서 겨우 돌릴 때. 용어는 거의 못 잡는다.",
+  "id": "T579",
+  "text": "구형 기기용 모델입니다. 전문 용어 인식률은 낮습니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:97"
   ]
  },
  {
-  "id": "T547",
+  "id": "T580",
   "text": "Small (양자화)",
   "kind": "string",
   "where": [
@@ -4427,7 +4715,7 @@
   ]
  },
  {
-  "id": "T548",
+  "id": "T581",
   "text": "ENERZAi 공개 실측",
   "kind": "string",
   "where": [
@@ -4435,23 +4723,23 @@
   ]
  },
  {
-  "id": "T549",
-  "text": "원본 기준선. 한국어 CER 이 18% 수준이라 이 앱에는 부족하다.",
+  "id": "T582",
+  "text": "원본 기본 모델입니다. 한국어 인식률이 낮아 보조용으로 적합합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:109"
   ]
  },
  {
-  "id": "T550",
-  "text": "같은 크기의 한국어 파인튜닝 모델이 있으면 그쪽을 쓴다.",
+  "id": "T583",
+  "text": "동일 크기의 한국어 파인튜닝 모델 사용을 권장합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:110"
   ]
  },
  {
-  "id": "T551",
+  "id": "T584",
   "text": "Medium (양자화)",
   "kind": "string",
   "where": [
@@ -4459,15 +4747,15 @@
   ]
  },
  {
-  "id": "T552",
-  "text": "정확도와 속도의 중간. 최신 기기에서 오프 날 돌릴 만하다.",
+  "id": "T585",
+  "text": "정확도와 속도의 균형 모델입니다. 성능이 높은 기기에 적합합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:121"
   ]
  },
  {
-  "id": "T553",
+  "id": "T586",
   "text": "Large v3 Turbo (양자화)",
   "kind": "string",
   "where": [
@@ -4475,23 +4763,23 @@
   ]
  },
  {
-  "id": "T554",
-  "text": "large 계열인데 디코더를 줄여 훨씬 빠르다. 큰 모델을 쓰겠다면",
+  "id": "T587",
+  "text": "Large 계열의 속도 개선 모델입니다. 고성능 모델 사용 시",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:133"
   ]
  },
  {
-  "id": "T555",
-  "text": "보통 이쪽이 large-v3 원본보다 실용적이다.",
+  "id": "T588",
+  "text": "Large-v3 원본보다 실용적입니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:134"
   ]
  },
  {
-  "id": "T556",
+  "id": "T589",
   "text": "Large v3 (양자화)",
   "kind": "string",
   "where": [
@@ -4499,7 +4787,7 @@
   ]
  },
  {
-  "id": "T557",
+  "id": "T590",
   "text": "공개 벤치마크 종합 (8~12% 범위의 중간값)",
   "kind": "string",
   "where": [
@@ -4507,71 +4795,71 @@
   ]
  },
  {
-  "id": "T558",
-  "text": "원본 중 가장 정확하지만 폰에서는 느리고 뜨겁다.",
+  "id": "T591",
+  "text": "원본 모델 중 가장 정확하지만 기기 발열과 속도 저하가 발생할 수 있습니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:146"
   ]
  },
  {
-  "id": "T559",
-  "text": "충전 중에 밤새 돌릴 각오가 있을 때만.",
+  "id": "T592",
+  "text": "충전 중 장시간 전사 작업 시에만 사용을 권장합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:147"
   ]
  },
  {
-  "id": "T560",
-  "text": "한국어만 놓고 보면 파인튜닝된 중간 크기 모델이 이걸 이긴다.",
+  "id": "T593",
+  "text": "한국어 전사는 파인튜닝된 Medium 모델의 성능이 더 우수합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:148"
   ]
  },
  {
-  "id": "T561",
-  "text": "한국어 오픈 데이터 약 200시간 학습. 제작자 보고 WER 24 → 16. ggml 변환 완료라 바로 넣을 수 있다.",
+  "id": "T594",
+  "text": "한국어 데이터 200시간 학습 모델입니다. ggml 변환이 완료되어 즉시 추가할 수 있습니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:182"
   ]
  },
  {
-  "id": "T562",
-  "text": "같은 제작자의 medium 한국어. 역시 ggml 이라 바로 넣을 수 있지만, 학습 데이터가 낭독 위주다. 대화체는 아래 jangmin 쪽이 맞다.",
+  "id": "T595",
+  "text": "동일 제작자의 Medium 모델입니다. 낭독 데이터 기반이므로 대화체 전사 시 아래 장민(jangmin) 모델을 권장합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:188"
   ]
  },
  {
-  "id": "T563",
-  "text": "**대화체로 학습된 medium 은 이것이다.** AI Hub 명령어 음성 796시간 +",
+  "id": "T596",
+  "text": "**대화체 특화 Medium 모델입니다.** AI Hub 음성 796시간 및",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:195"
   ]
  },
  {
-  "id": "T564",
-  "text": "소음 환경 대화 363시간 등 1,273시간 — 낭독이 아니라 실제 대화·소음 데이터라",
+  "id": "T597",
+  "text": "소음 대화 363시간 등 총 1,273시간 학습 — 실전 대화 데이터로",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:196"
   ]
  },
  {
-  "id": "T565",
-  "text": "병동 환경에 제일 가깝다. Safetensors 라서 ggml 변환 + 양자화가 필요하다.",
+  "id": "T598",
+  "text": "병동 대화 환경에 적합합니다. Safetensors 형식으로 ggml 변환 및 양자화가 필요합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:197"
   ]
  },
  {
-  "id": "T566",
+  "id": "T599",
   "text": "Zeroth Korean 206시간 학습. 모델 카드 실측 test CER 7.58% → 2.06%.",
   "kind": "string",
   "where": [
@@ -4579,63 +4867,63 @@
   ]
  },
  {
-  "id": "T567",
-  "text": "**다만 Zeroth 는 낭독 음성이고 test 도 같은 데이터에서 쪼갠 것이라",
+  "id": "T600",
+  "text": "**다만 Zeroth는 낭독 음성 기반 데이터이므로",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:205"
   ]
  },
  {
-  "id": "T568",
-  "text": "병동 대화에서 2% 가 나오지는 않는다.** 절대값이 아니라 개선폭(3.7배)을 보라.",
+  "id": "T601",
+  "text": "병동 대화 환경의 수치와는 차이가 있을 수 있습니다.**",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:206"
   ]
  },
  {
-  "id": "T569",
-  "text": "Safetensors F32 라서 ggml 변환 + 양자화가 필요하다.",
+  "id": "T602",
+  "text": "Safetensors F32 형식으로 ggml 변환 및 양자화가 필요합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:207"
   ]
  },
  {
-  "id": "T570",
-  "text": "제작자 주: 수렴 전이라 더 나아질 여지가 있다.",
+  "id": "T603",
+  "text": "제작자 주: 학습 진행 중인 모델입니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:208"
   ]
  },
  {
-  "id": "T571",
-  "text": "같은 Zeroth 계열. 변환 필요.",
+  "id": "T604",
+  "text": "동일 Zeroth 계열 모델입니다. ggml 변환이 필요합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:214"
   ]
  },
  {
-  "id": "T572",
-  "text": "Zeroth Korean. 변환 필요.",
+  "id": "T605",
+  "text": "Zeroth Korean 모델입니다. ggml 변환이 필요합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:220"
   ]
  },
  {
-  "id": "T573",
-  "text": "HuggingFace 에서 위 id 로 찾거나 'whisper korean ggml' 로 검색한다",
+  "id": "T606",
+  "text": "HuggingFace에서 해당 ID로 검색하거나 'whisper korean ggml'을 검색하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:224"
   ]
  },
  {
-  "id": "T574",
+  "id": "T607",
   "text": "python3 whisper.cpp/models/convert-h5-to-ggml.py ./모델폴더/ ./whisper ./출력",
   "kind": "string",
   "where": [
@@ -4643,7 +4931,7 @@
   ]
  },
  {
-  "id": "T575",
+  "id": "T608",
   "text": "./build/bin/quantize ./출력/ggml-model.bin ./ggml-ko-turbo-q5_0.bin q5_0",
   "kind": "string",
   "where": [
@@ -4651,7 +4939,7 @@
   ]
  },
  {
-  "id": "T576",
+  "id": "T609",
   "text": "같은 크기에서 원본 CER 18.05% → 한국어 재학습 6.45%.",
   "kind": "string",
   "where": [
@@ -4659,31 +4947,31 @@
   ]
  },
  {
-  "id": "T577",
-  "text": "모델을 키우는 것보다 효과가 크다.",
+  "id": "T610",
+  "text": "모델 크기 확대보다 정확도 개선 효과가 큽니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:235"
   ]
  },
  {
-  "id": "T578",
-  "text": "파인튜닝 전에 위 known 모델을 먼저 써 보는 편이 거의 언제나 낫다.",
+  "id": "T611",
+  "text": "파인튜닝 전 사전 학습(known) 모델 테스트를 권장합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:250"
   ]
  },
  {
-  "id": "T579",
-  "text": "기기에서 한 번 재봐야 알 수 있습니다.",
+  "id": "T612",
+  "text": "기기 측정을 통해 확인할 수 있습니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:297"
   ]
  },
  {
-  "id": "T580",
+  "id": "T613",
   "text": "기준 모델을 찾지 못했습니다.",
   "kind": "string",
   "where": [
@@ -4691,7 +4979,7 @@
   ]
  },
  {
-  "id": "T581",
+  "id": "T614",
   "text": "약 ${Math.floor(rounded / 60)}시간 ${rounded % 60}분",
   "kind": "template",
   "where": [
@@ -4699,7 +4987,7 @@
   ]
  },
  {
-  "id": "T582",
+  "id": "T615",
   "text": "약 ${rounded}분",
   "kind": "template",
   "where": [
@@ -4707,64 +4995,64 @@
   ]
  },
  {
-  "id": "T583",
-  "text": "아직 재보지 않아 판단할 수 없습니다.",
+  "id": "T616",
+  "text": "측정 데이터가 없어 판단할 수 없습니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:336"
   ]
  },
  {
-  "id": "T584",
-  "text": "${estimate.label} 걸리는데 다음 근무까지 ${Math.round(available)}분 남았습니다.",
+  "id": "T617",
+  "text": "소요 예상 시간 ${estimate.label}, 다음 근무까지 ${Math.round(available)}분 남았습니다.",
   "kind": "template",
   "where": [
    "packages/core/src/transcription/models.ts:343"
   ]
  },
  {
-  "id": "T585",
-  "text": "더 작은 모델을 쓰거나 다음 오프로 미루세요.",
+  "id": "T618",
+  "text": "더 작은 모델을 선택하거나 오프 날 진행하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:344"
   ]
  },
  {
-  "id": "T586",
-  "text": "시간은 되지만 폰을 계속 충전해 두어야 합니다.",
+  "id": "T619",
+  "text": "전사 중에는 기기 충전을 유지하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:350"
   ]
  },
  {
-  "id": "T587",
-  "text": "이름을 적어 주세요.",
+  "id": "T620",
+  "text": "이름을 입력하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:370"
   ]
  },
  {
-  "id": "T588",
-  "text": "whisper.cpp 는 ggml .bin 파일만 읽습니다.",
+  "id": "T621",
+  "text": "whisper.cpp는 ggml .bin 파일만 지원합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:372"
   ]
  },
  {
-  "id": "T589",
-  "text": "주소는 https 로 시작해야 합니다.",
+  "id": "T622",
+  "text": "URL은 https로 시작해야 합니다.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:375"
   ]
  },
  {
-  "id": "T590",
-  "text": "직접 넣은 모델입니다. 속도는 기기에서 재봐야 알 수 있습니다.",
+  "id": "T623",
+  "text": "사용자 추가 모델입니다. 속도는 기기 측정을 통해 확인하십시오.",
   "kind": "string",
   "where": [
    "packages/core/src/transcription/models.ts:391"
