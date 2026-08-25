@@ -10,7 +10,7 @@
  * 남의 일정을 건드릴 일이 없다.
  */
 import * as Calendar from "expo-calendar";
-import { createSchedule, resolveAll, type DutyEntry } from "@nsr/core";
+import { createSchedule, parseDutyString, resolveAll, toDateString, type DutyEntry } from "@nsr/core";
 
 const CAL_NAME = "NSR 듀티";
 
@@ -72,4 +72,50 @@ export async function exportMonthToCalendar(
     count: shifts.length,
     message: `${month0 + 1}월 근무 ${shifts.length}건을 '${CAL_NAME}' 캘린더에 내보냈습니다.`,
   };
+}
+
+/**
+ * 폰 캘린더에서 듀티 불러오기 — 방향이 사용자 쪽이다.
+ *
+ * 구글·삼성 캘린더에 이미 근무를 적어 둔 사람이 많다("데", "나이트", "D").
+ * 그 달의 모든 일정을 읽어 **제목이 근무 코드로 읽히는 것만** 듀티로 만든다.
+ * 제목 해석은 붙여넣기와 같은 사전(parseDutyString)을 쓰므로
+ * 데/데이/D/나/오프/휴 전부 알아듣는다. 그 외 일정(생일·약속)은 건드리지 않는다.
+ */
+export async function importMonthFromCalendar(
+  year: number,
+  month0: number,
+): Promise<{ ok: boolean; count: number; message: string }> {
+  const { granted } = await Calendar.requestCalendarPermissionsAsync();
+  if (!granted) return { ok: false, count: 0, message: "캘린더 권한이 필요합니다." };
+
+  const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
+  // 우리가 내보낸 캘린더는 제외 — 되돌아 들어오면 메아리가 된다.
+  const sourceIds = calendars.filter((c) => c.title !== CAL_NAME).map((c) => c.id);
+  const monthStart = new Date(year, month0, 1);
+  const monthEnd = new Date(year, month0 + 1, 1);
+  const events = await Calendar.getEventsAsync(sourceIds, monthStart, monthEnd);
+
+  const entries: DutyEntry[] = [];
+  const seen = new Set<string>();
+  for (const ev of events) {
+    const title = (ev.title ?? "").trim();
+    if (!title || title.length > 6) continue; // 근무 코드는 짧다. 긴 제목은 일정이다.
+    const parsed = parseDutyString("2026-01-01", title);
+    if (parsed.length !== 1) continue; // 정확히 코드 하나로 읽힐 때만
+    const date = toDateString(new Date(ev.startDate as string | number | Date).getTime());
+    if (!date.startsWith(`${year}-${String(month0 + 1).padStart(2, "0")}`)) continue;
+    if (seen.has(date)) continue;
+    seen.add(date);
+    entries.push({ date, code: parsed[0].code });
+  }
+  return {
+    ok: true,
+    count: entries.length,
+    message:
+      entries.length > 0
+        ? `${month0 + 1}월에서 근무 ${entries.length}건을 찾았습니다.`
+        : "근무로 읽히는 일정이 없습니다. 캘린더 일정 제목이 '데이', 'N' 처럼 코드여야 합니다.",
+    ...(entries.length > 0 ? { entries } : {}),
+  } as { ok: boolean; count: number; message: string; entries?: DutyEntry[] };
 }

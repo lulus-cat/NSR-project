@@ -12,10 +12,40 @@
 
 export const PUBLIC_DATA_KEY_SETTING = "publicdata.serviceKey";
 
+import { getSetting, setSetting } from "../db";
+
+/**
+ * 저장소의 app-config.json 에서 공유 키를 받아온다.
+ *
+ * 사용자마다 키를 발급받게 하면 아무도 안 쓴다. 개발자가 자기 키를
+ * 이 파일에 넣어 두면 전 설치자가 나눠 쓴다 — 공개 저장소라 키도
+ * 공개되지만, 무료 공공데이터 키라 잃을 것이 트래픽 한도뿐이다.
+ * 하루 한 번만 확인하고 캐시한다.
+ */
+const SHARED_CONFIG_URL =
+  "https://raw.githubusercontent.com/lulus-cat/NSR-project/main/app-config.json";
+
+async function getSharedKey(): Promise<string | null> {
+  const cached = await getSetting<{ key: string; at: number } | null>("publicdata.shared", null);
+  if (cached && Date.now() - cached.at < 24 * 3600_000) return cached.key || null;
+  try {
+    const res = await fetch(SHARED_CONFIG_URL);
+    if (!res.ok) return cached?.key || null;
+    const cfg = (await res.json()) as { publicDataKey?: string };
+    const key = (cfg.publicDataKey ?? "").trim();
+    await setSetting("publicdata.shared", { key, at: Date.now() });
+    return key || null;
+  } catch {
+    return cached?.key || null;
+  }
+}
+
 async function getKey(): Promise<string | null> {
-  // 비밀 축에 끼진 않지만(개인 무료 키) 습관대로 보안 저장소에 둔다.
+  // 내 키가 있으면 그것이 먼저다. 없으면 저장소의 공유 키.
   const SecureStore = await import("expo-secure-store");
-  return SecureStore.getItemAsync("publicdata.serviceKey");
+  const own = await SecureStore.getItemAsync("publicdata.serviceKey");
+  if (own) return own;
+  return getSharedKey();
 }
 
 export async function setPublicDataKey(key: string | null): Promise<void> {

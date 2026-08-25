@@ -34,18 +34,58 @@ import {
 import { startManual, stopManual } from "../../src/services/scheduler";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
 import { listModels } from "../../src/services/models";
+import { importAudioFile } from "../../src/services/import-audio";
 
 function formatClock(epochMs: number): string {
   const d = new Date(epochMs);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-function greeting(hour: number, todayCode?: string): string {
-  if (todayCode === "N" && hour >= 19) return "오늘 밤도 무사히";
-  if (hour >= 5 && hour < 11) return "좋은 아침입니다";
-  if (hour >= 11 && hour < 17) return "좋은 오후입니다";
-  if (hour >= 17 && hour < 22) return "좋은 저녁입니다";
-  return "고요한 밤입니다";
+const GREETINGS = {
+  dayMorning: [
+    "바이탈보다 내 커피가 먼저입니다",
+    "오늘의 첫 라운딩, 가볍게 갑니다",
+    "차팅은 쌓이기 전에, 커피는 식기 전에",
+    "좋은 아침입니다, 선생님",
+  ],
+  evening: [
+    "이브닝의 저녁밥은 스테이션에서",
+    "해 질 녘 출근하는 사람들이 있습니다",
+    "이브닝도 결국 끝납니다",
+  ],
+  nightBefore: [
+    "달이 뜨면 출근하는 사람",
+    "나이트의 밤은 길지만, 아침은 옵니다",
+    "오늘 밤도 무사히",
+  ],
+  off: [
+    "오늘의 듀티: 아무것도 안 하기",
+    "오프는 근무의 일부입니다. 푹 쉬십시오",
+    "알람 없는 아침, 그것이 오프",
+  ],
+  afterShift: [
+    "수고했습니다. 오늘도 조용히 여러 명을 구했습니다",
+    "퇴근했으면 병동은 병동에 두고 오십시오",
+    "오늘 몫은 끝났습니다",
+  ],
+  lateNight: ["고요한 밤입니다", "이 시간에 깨어 있는 동지에게"],
+} as const;
+
+function pick(pool: readonly string[], seed: string): string {
+  let h = 0;
+  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0;
+  return pool[h % pool.length];
+}
+
+function greeting(hour: number, dateSeed: string, shift?: ResolvedShift | null): string {
+  const done = shift ? Date.now() > shift.endAt : false;
+  if (shift?.code === "N" && hour >= 18) return pick(GREETINGS.nightBefore, dateSeed);
+  if (shift && done) return pick(GREETINGS.afterShift, dateSeed);
+  if (!shift && hour >= 7 && hour < 22) return pick(GREETINGS.off, dateSeed);
+  if (shift?.code === "E") return pick(GREETINGS.evening, dateSeed);
+  if (hour >= 5 && hour < 12) return pick(GREETINGS.dayMorning, dateSeed);
+  if (hour >= 12 && hour < 22) return pick(GREETINGS.evening, dateSeed);
+  return pick(GREETINGS.lateNight, dateSeed);
 }
 
 const WEEKDAYS_KO = ["일", "월", "화", "수", "목", "금", "토"];
@@ -154,7 +194,7 @@ export default function Home() {
 
   return (
     <HeaderScreen
-      title={greeting(now.getHours(), todayShift?.code)}
+      title={greeting(now.getHours(), today, todayShift)}
       subtitle={`${koreanDate(now)}${todayShift ? ` · ${todayShift.label} 근무` : " · 근무 없음"}`}
       right={
         <Pressable
@@ -185,80 +225,90 @@ export default function Home() {
           tone: stats.offTheBooksHours + stats.overtimeHours > 0 ? "alert" : "default",
         },
       ]}
-      banner={
-        /* 색면 위 브리핑 체크리스트 — 모든 것이 이 한 장에 */
-        <FolderCard tab={shiftDone ? "근무 후 브리핑" : "오늘의 브리핑"} tone="accent">
-          <BriefRow
-            icon="calendar-clear-outline"
-            label={todayShift ? `${todayShift.label} ${formatClock(todayShift.startAt)}~${formatClock(todayShift.endAt)}` : "오늘 근무 없음"}
-            value={todayShift ? `체류 ${formatClock(todayShift.onSiteStartAt)}~` : "듀티표"}
-            onPress={() =>
-              todayShift
-                ? router.push(`/shift/${encodeURIComponent(todayShift.id)}`)
-                : router.push("/duty")
-            }
-          />
-          <DashedDivider />
-          <BriefRow
-            icon="time-outline"
-            label="오늘의 오버타임"
-            value={todayShift ? (overtimeToday > 0 ? `+${overtimeToday}시간` : "없음") : "—"}
-            valueColor={overtimeToday > 0 ? t.warn : undefined}
-          />
-          <DashedDivider />
-          <BriefRow
-            icon="flame-outline"
-            label="불타는 지수"
-            value={latestTemp ? `${latestTemp.celsius}°C ${latestTemp.label}` : "기록 없음"}
-            valueColor={latestTemp ? toneColor[latestTemp.tone] : undefined}
-            onPress={() => router.push("/care")}
-          />
-          <DashedDivider />
-          <BriefRow
-            icon="document-text-outline"
-            label="전사할 기록"
-            value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
-            valueColor={pendingCount > 0 ? t.warn : undefined}
-            onPress={() =>
-              todayShift ? router.push(`/shift/${encodeURIComponent(todayShift.id)}`) : router.push("/study")
-            }
-          />
-          <DashedDivider />
-          <BriefRow
-            icon="school-outline"
-            label="복습할 카드"
-            value={dueCount > 0 ? `${dueCount}장` : "없음"}
-            valueColor={dueCount > 0 ? t.accent : undefined}
-            onPress={() => router.push("/study")}
-          />
-          {needsModel ? (
-            <>
-              <DashedDivider />
-              <BriefRow
-                icon="cloud-download-outline"
-                label="전사 모델 설치 필요"
-                value="받으러 가기"
-                valueColor={t.warn}
-                onPress={() => router.push("/models")}
-              />
-            </>
-          ) : null}
-          {update?.show ? (
-            <>
-              <DashedDivider />
-              <BriefRow
-                icon="sparkles-outline"
-                label={`새 버전 ${update.version ?? ""}`}
-                value="설정에서 받기"
-                valueColor={t.accent}
-                onPress={() => router.push("/settings")}
-              />
-            </>
-          ) : null}
-        </FolderCard>
-      }
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
+      {/* ── 서류함: 항목마다 견출지 폴더 하나 ── */}
+      <FolderCard tab="오늘 근무" tone="accent">
+        {todayShift ? (
+          <BriefRow
+            icon="calendar-clear-outline"
+            label={`${todayShift.label} ${formatClock(todayShift.startAt)}~${formatClock(todayShift.endAt)}`}
+            value={shiftDone ? "기록 열기" : `체류 ${formatClock(todayShift.onSiteStartAt)}~`}
+            onPress={() => router.push(`/shift/${encodeURIComponent(todayShift.id)}`)}
+          />
+        ) : (
+          <BriefRow icon="calendar-clear-outline" label="오늘 근무 없음" value="듀티표" onPress={() => router.push("/duty")} />
+        )}
+      </FolderCard>
+
+      <FolderCard tab="오버타임" tone={overtimeToday > 0 || stats.overtimeHours > 0 ? "warn" : "default"}>
+        <BriefRow
+          icon="time-outline"
+          label="오늘"
+          value={todayShift ? (overtimeToday > 0 ? `+${overtimeToday}시간` : "없음") : "—"}
+          valueColor={overtimeToday > 0 ? t.warn : undefined}
+        />
+        <DashedDivider />
+        <BriefRow icon="albums-outline" label="이번 주 근무표 밖" value={`${stats.offTheBooksHours}시간`} valueColor={stats.offTheBooksHours > 0 ? t.warn : undefined} />
+        <DashedDivider />
+        <BriefRow icon="alert-circle-outline" label="주 40시간 초과" value={`${stats.overtimeHours}시간`} valueColor={stats.overtimeHours > 0 ? t.warn : undefined} />
+      </FolderCard>
+
+      <FolderCard tab="불타는 지수">
+        <BriefRow
+          icon="flame-outline"
+          label={latestTemp ? latestTemp.label : "기록 없음"}
+          value={latestTemp ? `${latestTemp.celsius}°C` : "—"}
+          valueColor={latestTemp ? toneColor[latestTemp.tone] : undefined}
+          onPress={() => router.push("/care")}
+        />
+        {latestTemp ? (
+          <View style={{ height: 6, borderRadius: 3, backgroundColor: t.surfaceAlt, overflow: "hidden" }}>
+            <View
+              style={{
+                width: `${Math.min(100, Math.max(4, ((latestTemp.celsius - 35.5) / 26.5) * 100))}%`,
+                height: 6,
+                backgroundColor: toneColor[latestTemp.tone],
+              }}
+            />
+          </View>
+        ) : null}
+      </FolderCard>
+
+      <FolderCard tab="기록" tone={pendingCount > 0 ? "warn" : "default"}>
+        <BriefRow
+          icon="document-text-outline"
+          label="전사할 기록"
+          value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
+          valueColor={pendingCount > 0 ? t.warn : undefined}
+          onPress={() =>
+            todayShift ? router.push(`/shift/${encodeURIComponent(todayShift.id)}`) : router.push("/study")
+          }
+        />
+        {needsModel ? (
+          <>
+            <DashedDivider />
+            <BriefRow icon="cloud-download-outline" label="전사 모델 설치 필요" value="받기" valueColor={t.warn} onPress={() => router.push("/models")} />
+          </>
+        ) : null}
+      </FolderCard>
+
+      <FolderCard tab="카드">
+        <BriefRow
+          icon="school-outline"
+          label="복습할 카드"
+          value={dueCount > 0 ? `${dueCount}장` : "없음"}
+          valueColor={dueCount > 0 ? t.accent : undefined}
+          onPress={() => router.push("/study")}
+        />
+      </FolderCard>
+
+      {update?.show ? (
+        <FolderCard tab="새 판" tone="accent">
+          <BriefRow icon="sparkles-outline" label={update.message} value="받기" valueColor={t.accent} onPress={() => router.push("/settings")} />
+        </FolderCard>
+      ) : null}
+
       {/* 오늘의 한 줄 */}
       <Card tone="accent">
         <Text style={{ fontSize: 26, lineHeight: 26, color: t.accent, fontWeight: "800" }}>&ldquo;</Text>
@@ -329,13 +379,23 @@ export default function Home() {
       <View style={{ flexDirection: "row", gap: space.sm }}>
         {[
           { label: "병동 사전", to: "/ward-dict" },
-          { label: "용어 검색", to: "/glossary" },
+          { label: "파일 가져오기", to: "" },
           { label: "전사 모델", to: "/models" },
         ].map((c) => (
           <Pressable
             key={c.label}
             accessibilityRole="button"
-            onPress={() => router.push(c.to as never)}
+            onPress={async () => {
+              if (c.to) {
+                router.push(c.to as never);
+                return;
+              }
+              const r = await importAudioFile();
+              if (r.ok && r.shiftId) {
+                await load();
+                router.push(`/shift/${encodeURIComponent(r.shiftId)}`);
+              }
+            }}
             style={{
               flex: 1,
               minHeight: TOUCH_MIN,

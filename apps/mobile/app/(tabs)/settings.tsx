@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Platform, ScrollView, Switch, TextInput, View } from "react-native";
+import { Alert, Linking, Platform, ScrollView, Switch, TextInput, View } from "react-native";
 import type { ComponentProps, ReactNode } from "react";
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
@@ -396,6 +396,14 @@ export default function Settings() {
               }}
             />
             <Small>누르면 해제됩니다.</Small>
+            <Button
+              label="지도에서 위치 확인 (카카오맵)"
+              onPress={() =>
+                void Linking.openURL(
+                  `https://map.kakao.com/link/map/${encodeURIComponent(workplace.label || "근무지")},${workplace.latitude},${workplace.longitude}`,
+                )
+              }
+            />
           </>
         ) : (
           <>
@@ -675,10 +683,10 @@ export default function Settings() {
       <Card>
         <GroupHead icon="server-outline" color="#3E7BB6" title="공공데이터 키 (무료)" />
         <Small>
-          키 하나로 두 가지가 켜집니다 — 심평원 전국 병원 검색(근무지 지정),
-          식약처 e약은요 의약품 정보(용어 탭). data.go.kr 가입 후 두 서비스에
-          &lsquo;활용신청&rsquo;하고 마이페이지의 일반 인증키(Decoding)를 붙여넣으십시오.
-          키는 이 기기에만 저장되고 요청은 정부 서버로 직접 갑니다.
+          심평원 전국 병원 검색과 식약처 e약은요 의약품 정보가 이 키로 켜집니다.
+          기본으로는 앱에 내장된 공유 키를 함께 쓰므로 아무것도 안 해도 됩니다.
+          공유 트래픽이 모자라거나 내 키를 쓰고 싶으면 data.go.kr 에서 발급받아
+          여기 붙여넣으십시오 — 내 키가 항상 우선합니다.
         </Small>
         <TextInput
           value={publicKeyInput}

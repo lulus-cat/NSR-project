@@ -219,3 +219,18 @@ describe("기피 듀티 패턴", () => {
     expect(stats.evday).toBe(0);
   });
 });
+
+describe("기피 듀티 확장", () => {
+  it("데데데나·나이트 연속·샌드위치 오프를 센다", async () => {
+    const { dutyPatternStats } = await import("../src/duty/schedule.js");
+    const e = (date: string, code: string) => ({ date, code }) as never;
+    const stats = dutyPatternStats([
+      e("2026-09-01", "D"), e("2026-09-02", "D"), e("2026-09-03", "D"), e("2026-09-04", "N"), // 데데데나
+      e("2026-09-05", "N"), e("2026-09-06", "N"),                                              // 나이트 3연속
+      e("2026-09-07", "OFF"), e("2026-09-08", "N"),                                            // 샌드위치 오프
+    ]);
+    expect(stats.dayRunToNight).toBe(1);
+    expect(stats.longestNightRun).toBe(3);
+    expect(stats.sandwichOff).toBe(1);
+  });
+});

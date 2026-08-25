@@ -23,7 +23,7 @@ import {
   upsertDutyEntries,
 } from "../../src/db";
 import { useApp } from "../../src/state/AppContext";
-import { exportMonthToCalendar } from "../../src/services/calendar-sync";
+import { exportMonthToCalendar, importMonthFromCalendar } from "../../src/services/calendar-sync";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
@@ -460,12 +460,17 @@ export default function Duty() {
               ) : null}
               <Divider />
               <Small muted={false}>기피 듀티</Small>
-              <View style={{ flexDirection: "row", gap: space.sm }}>
-                {[
+              {[[
                   { label: "나오데", value: patterns.naode, hint: "나이트-오프-데이" },
                   { label: "이브데이", value: patterns.evday, hint: "이브닝 뒤 바로 데이" },
                   { label: "퐁당퐁당", value: patterns.pongdang, hint: "하루걸러 출근" },
-                ].map((s2) => (
+                ], [
+                  { label: "데데데나", value: patterns.dayRunToNight, hint: "데이 연속 뒤 나이트" },
+                  { label: "나이트 연속", value: patterns.longestNightRun, hint: "최장 연속 일수" },
+                  { label: "샌드위치 오프", value: patterns.sandwichOff, hint: "나이트-오프-나이트" },
+                ]].map((rowTiles, ri) => (
+              <View key={ri} style={{ flexDirection: "row", gap: space.sm }}>
+                {rowTiles.map((s2) => (
                   <View
                     key={s2.label}
                     style={{
@@ -485,10 +490,11 @@ export default function Duty() {
                   </View>
                 ))}
               </View>
-              {patterns.naode + patterns.evday > 0 ? (
+              ))}
+              {patterns.naode + patterns.evday + patterns.dayRunToNight + patterns.sandwichOff > 0 ||
+              patterns.longestNightRun > 3 ? (
                 <Small>
-                  나오데·이브데이는 휴식이 부족해지는 배치입니다. 반복되면 근무표와 함께
-                  기록해 두십시오.
+                  휴식이 무너지는 배치입니다. 통례상 연속 근무 5일·나이트 3일을 넘기지 않습니다. 반복되면 근무표와 함께 기록해 두십시오.
                 </Small>
               ) : null}
             </Card>
@@ -501,16 +507,38 @@ export default function Duty() {
 </Heading>
             <Small>
               
-  이번 달 듀티를 폰 캘린더에 &lsquo;NSR 듀티&rsquo; 항목으로 저장합니다. 재내보내기 시 해당 월 일정이 덮어씌워집니다.
+  구글·삼성 캘린더에 적어 둔 근무('데이', 'N', '오프' 같은 제목)를 이 달 듀티로 가져오거나, 반대로 이 달 듀티를 &lsquo;NSR 듀티&rsquo; 캘린더로 내보냅니다.
 </Small>
-            <Button
-              label={`${month + 1}월 듀티 내보내기`}
-              tone="primary"
-              onPress={async () => {
-                const r = await exportMonthToCalendar(entries, year, month);
-                setSyncMsg(r.message);
-              }}
-            />
+            <View style={{ flexDirection: "row", gap: space.sm }}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="캘린더에서 불러오기"
+                  tone="primary"
+                  onPress={async () => {
+                    const r = (await importMonthFromCalendar(year, month)) as {
+                      ok: boolean;
+                      message: string;
+                      entries?: { date: string; code: ShiftCode }[];
+                    };
+                    if (r.entries?.length) {
+                      await upsertDutyEntries(r.entries);
+                      await load();
+                      await app.refresh();
+                    }
+                    setSyncMsg(r.message);
+                  }}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label={`${month + 1}월 내보내기`}
+                  onPress={async () => {
+                    const r = await exportMonthToCalendar(entries, year, month);
+                    setSyncMsg(r.message);
+                  }}
+                />
+              </View>
+            </View>
             {syncMsg ? <Small muted={false}>{syncMsg}</Small> : null}
           </Card>
 

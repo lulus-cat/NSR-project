@@ -1,0 +1,40 @@
+# 파인튜닝 모델을 Releases 에 올린다.
+#
+# 왜 필요한가: ggml 모델은 수백 MB 라 채팅으로도, git 커밋으로도 못 옮긴다.
+# 대신 이 워크플로에 HuggingFace 파일 주소를 주면 러너가 받아서
+# Releases 에 붙인다. 앱의 "직접 추가"에서 그 주소를 넣으면 끝이다.
+#
+# 실행: Actions 탭 → "모델 릴리스" → Run workflow → 주소·이름 입력.
+name: 모델 릴리스
+
+on:
+  workflow_dispatch:
+    inputs:
+      url:
+        description: "모델 파일 주소 (HuggingFace resolve 링크 등, .bin)"
+        required: true
+      name:
+        description: "파일 이름 (예: ggml-ko-medium-q5_0.bin)"
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  upload:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 받기
+        run: |
+          curl -L --fail --retry 3 -o "${{ inputs.name }}" "${{ inputs.url }}"
+          ls -lh "${{ inputs.name }}"
+      - name: 릴리스에 붙이기
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: models
+          name: 전사 모델 보관함
+          body: |
+            앱의 "한국어 파인튜닝 모델 추가"에서 아래 파일 주소를 넣어 받습니다.
+            이 릴리스는 모델 파일 보관용이라 판 번호와 무관합니다.
+          prerelease: true
+          files: ${{ inputs.name }}
