@@ -115,6 +115,57 @@ export async function setWorkplaceHere(radius = 150): Promise<Workplace | null> 
   return wp;
 }
 
+/** 병원 이름으로 좌표 찾기. */
+export interface PlaceHit {
+  name: string;
+  latitude: number;
+  longitude: number;
+}
+
+/**
+ * OpenStreetMap(Nominatim)으로 병원을 찾는다.
+ *
+ * 왜 구글·카카오·네이버가 아닌가: 셋 다 API 키와 개발자 등록이 필요하고,
+ * 키를 앱에 넣으면 추출된다. Nominatim 은 키가 없고 무료다. 대형 병원은
+ * 다 등록돼 있다. **검색어만** OSM 서버로 가고 내 위치는 보내지 않는다.
+ */
+export async function searchHospitals(query: string): Promise<PlaceHit[]> {
+  const q = query.trim();
+  if (q.length < 2) return [];
+  const url =
+    "https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=kr&q=" +
+    encodeURIComponent(q);
+  const res = await fetch(url, {
+    headers: { "User-Agent": "NSR-nurse-app/0.1 (personal use)" },
+  });
+  if (!res.ok) return [];
+  const data = (await res.json()) as {
+    display_name?: string;
+    lat?: string;
+    lon?: string;
+  }[];
+  return data
+    .filter((d) => d.lat && d.lon)
+    .map((d) => ({
+      // display_name 은 "병원, 동, 구, 시…" 전체 주소다. 앞 두 토막이면 알아본다.
+      name: (d.display_name ?? "").split(",").slice(0, 2).join(",").trim() || q,
+      latitude: Number(d.lat),
+      longitude: Number(d.lon),
+    }));
+}
+
+/** 검색 결과를 근무지로 저장한다. 반경은 병원 부지를 감안해 넉넉히 250m. */
+export async function setWorkplacePlace(hit: PlaceHit, radius = 250): Promise<Workplace> {
+  const wp: Workplace = {
+    latitude: hit.latitude,
+    longitude: hit.longitude,
+    radius,
+    label: hit.name,
+  };
+  await setSetting(GEO_KEYS.workplace, wp);
+  return wp;
+}
+
 export async function clearWorkplace(): Promise<void> {
   await setGeofence(false);
   await setSetting(GEO_KEYS.workplace, null);

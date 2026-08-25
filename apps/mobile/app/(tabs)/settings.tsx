@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Platform, ScrollView, Switch, TextInput, View } from "react-native";
+import type { ComponentProps, ReactNode } from "react";
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
 import { DEFAULT_RECORDING_POLICY, type ShiftCode } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, HeaderScreen, Heading, Row, Small } from "../../src/components/ui";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { Badge, Body, Button, Card, Divider, Heading, Row, Small } from "../../src/components/ui";
 import { radius, space, type, useTheme } from "../../src/theme";
 import { useApp } from "../../src/state/AppContext";
 import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../../src/db";
@@ -13,8 +16,11 @@ import {
   clearWorkplace,
   geofenceEnabled,
   getWorkplace,
+  searchHospitals,
   setGeofence,
   setWorkplaceHere,
+  setWorkplacePlace,
+  type PlaceHit,
   type Workplace,
 } from "../../src/services/geofence";
 import { getApiKey, getProvider, setApiKey, setProvider, testConnection, type LlmProvider } from "../../src/services/llm";
@@ -69,6 +75,40 @@ function Toggle({
   );
 }
 
+
+/** 삼성 설정처럼 색 원 아이콘 + 제목으로 묶음을 연다. */
+function GroupHead({
+  icon,
+  color,
+  title,
+  badge,
+}: {
+  icon: ComponentProps<typeof Ionicons>["name"];
+  color: string;
+  title: string;
+  badge?: ReactNode;
+}) {
+  const t = useTheme();
+  return (
+    <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+      <View
+        style={{
+          width: 34,
+          height: 34,
+          borderRadius: 17,
+          backgroundColor: color,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <Ionicons name={icon} size={17} color="#FFFFFF" />
+      </View>
+      <Heading>{title}</Heading>
+      {badge}
+    </View>
+  );
+}
+
 export default function Settings() {
   const t = useTheme();
   const app = useApp();
@@ -77,6 +117,8 @@ export default function Settings() {
   const [workplace, setWorkplace] = useState<Workplace | null>(null);
   const [geoOn, setGeoOn] = useState(false);
   const [geoMsg, setGeoMsg] = useState<string | null>(null);
+  const [hospitalQuery, setHospitalQuery] = useState("");
+  const [hospitalHits, setHospitalHits] = useState<PlaceHit[]>([]);
   const [discardWithoutSelf, setDiscardWithoutSelf] = useState(true);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -183,21 +225,32 @@ export default function Settings() {
   const version = currentVersion();
 
   return (
-    <HeaderScreen
-      title="설정"
-      heroLabel="저장된 녹음"
-      hero={`${storageMb} MB`}
-      rows={[
-        { label: "보관 한도", value: `${policy.maxStorageMb} MB` },
-        { label: "보관 기간", value: `${policy.retentionDays}일` },
-      ]}
-    >
+    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
+    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.bottom, gap: space.md }}>
+      <Text style={{ fontSize: 28, lineHeight: 36, fontWeight: "700", color: t.text }}>설정</Text>
+
+      {/* 프로필 — 근무지·저장 요약이 이 앱의 신원이다 */}
+      <Card>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+          <View
+            style={{
+              width: 44, height: 44, borderRadius: 22,
+              backgroundColor: t.accentSoft, alignItems: "center", justifyContent: "center",
+            }}
+          >
+            <Ionicons name="person-outline" size={20} color={t.accent} />
+          </View>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Heading>{workplace ? workplace.label : "근무지 미지정"}</Heading>
+            <Small>
+              저장된 녹음 {storageMb} MB · 보관 {policy.retentionDays}일
+            </Small>
+          </View>
+        </View>
+      </Card>
       {/* 판 번호와 업데이트 */}
       <Card tone={update?.show ? "accent" : "default"}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <Heading>앱 버전</Heading>
-          <Badge text="알파" tone="warn" />
-        </View>
+        <GroupHead icon="information-circle-outline" color="#4C7DDB" title="앱 버전" badge={<Badge text="알파" tone="warn" />} />
         <Small muted={false}>{version ? `지금 ${version}` : "개발 중 실행"}</Small>
         <Small>
           
@@ -262,7 +315,7 @@ export default function Settings() {
 
       {/* 녹음 */}
       <Card>
-        <Heading>자동 녹음</Heading>
+        <GroupHead icon="mic-outline" color="#3E9B6F" title="자동 녹음" />
         <Toggle
           label="듀티표에 따라 자동 녹음"
           description={capability.explanation}
@@ -311,40 +364,90 @@ export default function Settings() {
 
       {/* 근무지 지오펜스 */}
       <Card>
-        <Heading>근무지에서 자동 녹음</Heading>
+        <GroupHead icon="location-outline" color="#2E9AA8" title="근무지에서 자동 녹음" />
         <Small>
           
   병원 반경 진입 시 녹음을 시작하고 벗어나면 종료합니다. 출퇴근 전후 오버타임까지 실제 체류 시간을 기록합니다. 근무일에만 작동하여 오프에는 녹음되지 않으며 위치 정보는 외부로 유출되지 않습니다.
 </Small>
         <Divider />
         {workplace ? (
-          <Row
-            label="근무지"
-            value={`지정됨 · 반경 ${workplace.radius}m`}
-            onPress={async () => {
-              await clearWorkplace();
-              setWorkplace(null);
-              setGeoOn(false);
-            }}
-          />
+          <>
+            <Row
+              label={workplace.label || "근무지"}
+              value={`반경 ${workplace.radius}m · 해제`}
+              onPress={async () => {
+                await clearWorkplace();
+                setWorkplace(null);
+                setGeoOn(false);
+              }}
+            />
+            <Small>누르면 해제됩니다.</Small>
+          </>
         ) : (
-          <Button
-            label="현재 위치를 근무지로 지정"
-            tone="primary"
-            onPress={async () => {
-              const wp = await setWorkplaceHere();
-              if (wp) {
-                setWorkplace(wp);
-                setGeoMsg(null);
-              } else {
-                setGeoMsg("위치 권한이 없어 지정하지 못했습니다.");
-              }
-            }}
-          />
+          <>
+            <Small muted={false}>병원 이름으로 찾기</Small>
+            <View style={{ flexDirection: "row", gap: space.sm }}>
+              <TextInput
+                value={hospitalQuery}
+                onChangeText={setHospitalQuery}
+                placeholder="예: 서울아산병원"
+                placeholderTextColor={t.textMuted}
+                style={{
+                  flex: 1,
+                  color: t.text,
+                  backgroundColor: t.surfaceAlt,
+                  borderRadius: radius.md,
+                  paddingHorizontal: space.md,
+                  minHeight: 48,
+                  fontSize: 15,
+                }}
+              />
+              <Button
+                label="검색"
+                tone="primary"
+                onPress={async () => {
+                  try {
+                    const hits = await searchHospitals(hospitalQuery);
+                    setHospitalHits(hits);
+                    setGeoMsg(hits.length === 0 ? "찾지 못했습니다. 정식 명칭으로 다시 시도해 보십시오." : null);
+                  } catch {
+                    setGeoMsg("검색에 실패했습니다. 네트워크를 확인해 주십시오.");
+                  }
+                }}
+              />
+            </View>
+            {hospitalHits.map((h) => (
+              <Row
+                key={`${h.latitude},${h.longitude}`}
+                label={h.name}
+                value="이곳으로"
+                onPress={async () => {
+                  const wp = await setWorkplacePlace(h);
+                  setWorkplace(wp);
+                  setHospitalHits([]);
+                  setHospitalQuery("");
+                  setGeoMsg(null);
+                }}
+              />
+            ))}
+            <Small>
+              검색어만 OpenStreetMap 서버로 갑니다. 내 위치는 보내지 않습니다. 지도
+              데이터에 없는 병원이면 아래 버튼으로 병동에서 직접 지정하십시오.
+            </Small>
+            <Button
+              label="지금 있는 곳을 근무지로"
+              onPress={async () => {
+                const wp = await setWorkplaceHere();
+                if (wp) {
+                  setWorkplace(wp);
+                  setGeoMsg(null);
+                } else {
+                  setGeoMsg("위치 권한이 없어 지정하지 못했습니다.");
+                }
+              }}
+            />
+          </>
         )}
-        {workplace ? <Small>
-  지정된 항목을 누르면 해제됩니다. 병동 내에서 설정해야 정확합니다.
-</Small> : null}
         <Toggle
           label="지오펜스 자동 녹음"
           description={
@@ -364,7 +467,7 @@ export default function Settings() {
 
       {/* 조용함 */}
       <Card>
-        <Heading>조용히 동작</Heading>
+        <GroupHead icon="notifications-off-outline" color="#7A6FD0" title="조용히 동작" />
         <Toggle
           label="시작·종료 소리와 진동 없음"
           value={policy.silentStart}
@@ -400,7 +503,7 @@ export default function Settings() {
 
       {/* 개인정보 */}
       <Card>
-        <Heading>개인정보</Heading>
+        <GroupHead icon="lock-closed-outline" color="#5B5EA6" title="개인정보" />
         <Toggle
           label="앱 잠금"
           description="앱 실행 시 생체인증을 확인합니다. 녹음 내용에 환자 정보가 포함될 수 있습니다."
@@ -442,7 +545,7 @@ export default function Settings() {
 
       {/* 개인정보 가리기 */}
       <Card>
-        <Heading>환자 정보 가리기</Heading>
+        <GroupHead icon="eye-off-outline" color="#8A5F9E" title="환자 정보 가리기" />
         <Small>
           
   보고서 내보내기, 공유, 외부 기능 송신 시 이름·전화번호·등록번호를 자동으로 마스킹합니다.
@@ -548,7 +651,7 @@ export default function Settings() {
 
       {/* 전사 */}
       <Card>
-        <Heading>전사</Heading>
+        <GroupHead icon="text-outline" color="#B3762F" title="전사" />
         <Small>
           
   전사는 기본적으로 기기 내에서 처리됩니다. 환자 정보 유출은 의료법 제19조 위반 대상입니다.
@@ -599,7 +702,7 @@ export default function Settings() {
 
       {/* 보조 기능 */}
       <Card>
-        <Heading>보조 기능 (선택)</Heading>
+        <GroupHead icon="sparkles-outline" color="#C0553F" title="보조 기능 (선택)" />
         <Small>
           
   문맥상 약어 해석, 지시사항 정돈, 근무 요약 등에 AI 모델을 사용합니다. 활성화 시 전사본이 외부로 전송되며, 자동 비식별화가 적용되나 완벽하지 않을 수 있습니다.
@@ -690,7 +793,7 @@ export default function Settings() {
 
       {/* 초기화 */}
       <Card>
-        <Heading>데이터 삭제</Heading>
+        <GroupHead icon="trash-outline" color="#B3402F" title="데이터 삭제" />
         <Body muted>
           
   녹음 파일, 전사본, 학습 카드, 근무 기록을 모두 삭제합니다. 복구할 수 없습니다.
@@ -707,6 +810,7 @@ export default function Settings() {
           {DEFAULT_RECORDING_POLICY.retentionDays}일 보관
         </Small>
       </Card>
-    </HeaderScreen>
+    </ScrollView>
+    </SafeAreaView>
   );
 }

@@ -659,6 +659,30 @@ export async function saveShiftReport(
   );
 }
 
+export interface ShiftReportRow {
+  shiftId: string;
+  createdAt: number;
+  /** 저장해 둔 ShiftReport. 화면에서 개수 요약을 만드는 데 쓴다. */
+  payload: unknown;
+}
+
+export async function listShiftReports(limit = 60): Promise<ShiftReportRow[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ shift_id: string; created_at: number; payload: string }>(
+    "SELECT shift_id, created_at, payload FROM shift_reports ORDER BY shift_id DESC LIMIT ?",
+    [limit],
+  );
+  return rows.map((r) => {
+    let payload: unknown = null;
+    try {
+      payload = JSON.parse(r.payload);
+    } catch {
+      payload = null;
+    }
+    return { shiftId: r.shift_id, createdAt: r.created_at, payload };
+  });
+}
+
 export async function getShiftReportMarkdown(shiftId: string): Promise<string | null> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ markdown: string }>(
