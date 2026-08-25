@@ -172,7 +172,7 @@ export async function downloadModel(
     return {
       ok: false,
       sizeMb: 0,
-      error: "다운로드 URL이 없는 모델입니다. 모델 파일을 직접 추가하십시오.",
+      error: "다운로드 링크가 없습니다. 모델 파일을 직접 넣어주십시오.",
     };
   }
   if (inFlight.has(model.id)) {
@@ -208,7 +208,7 @@ export async function downloadModel(
     const done = new File(dir, model.file);
     if (!done.exists || done.size === 0) {
       deleteModelFile(model);
-      return { ok: false, sizeMb: 0, error: "파일이 비어 있습니다. 다시 다운로드하십시오." };
+      return { ok: false, sizeMb: 0, error: "다운로드된 파일이 온전하지 않습니다. 지우고 다시 받아 주십시오." };
     }
     const sizeMb = round(done.size / MB);
     onProgress?.({ receivedMb: sizeMb, totalMb: sizeMb, ratio: 1 });
@@ -223,9 +223,9 @@ export async function downloadModel(
     // 원시 오류("FileSystem.downloadFileAsync has been rejected ... 404")는
     // 사람이 읽을 문장이 아니다. 흔한 경우만 우리말로 옮긴다.
     const friendly = /\b404\b/.test(raw)
-      ? "서버에 파일이 없습니다 (404). 모델이 아직 준비 중일 수 있으니 잠시 후 다시 시도해 보십시오."
+      ? "파일을 받지 못했습니다 (404). GitHub 저장소가 비공개 상태면 앱이 모델을 받을 수 없습니다 — 저장소를 공개로 전환하거나 개발자에게 알려주십시오."
       : /Network|ENOTFOUND|ECONN|timeout/i.test(raw)
-        ? "네트워크 연결에 실패했습니다. Wi-Fi 상태를 확인하고 다시 시도해 보십시오."
+        ? "인터넷이 끊겼습니다. Wi-Fi 상태를 확인하고 다시 시도하십시오."
         : raw;
     return { ok: false, sizeMb: 0, error: friendly };
   } finally {

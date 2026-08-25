@@ -125,7 +125,7 @@ export async function importMonthFromCalendar(
     message:
       entries.length > 0
         ? `${month0 + 1}월에서 근무 ${entries.length}건을 찾았습니다.`
-        : "근무로 읽히는 일정이 없습니다. 캘린더 일정 제목이 '데이', 'N' 처럼 코드여야 합니다.",
+        : "가져올 듀티 일정이 없습니다. 캘린더 일정이 '데이', 'N'처럼 듀티 코드여야 합니다.",
     ...(entries.length > 0 ? { entries } : {}),
   } as { ok: boolean; count: number; message: string; entries?: DutyEntry[] };
 }

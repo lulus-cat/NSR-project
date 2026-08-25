@@ -218,7 +218,7 @@ export function reportToMarkdown(report: ShiftReport): string {
   if (report.unresolved.length > 0) {
     lines.push("## 미확인·확인 필요 사항");
     lines.push("");
-    lines.push("다음 근무 전 확인 및 숙지가 필요한 사항입니다.");
+    lines.push("다음 근무 전에 미리 숙지하고 대비해야 할 내용입니다.");
     lines.push("");
     for (const q of report.unresolved) {
       lines.push(`- [ ] \`${formatTime(q.atSec)}\` ${q.text}`);
@@ -230,7 +230,7 @@ export function reportToMarkdown(report: ShiftReport): string {
     lines.push("## 누락 및 특이사항 언급");
     lines.push("");
     lines.push(
-      "업무 절차 개선 및 반복적 누락 방지를 위한 기록입니다.",
+      "반복되는 실수나 업무 누락을 막기 위한 뼈아픈 기록입니다.",
     );
     lines.push("");
     for (const q of report.mistakes) {

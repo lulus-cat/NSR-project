@@ -69,7 +69,7 @@ export function taeumTemperature(score: number): TaeumTemperature {
       celsius,
       label: "미열",
       tone: "muted",
-      description: "주의가 필요한 발언이 기록되었습니다. 인용문을 확인하십시오.",
+      description: "주의 깊게 살펴볼 발언이 있습니다. 인용문을 꼭 확인하십시오.",
     };
   }
   if (celsius <= 38.5) {
@@ -77,7 +77,7 @@ export function taeumTemperature(score: number): TaeumTemperature {
       celsius,
       label: "발열",
       tone: "warn",
-      description: "지속 발생 시 날짜·상황·인용문 기록을 보관하십시오.",
+      description: "이런 발언이 계속되면 날짜, 상황, 발언 내용을 증거로 모으십시오.",
     };
   }
   if (celsius <= 42.0) {
@@ -85,7 +85,7 @@ export function taeumTemperature(score: number): TaeumTemperature {
       celsius,
       label: "고열",
       tone: "danger",
-      description: "전문적인 도움이 필요한 상태입니다. 기록을 취합하여 상담을 진행하십시오.",
+      description: "전문가의 도움이 시급합니다. 기록을 챙겨서 꼭 상담을 받으십시오.",
     };
   }
   if (celsius <= 50.0) {

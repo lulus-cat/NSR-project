@@ -114,14 +114,14 @@ function Bubble({ msg }: { msg: Msg }) {
 }
 
 const STARTERS = [
-  "오늘 태움 당했어요",
-  "실수해서 자책 중이에요",
+  "오늘 태움 당했습니다.",
+  "실수해서 자책 중입니다.",
   "그냥 지쳤어요",
-  "오늘 근무 내용으로 퀴즈 내줘",
-  "최근 보고서 요약해줘",
+  "오늘 근무 내용으로 퀴즈 내주십시오.",
+  "최근 근무 보고서를 요약해 주십시오.",
 ];
 
-const QUIZ_PROMPT = "내 암기카드와 최근 근무 보고서로 퀴즈를 하나씩 내줘. 내가 답하면 맞았는지 확인해줘.";
+const QUIZ_PROMPT = "암기카드와 최근 보고서로 퀴즈를 내주십시오. 답하면 확인해 주십시오.";
 
 export default function Care() {
   const t = useTheme();
@@ -342,7 +342,7 @@ export default function Care() {
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder={ready?.ok === false ? "설정에서 AI 를 연결하면 시작됩니다" : "무슨 일이 있었는지 적어 보십시오"}
+            placeholder={ready?.ok === false ? "설정에서 AI를 연결하면 시작합니다." : "무슨 일이 있었는지 적어 보십시오"}
             placeholderTextColor={t.textMuted}
             editable={ready?.ok ?? false}
             multiline

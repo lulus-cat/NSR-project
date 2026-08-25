@@ -320,7 +320,7 @@ export default function ShiftDetail() {
     setWordTarget(null);
     setError(null);
     setBusy(null);
-    setNotice(`'${surface}'${josa(surface, "을")} 사전에 추가했습니다. 의미는 병동 사전에서 입력하십시오.`);
+    setNotice(`'${surface}'${josa(surface, "을")} 사전에 넣었습니다. 세부 뜻은 나중에 사전에서 적어주십시오.`);
   }, [wordTarget]);
 
   return (
@@ -370,11 +370,11 @@ export default function ShiftDetail() {
   온디바이스 Whisper는
 {" "}
             <Text style={{ fontWeight: "700" }}>목소리를 구별하지 못합니다.</Text> 
-  음성 인식 전용 모델로 발언자 구별 기능은 지원하지 않습니다. 화자 라벨을 직접 지정해야 합니다.
+  자동 화자 분리를 지원하지 않으니 라벨을 직접 지정해 주십시오.
 </Small>
           <Small>
             
-  문장별 선택 대신 역할 선택 후 전사 탭에서
+  문장별로 고르지 말고, 역할을 선택한 뒤 전사 탭에서
 <Text
             style={{ fontWeight: "700" }}>시작 문장과 끝 문장</Text>
   시작과 끝 문장을 선택하면 범위가 일괄 지정됩니다.
@@ -452,7 +452,7 @@ export default function ShiftDetail() {
           <Card>
             <Body muted>
               
-  전사된 내용이 없습니다. 기록 파일이 있다면 전사를 실행하십시오.
+  전사 내용이 없습니다. 먼저 전사를 실행해 주십시오.
 </Body>
           </Card>
         ) : (
@@ -463,7 +463,7 @@ export default function ShiftDetail() {
   문장을 누르면 화자 구간을 지정하고
 <Text style={{ fontWeight: "700" }}>
                 단어를 길게 누르면</Text> 
-  수정하거나 병동 사전에 등록할 수 있습니다. 수정 내역은 다음 전사에 자동 적용됩니다.
+  내용을 고치거나 사전에 등록합니다. 수정 내역은 다음 전사에 자동 적용됩니다.
 </Small>
             </Card>
             {segments.map((seg) => (
@@ -488,7 +488,7 @@ export default function ShiftDetail() {
           <Small>
             
   
-  전사 오기를 수정하십시오. 동일 교정이 2회 이상 반복되면 다음 전사에 자동 반영됩니다.
+  전사 오류를 직접 고치십시오. 같은 교정이 2번 쌓이면 다음부터는 자동으로 고쳐집니다.
 </Small>
           <TextInput
             value={wordTarget.replacement}
@@ -527,7 +527,7 @@ export default function ShiftDetail() {
 </Small>
           <Small>
             
-  사전에 등록하면 전사 및 암기 카드에 자동 반영됩니다. 상세 의미는 병동 사전에서 편집할 수 있습니다.
+  사전에 넣으면 전사와 암기 카드에 자동 반영됩니다. 세부 뜻은 병동 사전에서 적을 수 있습니다.
 </Small>
           <Button label="내 사전에 추가" onPress={() => void addToMyDict()} />
         </Card>
@@ -541,7 +541,7 @@ export default function ShiftDetail() {
             ) : (
               <Body muted>
                 
-  생성된 보고서가 없습니다. 전사 완료 후 &lsquo;카드·보고서 만들기&rsquo;를 선택하십시오.
+  보고서가 없습니다. 전사를 마친 뒤 ‘카드·보고서 만들기’를 실행하십시오.
 </Body>
             )}
           </Card>
@@ -551,7 +551,7 @@ export default function ShiftDetail() {
               <Heading>내보내기</Heading>
               <Small>
                 
-  개인정보(이름·연락처·등록번호) 마스킹 내역을 확인한 후 전송하십시오.
+  이름과 연락처 등 가려진 개인정보 내역을 꼭 확인한 뒤 보내십시오.
 </Small>
               <Button label="내보낼 내용 확인" onPress={() => void prepareExport()} />
             </Card>
@@ -587,7 +587,7 @@ export default function ShiftDetail() {
               <Divider />
               <Small>
                 
-  수신자 기기 및 메신저 서버에 기록이 남습니다. 전송 전 포함된 정보를 다시 확인하십시오.
+  수신자와 메신저 서버에 기록이 남습니다. 개인정보가 없는지 마지막으로 확인하십시오.
 </Small>
               <View style={{ flexDirection: "row", gap: space.sm }}>
                 <View style={{ flex: 1 }}>
@@ -659,7 +659,7 @@ export default function ShiftDetail() {
 </Body>
                 <Small>
                   
-  발언 미감지가 문제 없음을 의미하지는 않습니다. 텍스트에는 어조와 맥락이 남지 않습니다.
+  아무 문제 없다는 뜻이 아닙니다. 텍스트에는 어조나 맥락이 담기지 않습니다.
 </Small>
               </Card>
             )}
@@ -669,7 +669,7 @@ export default function ShiftDetail() {
                 <Heading>응대 중 폭언</Heading>
                 <Small>
                   
-  응대 중 폭언은 산업안전보건법상 보호 대상이며 병원 보안 절차에 따라 대응하십시오.
+  응대 중 폭언은 산업안전보건법상 보호 대상입니다. 병원 보안 절차에 따라 대응하십시오.
 </Small>
                 {taeum.patientAggression.map((e, i) => (
                   <View key={`${e.segmentId}-p${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -685,7 +685,7 @@ export default function ShiftDetail() {
               <Heading>참고</Heading>
               <Small>
                 
-  근로기준법 제76조의2는 직장 내 괴롭힘을 금지하며, 제76조의3 제6항은 신고자에 대한 불리한 처우를 금지합니다.
+  근로기준법은 직장 내 괴롭힘과 신고자에 대한 불이익 처우를 엄격히 금지합니다.
 </Small>
               <Small>
                 상담·신고: 소속 병원 고충처리 부서 · 대한간호협회 간호사 인권센터 ·
@@ -697,7 +697,7 @@ export default function ShiftDetail() {
           <Card>
             <Body muted>
               
-  화자 라벨 지정 후 &lsquo;카드·보고서 만들기&rsquo;를 실행하십시오.
+  화자를 지정한 후 ‘카드·보고서 만들기’를 누르십시오.
 </Body>
           </Card>
         )

@@ -52,32 +52,32 @@ function formatClock(epochMs: number): string {
 
 const GREETINGS = {
   dayMorning: [
-    "바이탈보다 내 커피가 먼저입니다",
-    "오늘의 첫 라운딩, 가볍게 갑니다",
-    "차팅은 쌓이기 전에, 커피는 식기 전에",
-    "좋은 아침입니다, 선생님",
+    "바이탈보다 내 커피가 먼저입니다.",
+    "오늘 첫 라운딩, 가볍게 다녀오십시오.",
+    "차팅은 밀리기 전에, 커피는 식기 전에.",
+    "좋은 아침입니다.",
   ],
   evening: [
     "이브닝의 저녁밥은 스테이션에서",
-    "해 질 녘 출근하는 사람들이 있습니다",
-    "이브닝도 결국 끝납니다",
+    "해 질 녘 출근하는 동료도 있습니다.",
+    "이브닝 근무도 결국 끝이 납니다.",
   ],
   nightBefore: [
     "달이 뜨면 출근하는 사람",
-    "나이트의 밤은 길지만, 아침은 옵니다",
+    "나이트 근무의 밤은 길어도 아침은 옵니다.",
     "오늘 밤도 무사히",
   ],
   off: [
-    "오늘의 듀티: 아무것도 안 하기",
+    "오늘 듀티: 아무것도 안 하기.",
     "오프는 근무의 일부입니다. 푹 쉬십시오",
     "알람 없는 아침, 그것이 오프",
   ],
   afterShift: [
-    "수고했습니다. 오늘도 조용히 여러 명을 구했습니다",
-    "퇴근했으면 병동은 병동에 두고 오십시오",
-    "오늘 몫은 끝났습니다",
+    "고생하셨습니다. 오늘도 조용히 환자들을 구했습니다.",
+    "퇴근하셨다면 병원 일은 다 잊으십시오.",
+    "오늘 근무는 끝났습니다.",
   ],
-  lateNight: ["고요한 밤입니다", "이 시간에 깨어 있는 동지에게"],
+  lateNight: ["고요한 밤입니다", "이 시간에 깨어 있는 동료들에게."],
 } as const;
 
 function pick(pool: readonly string[], seed: string): string {
@@ -471,7 +471,7 @@ export default function Home() {
             {latestTemp ? (
               <Badge text={latestTemp.label} tone={latestTemp.tone} />
             ) : (
-              <Small>근무를 기록하고 전사하면 병동의 온도가 여기 올라옵니다.</Small>
+              <Small>근무를 전사하면 병동 분위기 온도를 보여줍니다.</Small>
             )}
             {tempAvg !== null ? (
               <Small>최근 {temps.size}근무 평균 {tempAvg}°</Small>
@@ -503,7 +503,7 @@ export default function Home() {
               <DashedDivider />
               <BriefRow
                 icon="cloud-download-outline"
-                label="전사 모델 설치 필요"
+                label="전사 모델을 설치해 주십시오."
                 value="받기"
                 valueColor={t.warn}
                 onPress={() => router.push("/models")}
@@ -513,7 +513,7 @@ export default function Home() {
           <DashedDivider />
           <BriefRow
             icon="folder-open-outline"
-            label="다른 앱의 파일 가져오기"
+            label="다른 앱에서 음성 가져오기"
             value="선택"
             onPress={async () => {
               const r = await importAudioFile();

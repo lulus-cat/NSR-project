@@ -154,7 +154,7 @@ export async function searchWorkplace(
     };
   }
   throw new Error(
-    "이 빌드에 검색 키가 내장되어 있지 않습니다. 설정 → 검색·데이터 키에 카카오 REST 키나 공공데이터 키를 넣으면 바로 켜집니다.",
+    "이 버전에는 검색 키가 없습니다. 설정에서 카카오 및 공공데이터 키를 직접 넣으십시오.",
   );
 }
 
@@ -198,7 +198,7 @@ export async function setGeofence(on: boolean): Promise<{ ok: boolean; message?:
   if (!bg.granted) {
     return {
       ok: false,
-      message: "백그라운드 감지를 위해 위치 권한을 '항상 허용'으로 변경하십시오.",
+      message: "백그라운드 기록을 위해 기기 위치 권한을 '항상 허용'으로 바꾸십시오.",
     };
   }
 

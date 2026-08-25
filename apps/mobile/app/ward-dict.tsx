@@ -104,7 +104,7 @@ export default function WardDict() {
     await saveWardPack(pack);
     setNewName("");
     setNewHospital("");
-    setMsg(`'${name}' 사전을 생성했습니다. 아래 추천 용어를 추가하십시오.`);
+    setMsg(`'${name}' 사전을 만들었습니다. 아래의 추천 용어를 추가해 보십시오.`);
     await load();
   }, [load, newHospital, newName]);
 
@@ -126,7 +126,7 @@ export default function WardDict() {
     (stored: StoredPack) => {
       Alert.alert(
         `'${stored.pack.name}' 사전을 삭제합니다`,
-        "해당 사전 용어가 인식되지 않습니다. 삭제 대신 비활성화할 수 있습니다.",
+        "이 사전 용어는 전사할 때 반영되지 않습니다. 지우지 않고 기능만 끌 수도 있습니다.",
         [
           { text: "취소", style: "cancel" },
           {
@@ -149,7 +149,7 @@ export default function WardDict() {
         <Heading>병동 사전</Heading>
         <Body muted>
           
-  내장 사전은 표준 간호 용어를 제공합니다. 병동 전용 용어는 직접 등록하여 사용하십시오.
+  내장 사전은 표준 간호 용어만 제공합니다. 병동만의 은어는 따로 등록해 주십시오.
 </Body>
         <Divider />
         <Small muted={false}>
@@ -157,7 +157,7 @@ export default function WardDict() {
 </Small>
         <Small>
           
-  내 사전 &gt; 병동 사전 &gt; 내장 사전 순으로 적용됩니다. 상위 사전의 정의가 우선 적용됩니다.
+  내 사전 › 병동 사전 › 내장 사전 순으로 더 좁은 범위의 뜻이 우선 적용됩니다.
 </Small>
         <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.sm }}>
           <View style={{ flex: 1 }}>
@@ -185,7 +185,7 @@ export default function WardDict() {
           <Small muted={false}>{shareCheck.check.summary}</Small>
           <Small>
             
-  사전 작성 시 예문에 민감한 개인정보가 포함되지 않도록 주의하십시오.
+  사전 예문에 이름이나 병실 등 민감한 개인정보가 들어가지 않게 주의하십시오.
 </Small>
 
           {shareCheck.check.findings.length > 0 ? (
@@ -193,7 +193,7 @@ export default function WardDict() {
               <Divider />
               <Small>
                 
-  자동 삭제되지 않는 항목입니다. 문맥을 확인하여 직접 수정하십시오.
+  자동으로 가려지지 않는 내용입니다. 문맥을 보고 직접 지우십시오.
 </Small>
               {shareCheck.check.findings.slice(0, 20).map((f, i) => (
                 <View key={`${f.termId}-${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -243,7 +243,7 @@ export default function WardDict() {
           </View>
           <Small>
             
-  사전에 포함된 텍스트 치환 규칙입니다. 전사 결과에 직접 영향을 주므로 확인 후 적용하십시오. 수치 변경 규칙은 주의가 필요합니다.
+  전사 결과를 강제로 바꾸는 규칙입니다. 숫자가 틀어질 위험이 있으니 켤 때 조심하십시오.
 </Small>
           {pending.map((p) => (
             <View key={p.key} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -343,7 +343,7 @@ export default function WardDict() {
         <Heading>사전 만들기</Heading>
         <Small>
           
-  병동 용어를 등록해 두면 신규 간호사에게 파일로 공유할 수 있습니다.
+  용어를 모아 두면, 후배 신규 간호사에게 사전 파일 하나로 공유할 수 있습니다.
 </Small>
         <TextInput
           value={newName}
@@ -385,7 +385,7 @@ export default function WardDict() {
           <Heading>사전에 없는 말 {suggestions.length}개</Heading>
           <Small>
             
-  전사에서 자주 수정된 미등록 용어입니다. 사전에 추가하면 다음 전사부터 자동 인식됩니다.
+  그동안 자주 수정한 미등록 용어입니다. 사전에 넣으면 다음부턴 알아서 잡아냅니다.
 </Small>
           {suggestions.slice(0, 10).map((s) => (
             <View key={s.surface} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -396,7 +396,7 @@ export default function WardDict() {
               <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
                 {packs.length === 0 ? (
                   <Small>
-  등록할 사전이 없습니다. 사전을 먼저 생성하십시오.
+  등록할 대상 사전이 없습니다. 사전을 먼저 만드십시오.
 </Small>
                 ) : (
                   packs.map((stored) => (

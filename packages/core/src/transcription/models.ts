@@ -117,7 +117,7 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     korean: null,
     relativeSpeed: 6,
     guidance:
-      "속도가 빠르나 한국어 인식률이 낮습니다. 전사 동작 테스트 용도로 사용합니다.",
+      "속도는 엄청 빠르지만 한국어를 못 알아듣습니다. 전사 테스트용으로만 쓰십시오.",
   },
   {
     id: "base-q5_1",
@@ -128,7 +128,7 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     family: "whisper-official",
     korean: null,
     relativeSpeed: 3.5,
-    guidance: "구형 기기용 모델입니다. 전문 용어 인식률은 낮습니다.",
+    guidance: "성능이 달리는 구형 기기용입니다. 전문 용어를 곧잘 놓칩니다.",
   },
   {
     id: "small-q5_1",
@@ -140,8 +140,8 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     korean: { cer: 18.05, source: "ENERZAi 공개 실측" },
     relativeSpeed: 1,
     guidance:
-      "원본 기본 모델입니다. 한국어 인식률이 낮아 보조용으로 적합합니다." +
-      "동일 크기의 한국어 파인튜닝 모델 사용을 권장합니다.",
+      "튜닝 안 된 원본 기본 모델입니다. 한국어 인식률이 낮아 권장하지 않습니다." +
+      "이왕이면 용량이 같은 한국어 전용 파인튜닝 모델을 고르는 게 훨씬 낫습니다.",
   },
   {
     id: "medium-q5_0",
@@ -152,7 +152,7 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     family: "whisper-official",
     korean: null,
     relativeSpeed: 0.4,
-    guidance: "정확도와 속도의 균형 모델입니다. 성능이 높은 기기에 적합합니다.",
+    guidance: "정확도와 속도의 균형이 좋습니다. 최신 폰이나 태블릿에 올리기 좋습니다.",
   },
   {
     id: "large-v3-turbo-q5_0",
@@ -164,8 +164,8 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     korean: null,
     relativeSpeed: 0.7,
     guidance:
-      "Large 계열의 속도 개선 모델입니다. 고성능 모델 사용 시" +
-      "Large-v3 원본보다 실용적입니다.",
+      "거대한 Large 모델을 빠르게 깎아 만든 버전입니다. 고성능 기기를 쓴다면" +
+      "엄청 무거운 Large-v3 원본보다 이게 훨씬 실용적입니다.",
   },
   {
     id: "large-v3-q5_0",
@@ -177,9 +177,9 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     korean: { cer: 10, source: "공개 벤치마크 종합 (8~12% 범위의 중간값)" },
     relativeSpeed: 0.25,
     guidance:
-      "원본 모델 중 가장 정확하지만 기기 발열과 속도 저하가 발생할 수 있습니다." +
-      "충전 중 장시간 전사 작업 시에만 사용을 권장합니다." +
-      "한국어 전사는 파인튜닝된 Medium 모델의 성능이 더 우수합니다.",
+      "가장 똑똑하지만, 폰이 매우 뜨거워지고 전사 시간도 한세월 걸립니다." +
+      "충전기를 꽂고 자는 시간 등 여유로울 때만 전사를 돌리십시오." +
+      "어설픈 모델보다 한국어로만 훈련된 전용 Medium 모델이 훨씬 잘 알아듣습니다.",
   },
 ];
 
@@ -213,13 +213,13 @@ export const KOREAN_MODEL_GUIDE = {
     {
       id: "royshilkrot/whisper-large-v3-turbo-korean-ggml",
       base: "large-v3-turbo",
-      note: "위 모델 목록의 '한국어 Large v3 Turbo'가 이 모델입니다 — 버튼으로 바로 받아집니다.",
+      note: "위 목록에 있는 '한국어 Large v3 Turbo'가 바로 이 모델입니다.",
       ready: true,
     },
     {
       id: "royshilkrot/whisper-medium-korean-ggml",
       base: "medium",
-      note: "위 모델 목록의 '한국어 Medium'이 이 모델입니다 — 버튼으로 바로 받아집니다. 대화체 특화는 아래 장민(jangmin) 모델을 참고하십시오.",
+      note: "위 목록의 '한국어 Medium'입니다. 대화체 특화는 아래 장민 모델을 보십시오.",
       ready: true,
     },
     {
@@ -266,7 +266,7 @@ export const KOREAN_MODEL_GUIDE = {
     "./build/bin/quantize ./출력/ggml-model.bin ./ggml-ko-turbo-q5_0.bin q5_0",
   why:
     "같은 크기에서 원본 CER 18.05% → 한국어 재학습 6.45%. " +
-    "모델 크기 확대보다 정확도 개선 효과가 큽니다.",
+    "모델 덩치를 키우는 것보다 한국어 전용 모델을 고르는 게 훨씬 정확합니다.",
   /**
    * 직접 파인튜닝을 생각한다면 알아야 할 것.
    *
@@ -281,7 +281,7 @@ export const KOREAN_MODEL_GUIDE = {
     fullVramGb: 24,
     loraVramGb: 8,
     minHours: 8,
-    note: "파인튜닝 전 사전 학습(known) 모델 테스트를 권장합니다.",
+    note: "덥석 파인튜닝 모델을 올리기 전에, 원본 모델로 폰 속도부터 견적을 내보십시오.",
   },
 } as const;
 
@@ -367,21 +367,21 @@ export function checkFeasible(
   hoursUntilNextShift: number,
 ): Feasibility {
   if (estimate.minutes === 0) {
-    return { ok: true, reason: "측정 데이터가 없어 판단할 수 없습니다." };
+    return { ok: true, reason: "속도를 측정한 기록이 없어 알 수 없습니다." };
   }
   const available = hoursUntilNextShift * 60;
   if (estimate.minutes > available) {
     return {
       ok: false,
       reason:
-        `소요 예상 시간 ${estimate.label}, 다음 근무까지 ${Math.round(available)}분 남았습니다.` +
-        "더 작은 모델을 선택하거나 오프 날 진행하십시오.",
+        `예상 시간 ${estimate.label}, 다음 출근까지 딱 ${Math.round(available)}분 남았습니다.` +
+        "시간이 빡빡하니 가벼운 모델로 내리거나 돌아오는 오프 날에 여유롭게 전사하십시오.",
     };
   }
   if (estimate.minutes > available * 0.6) {
     return {
       ok: true,
-      reason: "전사 중에는 기기 충전을 유지하십시오.",
+      reason: "전사 작업 중에는 폰을 꼭 충전기에 꽂아두십시오.",
     };
   }
   return { ok: true };

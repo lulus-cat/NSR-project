@@ -86,11 +86,13 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
       headers: { Accept: "application/vnd.github+json" },
     });
     if (!response.ok) {
+      // 404 를 "새 버전 없음"으로 읽으면 안 된다 — 저장소가 비공개일 때
+      // GitHub 는 익명 요청에 404 를 준다. 없음과 접근 불가는 다른 사실이다.
       return {
         ...EMPTY,
         message:
           response.status === 404
-            ? "등록된 새 버전이 없습니다."
+            ? "저장소에 접근하지 못했습니다 (404). 저장소가 비공개 상태면 새 버전 확인과 모델 받기가 동작하지 않습니다."
             : `확인하지 못했습니다 (${response.status}).`,
       };
     }
@@ -116,7 +118,7 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
   // 숫자 없이 '없습니다'만 보이면 버그로 읽힌다.
   const message =
     force && !decision.show && release
-      ? `지금 ${currentVersion() ?? "?"} · 최신 릴리스 ${release.version} — 새 판이 없습니다.`
+      ? `현재 ${currentVersion() ?? "?"} · 최신 ${release.version} — 업데이트가 없습니다.`
       : decision.message;
 
   return {

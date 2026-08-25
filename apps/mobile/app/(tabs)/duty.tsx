@@ -502,7 +502,7 @@ export default function Duty() {
               {patterns.naode + patterns.evday + patterns.dayRunToNight + patterns.sandwichOff > 0 ||
               patterns.longestNightRun > 3 ? (
                 <Small>
-                  휴식이 무너지는 배치입니다. 통례상 연속 근무 5일·나이트 3일을 넘기지 않습니다. 반복되면 근무표와 함께 기록해 두십시오.
+                  연속 5일이나 나이트 3일을 넘는 일정입니다. 계속되면 근무표를 기록해 두십시오.
                 </Small>
               ) : null}
             </Card>
@@ -515,7 +515,7 @@ export default function Duty() {
 </Heading>
             <Small>
               
-  구글·삼성 캘린더에 적어 둔 근무('데이', 'N', '오프' 같은 제목)를 이 달 듀티로 가져오거나, 반대로 이 달 듀티를 &lsquo;NSR 듀티&rsquo; 캘린더로 내보냅니다.
+  기기 캘린더의 근무 일정을 가져오거나, 이번 달 듀티표를 캘린더로 내보냅니다.
 </Small>
             <View style={{ flexDirection: "row", gap: space.sm }}>
               <View style={{ flex: 1 }}>
@@ -537,7 +537,7 @@ export default function Duty() {
                       setSyncMsg(r.message);
                     } catch (e) {
                       // 실패가 조용히 사라지면 '버튼이 안 먹는다'로 보인다.
-                      setSyncMsg(e instanceof Error ? e.message : "가져오기에 실패했습니다.");
+                      setSyncMsg(e instanceof Error ? e.message : "가져오지 못했습니다.");
                     }
                   }}
                 />

@@ -233,7 +233,7 @@ export default function Models() {
     (model: AsrModel) => {
       Alert.alert(
         `${model.name} 다운로드`,
-        `약 ${model.approxSizeMb} MB를 다운로드합니다. 데이터 요금이 발생할 수 있으므로 Wi-Fi 사용을 권장합니다.`,
+        `약 ${model.approxSizeMb} MB를 받습니다. Wi-Fi 사용을 권장합니다.`,
         [
           { text: "취소", style: "cancel" },
           { text: "받기", onPress: () => void start(model) },
@@ -249,8 +249,8 @@ export default function Models() {
       Alert.alert(
         `${model.name} 삭제`,
         status.active
-          ? "현재 사용 중인 모델입니다. 삭제 시 저장된 다른 모델로 전사합니다."
-          : "모델 파일만 삭제되며 필요시 재다운로드할 수 있습니다.",
+          ? "사용 중인 모델입니다. 지우면 다른 모델로 전사합니다."
+          : "모델 파일만 지워지며 언제든 다시 받을 수 있습니다.",
         [
           { text: "취소", style: "cancel" },
           {
@@ -310,7 +310,7 @@ export default function Models() {
         <Heading>전사 모델</Heading>
         <Body muted>
           
-  전사는 기기 내에서 실행됩니다. 기기 성능에 맞게 원하는 모델을 선택하여 사용할 수 있습니다.
+  전사는 기기에서 직접 처리합니다. 성능에 맞는 모델을 선택하십시오.
 </Body>
         <Divider />
         <Small muted={false}>
@@ -318,14 +318,14 @@ export default function Models() {
 </Small>
         <Small>
           {KOREAN_MODEL_GUIDE.why} 
-  모델 크기를 늘리는 것보다 한국어로 학습된 모델을 사용하는 것이 성능 향상에 효과적입니다.
+  모델 크기를 키우는 것보다 한국어 파인튜닝 모델을 쓰는 편이 훨씬 정확합니다.
 </Small>
         {installedCount === 0 ? (
           <>
             <Divider />
             <Small muted={false}>
               
-  설치된 전사 모델이 없습니다. 음성을 전사하려면 모델 다운로드가 필요합니다.
+  설치된 모델이 없습니다. 음성을 전사하려면 모델을 받아주십시오.
 </Small>
           </>
         ) : null}
@@ -344,7 +344,7 @@ export default function Models() {
         </Small>
         <Divider />
         <Small muted={false}>노트북에서 한 번만 하면 됩니다</Small>
-        <Small>1. Docker 설치(docker.com) 후 터미널에서:</Small>
+        <Small>1. Docker(docker.com) 설치 후 터미널에 입력:</Small>
         <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.md, padding: space.md }}>
           <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
             docker run -d -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
@@ -404,14 +404,14 @@ export default function Models() {
         <Card>
           <Small>
 
-  현재 기기의 측정 속도를 기준으로 추정합니다. 타 모델 기준 환산값은 오차가 발생할 수 있습니다.
+  현재 기기 속도를 기준으로 추정합니다. 환산값에는 오차가 있을 수 있습니다.
 </Small>
         </Card>
       ) : (
         <Card>
           <Small>
             
-  전사 실행 이력이 없어 소요 시간을 측정할 수 없습니다. 최초 1회 전사 완료 후 예상 시간이 표시됩니다.
+  이력이 없어 예상 시간을 알 수 없습니다. 첫 전사를 마치면 표시됩니다.
 </Small>
         </Card>
       )}
@@ -439,7 +439,7 @@ export default function Models() {
 </Heading>
         <Small>
           
-  외부 모델 링크의 변경 가능성 때문에 직접 등록 방식을 제공합니다. 안내에 따라 모델 파일이나 주소를 입력하십시오.
+  다운로드 링크 변경에 대비해 직접 등록을 지원합니다. 주소나 파일을 입력하십시오.
 </Small>
         <Divider />
         <Small muted={false}>1. 찾기</Small>

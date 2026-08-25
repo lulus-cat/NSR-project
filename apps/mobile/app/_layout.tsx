@@ -146,6 +146,10 @@ function Gate() {
 }
 
 export default function RootLayout() {
+  useEffect(() => {
+    // JS 오류를 디버그 로그에 남긴다. 설정의 디버그 카드에서 보고 신고한다.
+    void import("../src/services/debug").then((m) => m.installGlobalErrorLog());
+  }, []);
   return (
     <SafeAreaProvider>
       <AppProvider>

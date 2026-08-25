@@ -129,10 +129,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
   // 앱이 앞으로 나올 때마다 한 번 더 확인한다.
   // iOS에서는 이 시점이 기록이 시작되는 유일한 확실한 기회다.
+  //
+  // 재잠금에는 30초 유예를 둔다. 마이크 권한 다이얼로그·생체인증 프롬프트·
+  // 알림창 같은 짧은 이탈도 background→active 를 만드는데, 그때마다 잠그면
+  // "기록 시작을 눌렀더니 잠금화면이 뜨는" 황당한 흐름이 된다.
+  const leftAt = useRef(0);
   useEffect(() => {
     const onChange = (state: AppStateStatus) => {
+      if (state === "background") leftAt.current = Date.now();
       if (state === "active") {
-        if (appLockEnabled.current) setLocked(true);
+        const away = leftAt.current > 0 ? Date.now() - leftAt.current : 0;
+        if (appLockEnabled.current && away > 30_000) setLocked(true);
         void refresh();
       }
     };

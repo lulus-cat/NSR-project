@@ -201,7 +201,7 @@ export function decideUpdate(input: {
       show: false,
       version: latest.version,
       reason: "unknown",
-      message: `최신 버전은 ${latest.version}입니다. 현재 설치 버전을 확인할 수 없습니다.`,
+      message: `최신 버전은 ${latest.version}입니다. 현재 앱의 버전을 알 수 없습니다.`,
     };
   }
   if (compareVersions(latest.version, input.current) <= 0) {

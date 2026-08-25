@@ -138,8 +138,8 @@ export function createOnDeviceProvider(
         );
         if (!audioDecodeAvailable()) {
           throw new Error(
-            "이 기기에서는 기록 파일을 기기 내에서 변환할 수 없습니다. " +
-              "설정 → 전사에서 노트북·서버 전사를 사용하십시오.",
+            "이 기기에서는 기록 파일을 변환할 수 없습니다. " +
+              "설정 > 전사 모델에서 '노트북·서버 전사'를 이용하십시오.",
           );
         }
         const { File, Paths } = await import("expo-file-system");

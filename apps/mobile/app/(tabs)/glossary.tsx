@@ -122,7 +122,7 @@ export default function Glossary() {
         <>
           <Small>
             
-  발음으로도 검색할 수 있습니다. "카데타"를 입력해도 "카테터"가 검색됩니다.
+  발음대로 검색해도 올바른 용어를 찾아줍니다. (예: 카데타 → 카테터)
 </Small>
           {terms.map((entry) => {
             const open = expanded === entry.id;
@@ -195,7 +195,7 @@ export default function Glossary() {
             <Card>
               <Body muted>
                 
-  검색 결과가 없습니다. 병동마다 용어가 다를 수 있습니다.
+  결과가 없습니다. 병동마다 부르는 말이 다를 수 있습니다.
 </Body>
               <Pressable
                 accessibilityRole="button"
@@ -207,7 +207,7 @@ export default function Glossary() {
 </Text>
               </Pressable>
               <Divider />
-              <Small>약 이름이라면 위의 &lsquo;의약품&rsquo; 탭에서 식약처 정보를 검색할 수 있습니다.</Small>
+              <Small>약 이름은 상단 ‘의약품’ 탭에서 검색하십시오.</Small>
             </Card>
           ) : null}
         </>
@@ -228,15 +228,15 @@ export default function Glossary() {
                 const found = await searchDrug(query);
                 if (found === null) {
                   setDrugMsg(
-                    "검색 키가 없습니다. 설정 → 검색·데이터 키에서 공공데이터 키를 등록하십시오. 공유 키가 저장소에 채워지면 자동으로 켜집니다.",
+                    "공공데이터 키가 필요합니다. 설정에서 등록하십시오.",
                   );
                 } else if (found.length === 0) {
-                  setDrugMsg("찾지 못했습니다. 제품명(예: 타이레놀정500밀리그람)으로 시도해 보십시오.");
+                  setDrugMsg("찾지 못했습니다. 정확한 제품명으로 다시 검색해 보십시오.");
                 } else {
                   setDrugs(found);
                 }
               } catch (e) {
-                setDrugMsg(e instanceof Error ? e.message : "의약품 검색에 실패했습니다.");
+                setDrugMsg(e instanceof Error ? e.message : "검색하지 못했습니다.");
               }
             }}
           />
@@ -270,7 +270,7 @@ export default function Glossary() {
         <>
           <Small>
             
-  포털 검색 블로그 대신 여기서 확인하십시오. 지침 본문 저작권 문제로 앱에는 링크만 저장됩니다.
+  공식 지침은 여기서 확인하십시오. 저작권 문제로 앱에는 링크만 남깁니다.
 </Small>
           {sources.map((s) => (
             <Pressable

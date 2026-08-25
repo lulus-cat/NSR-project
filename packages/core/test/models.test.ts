@@ -78,7 +78,7 @@ describe("현실성 판단", () => {
     const e = estimateMinutes(large, 90, sample); // 180분
     const f = checkFeasible(e, 2); // 2시간 = 120분
     expect(f.ok).toBe(false);
-    expect(f.reason).toContain("더 작은 모델");
+    expect(f.reason).toContain("가벼운 모델");
   });
 
   it("빠듯하면 충전을 알려준다", () => {

@@ -227,7 +227,7 @@ export default function NoteEditor() {
               }}
             />
           ) : (
-            <Small>내용이 없습니다. 편집으로 전환해 적어 보십시오.</Small>
+            <Small>내용이 없습니다. 편집 버튼을 눌러 작성해 보십시오.</Small>
           )}
         </Card>
       ) : (

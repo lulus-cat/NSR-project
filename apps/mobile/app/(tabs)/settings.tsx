@@ -42,6 +42,7 @@ import {
   type UpdateCheck,
 } from "../../src/services/update";
 import type { PiiKind } from "@nsr/core";
+import { buildIssueUrl, clearDebugLog, readDebugLog, type DebugEntry } from "../../src/services/debug";
 
 /** 값을 누르면 프리셋 칩이 펼쳐지는 행. 숫자 설정을 손으로 고르는 자리다. */
 function PresetRow({
@@ -180,7 +181,6 @@ export default function Settings() {
   const [geoSetup, setGeoSetup] = useState(false);
   const [hospitalQuery, setHospitalQuery] = useState("");
   const [hospitalHits, setHospitalHits] = useState<PlaceHit[]>([]);
-  const [discardWithoutSelf, setDiscardWithoutSelf] = useState(true);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [hasKey, setHasKey] = useState(false);
@@ -203,13 +203,14 @@ export default function Settings() {
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [checking, setChecking] = useState(false);
+  const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([]);
+  const [debugOpen, setDebugOpen] = useState(false);
 
   const load = useCallback(async () => {
     setAppLock(await getSetting<boolean>(SETTINGS_KEYS.appLock, false));
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
     setWorkplace(await getWorkplace());
     setGeoOn(await geofenceEnabled());
-    setDiscardWithoutSelf(await getSetting<boolean>(SETTINGS_KEYS.discardWithoutSelf, true));
     setLlmEnabled(await getSetting<boolean>(SETTINGS_KEYS.llmPostEdit, false));
     setCloudAsr(
       await getSetting(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" }),
@@ -225,6 +226,7 @@ export default function Settings() {
     setStorageMb(Math.round(((await totalStorageBytes()) / (1024 * 1024)) * 10) / 10);
     setPrivacy(await loadPrivacySettings());
     setAutoUpdate(await autoCheckEnabled());
+    setDebugEntries(await readDebugLog());
 
     const [statuses, activeId] = await Promise.all([listModels(), activeModelId()]);
     const installed = statuses.filter((m) => m.installed);
@@ -262,8 +264,8 @@ export default function Settings() {
 
   const wipeEverything = useCallback(() => {
     Alert.alert(
-      "모든 데이터를 지웁니다",
-      "기록 파일, 전사본, 학습 카드, 근무 기록이 모두 삭제되며 복구할 수 없습니다.",
+      "모든 데이터를 지웁니다.",
+      "기록, 전사본, 암기카드 등 모든 데이터가 지워지며 복구할 수 없습니다.",
       [
         { text: "취소", style: "cancel" },
         {
@@ -330,10 +332,10 @@ export default function Settings() {
       {/* 판 번호와 업데이트 */}
       <Card tone={update?.show ? "accent" : "default"}>
         <GroupHead icon="information-circle-outline" color="#4C7DDB" title="앱 버전" badge={<Badge text="알파" tone="warn" />} />
-        <Small muted={false}>{version ? `지금 ${version}` : "개발 중 실행"}</Small>
+        <Small muted={false}>{version ? `현재 ${version}` : "개발 중 실행"}</Small>
         <Small>
           
-  스토어가 아닌 APK 설치 앱이므로 새 버전이 나오면 알려 드립니다. 다운로드 후 덮어 설치하면 기존 기록이 유지됩니다.
+  앱스토어 앱이 아니므로 새 버전을 알려 드립니다. 덮어 설치해도 기존 기록은 남습니다.
 </Small>
 
         {update?.show && update.release ? (
@@ -356,7 +358,7 @@ export default function Settings() {
                   onPress={async () => {
                     if (!update.release) return;
                     const ok = await openDownload(update.release);
-                    if (!ok) setConnectionMsg("다운로드 페이지를 열지 못했습니다.");
+                    if (!ok) setConnectionMsg("다운로드 페이지를 열 수 없습니다.");
                   }}
                 />
               </View>
@@ -382,7 +384,7 @@ export default function Settings() {
         <Divider />
         <Toggle
           label="새 버전 알림 받기"
-          description="하루 몇 회만 확인하여 배터리와 데이터를 거의 사용하지 않습니다."
+          description="배터리와 데이터를 거의 쓰지 않고 가끔씩 새 버전을 확인합니다."
           value={autoUpdate}
           onChange={async (v) => {
             setAutoUpdate(v);
@@ -426,7 +428,7 @@ export default function Settings() {
                       if (!workplace) {
                         // 근무지가 없으면 켤 수 없다 — 지정 UI 를 아래에 펼친다.
                         setGeoSetup(true);
-                        setGeoMsg("아래에서 근무지를 먼저 지정하십시오.");
+                        setGeoMsg("아래에서 근무지를 먼저 지정해 주십시오.");
                         return;
                       }
                       const r = await setGeofence(true);
@@ -452,7 +454,7 @@ export default function Settings() {
             );
           })}
         </View>
-        <Small>고른 방식의 세부 설정이 아래에 나타납니다.</Small>
+        <Small>선택한 방식의 세부 설정이 아래에 나타납니다.</Small>
         <Small>{capability.explanation}</Small>
         {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
 
@@ -479,16 +481,24 @@ export default function Settings() {
                 />
               ))}
             </View>
-            <Small>듀티표에 이 코드가 적힌 날만 자동으로 기록합니다.</Small>
+            <Small>듀티표에 해당 코드가 있는 날만 자동으로 기록합니다.</Small>
             <Divider />
             <PresetRow
-              label="기록 시작 시점"
+              label="근무 시작 전 기록 시작"
               value={policy.leadMinutes}
               unit="분"
-              options={[120, 90, 60, 45, 30, 20, 10, -10, -20, -30, -60, -90, -120]}
-              format={(v) => (v > 0 ? `전 ${v}분` : v < 0 ? `후 ${-v}분` : "정각")}
+              options={[10, 20, 30, 45, 60, 90, 120]}
               onSelect={(v) => void app.updatePolicy({ ...policy, leadMinutes: v })}
-              hint="근무 시작 전으로 두면 인계를 덮고, 시작 후로 두면 필요한 구간부터 남깁니다. 앞뒤 최대 2시간."
+              hint="인계는 근무표 시각보다 일찍 시작합니다. 인계를 덮을 만큼 잡으십시오. (최대 2시간)"
+            />
+            <Divider />
+            <PresetRow
+              label="근무 종료 후 기록 유지"
+              value={policy.trailMinutes}
+              unit="분"
+              options={[10, 20, 30, 45, 60, 90, 120]}
+              onSelect={(v) => void app.updatePolicy({ ...policy, trailMinutes: v })}
+              hint="퇴근 인계와 늦어지는 마무리가 여기 남습니다. 이 시간이 오버타임의 증거가 됩니다. (최대 2시간)"
             />
           </>
         ) : null}
@@ -619,8 +629,8 @@ export default function Settings() {
             )}
             <Small>
               {Platform.OS === "android"
-                ? "위치 권한을 '항상 허용'으로 설정해야 합니다. Android 14 이상에서는 백그라운드 제한으로 앱 실행 시 시작될 수 있습니다."
-                : "위치 권한을 '항상 허용'으로 변경해야 합니다."}
+                ? "위치 권한을 '항상 허용'으로 변경하십시오. Android 14 이상은 백그라운드 제한이 있습니다."
+                : "위치 권한을 '항상 허용'으로 변경하십시오."}
             </Small>
           </>
         ) : null}
@@ -632,7 +642,7 @@ export default function Settings() {
           unit="분"
           options={[10, 15, 20, 30]}
           onSelect={(v) => void app.updatePolicy({ ...policy, segmentMinutes: v })}
-          hint="긴 근무를 조각으로 나눠 저장합니다. 중간에 끊겨도 그 조각만 잃고, 근무 중에도 완성된 조각부터 전사할 수 있습니다."
+          hint="긴 근무를 나눕니다. 중간에 끊겨도 안전하며, 완성된 조각부터 전사할 수 있습니다."
         />
         <Divider />
         <PresetRow
@@ -641,7 +651,7 @@ export default function Settings() {
           unit="일"
           options={[7, 14, 30, 60, 90]}
           onSelect={(v) => void app.updatePolicy({ ...policy, retentionDays: v })}
-          hint="보관 기간이 지난 기록은 자동 삭제됩니다. 오래된 기록 보관은 보안상 위험합니다."
+          hint="보관 기한이 지난 기록은 지워집니다. 오래된 기록을 남겨두면 보안상 위험합니다."
         />
         <Divider />
         <Row label="현재 사용 중" value={`${storageMb} MB / ${policy.maxStorageMb} MB`} />
@@ -664,15 +674,15 @@ export default function Settings() {
         <Badge text="끌 수 없는 것" tone="warn" />
         <Small>
           {Platform.OS === "ios"
-            ? "iOS 주황색 마이크 표시와 제어센터 기록은 OS 정책상 임의로 끌 수 없습니다."
-            : "Android 마이크 표시와 개인정보 기록은 OS 정책입니다. 백그라운드 기록 시 필수 알림이 발생하며, 소리·진동 없이 무음으로 표시됩니다."}
+            ? "iOS 상단 주황색 마이크 표시는 OS 정책상 앱에서 숨길 수 없습니다."
+            : "Android 마이크 표시는 OS 정책입니다. 백그라운드 작동 시 무음 알림이 뜹니다."}
         </Small>
         {Platform.OS === "ios" ? (
           <>
             <Divider />
             <Toggle
               label="연속 세션 유지 (배터리 소모 큼)"
-              description="오디오 세션을 계속 유지하여 앱을 열지 않아도 기록이 시작됩니다. 배터리 소모가 큽니다."
+              description="앱을 열지 않아도 백그라운드에서 기록을 시작합니다. 배터리 소모가 큽니다."
               value={iosContinuous}
               onChange={async (v) => {
                 setIosContinuous(v);
@@ -688,7 +698,7 @@ export default function Settings() {
         <GroupHead icon="lock-closed-outline" color="#5B5EA6" title="개인정보" />
         <Toggle
           label="앱 잠금"
-          description="앱 실행 시 생체인증을 확인합니다. 기록에는 민감한 내용이 포함될 수 있습니다."
+          description="앱을 열 때 생체인증을 요구합니다. 민감한 기록을 보호합니다."
           value={appLock}
           onChange={async (v) => {
             setAppLock(v);
@@ -696,33 +706,12 @@ export default function Settings() {
           }}
         />
         <Divider />
-        <Toggle
-          label="본인 음성이 없는 구간 자동 폐기"
-          description="통신비밀보호법상 대화 당사자가 아닌 타인 간 대화 기록은 금지됩니다. 법적 보호를 위해 이 설정을 유지하십시오."
-          value={discardWithoutSelf}
-          onChange={async (v) => {
-            if (!v) {
-              Alert.alert(
-                "정말 해제하시겠습니까",
-                "본인이 참여하지 않은 타인 간 대화 기록은 통신비밀보호법 위반이며, 벌금형 없이 1년 이상 징역형 대상입니다.",
-                [
-                  { text: "취소", style: "cancel" },
-                  {
-                    text: "그래도 끄기",
-                    style: "destructive",
-                    onPress: async () => {
-                      setDiscardWithoutSelf(false);
-                      await setSetting(SETTINGS_KEYS.discardWithoutSelf, false);
-                    },
-                  },
-                ],
-              );
-              return;
-            }
-            setDiscardWithoutSelf(true);
-            await setSetting(SETTINGS_KEYS.discardWithoutSelf, true);
-          }}
-        />
+        <Badge text="통신비밀보호법" tone="warn" />
+        <Small>
+          본인이 참여하지 않은 타인 간 대화 기록은 위법입니다(1년 이상 징역).
+          앱은 목소리로 사람을 구분하지 못하므로 이를 자동으로 걸러줄 수 없습니다 —
+          자리를 비울 때는 기록을 끄거나 기기를 반드시 휴대하십시오.
+        </Small>
       </Card>
 
       {/* 개인정보 가리기 */}
@@ -730,18 +719,18 @@ export default function Settings() {
         <GroupHead icon="eye-off-outline" color="#8A5F9E" title="민감 정보 가리기" />
         <Small>
           
-  보고서 내보내기, 공유, 외부 기능 송신 시 이름·전화번호·등록번호를 자동으로 마스킹합니다.
+  내보내기나 외부 공유 시 이름, 전화번호, 등록번호를 자동으로 가립니다.
 </Small>
         <Divider />
         <Badge text="기기 내 저장 시에는 마스킹하지 않습니다" tone="muted" />
         <Small>
           
-  전사본은 직장 내 괴롭힘 신고나 노동위원회 제출 시 증거가 됩니다. 대상자 정보가 지워지면 증거 효력이 낮아지므로 원본은 유지하고 내보낼 때만 가립니다.
+  전사본은 괴롭힘 신고 시 중요 증거입니다. 정보가 가려지면 효력이 낮아지므로 기기 내 원본은 보존합니다.
 </Small>
         <Divider />
         <Toggle
           label="내보낼 때 가리기"
-          description="기능을 꺼도 내보내기 전 포함된 개인정보를 미리 안내합니다."
+          description="기능을 꺼도 내보내기 전에 포함된 개인정보를 미리 안내해 드립니다."
           value={privacy.enabled}
           onChange={(v) => void updatePrivacy({ ...privacy, enabled: v })}
         />
@@ -773,7 +762,7 @@ export default function Settings() {
 </Small>
         <Small>
           
-  호칭 없는 이름 등 자동 인식이 어려운 단어를 등록하면 항상 마스킹 처리합니다.
+  자동 인식이 어려운 호칭 없는 이름 등을 등록해 두면 항상 가려줍니다.
 </Small>
         {privacy.extraTerms.length > 0 ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
@@ -822,12 +811,12 @@ export default function Settings() {
         <Divider />
         <Small>
           
-  자동 마스킹은 완벽하지 않습니다. 일반명사와 겹치거나 호칭이 없는 이름은 누락될 수 있으며,
+  자동 가림은 완벽하지 않아 일반명사나 호칭 없는 이름이 누락될 수 있습니다.
 <Text style={{ fontWeight: "700" }}>
           
-  음성 파일 자체는 마스킹할 수 없습니다
+  음성 파일 자체는 가릴 수 없습니다.
 </Text> 
-  — 음성에는 이름과 진단명이 그대로 포함됩니다.
+  음성에는 이름과 진단명이 그대로 남습니다.
 </Small>
       </Card>
 
@@ -836,7 +825,7 @@ export default function Settings() {
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
         <Small>
           
-  전사는 기본적으로 기기 내에서 처리됩니다. 민감 정보 유출은 의료법 제19조 위반 대상입니다.
+  전사는 기기 내부에서 처리됩니다. 민감 정보 유출은 의료법 위반입니다.
 </Small>
         <Divider />
         <Row
@@ -846,7 +835,7 @@ export default function Settings() {
         />
         <Small>
           
-  기기 성능에 맞춰 선택하십시오. 모델 크기보다 한국어 학습 모델을 사용하는 것이 정확도 향상에 훨씬 효과적입니다.
+  모델 크기를 키우는 것보다 한국어 전용 모델을 쓰는 편이 훨씬 정확합니다.
 </Small>
         <Divider />
         <Row
@@ -865,7 +854,7 @@ export default function Settings() {
         <GroupHead icon="sparkles-outline" color="#C0553F" title="보조 기능 (선택)" />
         <Small>
           
-  문맥상 약어 해석, 지시사항 정돈, 근무 요약 등에 AI 모델을 사용합니다. 활성화 시 전사본이 외부로 전송되며, 자동 비식별화가 적용되나 완벽하지 않을 수 있습니다.
+  요약 등에 AI를 씁니다. 전사본이 외부로 전송되며, 개인정보는 가려지나 완벽하지 않을 수 있습니다.
 </Small>
         <Toggle
           label="문맥 교정·근무 요약 사용"
@@ -945,7 +934,7 @@ export default function Settings() {
                   onPress={async () => {
                     if (!serverUrl.trim() || !serverModel.trim()) return;
                     await setCustomServer({ baseUrl: serverUrl.trim(), model: serverModel.trim() });
-                    setConnectionMsg("저장했습니다. 아래 연결 테스트로 확인하십시오.");
+                    setConnectionMsg("저장했습니다. 하단 연결 테스트를 진행해 주십시오.");
                   }}
                 />
                 <Small>
@@ -972,7 +961,7 @@ export default function Settings() {
             />
             <Small>
               
-  API 키는 기기의 보안 저장소(iOS 키체인 / Android 키스토어)에만 안전하게 보관됩니다.
+  API 키는 기기의 보안 저장소에 안전하게 보관됩니다.
 </Small>
             <View style={{ flexDirection: "row", gap: space.sm }}>
               <View style={{ flex: 1 }}>
@@ -1002,12 +991,62 @@ export default function Settings() {
         ) : null}
       </Card>
 
+      {/* 디버그 */}
+      <Card>
+        <GroupHead icon="bug-outline" color="#6B7280" title="디버그" />
+        <Small>
+          앱에서 잡힌 오류가 여기 남습니다. 문제가 생기면 아래 버튼으로 보고해
+          주십시오 — 기기 정보와 최근 오류가 채워진 GitHub 이슈 화면이 열립니다.
+        </Small>
+        <Row
+          label="최근 오류"
+          value={`${debugEntries.length}개 ${debugOpen ? "접기" : "보기"} ›`}
+          onPress={async () => {
+            if (!debugOpen) setDebugEntries(await readDebugLog());
+            setDebugOpen((o) => !o);
+          }}
+        />
+        {debugOpen
+          ? (debugEntries.length === 0
+              ? <Small>기록된 오류가 없습니다.</Small>
+              : debugEntries.slice(-10).reverse().map((e) => (
+                  <Small key={e.at}>
+                    {new Date(e.at).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
+                    {" · "}
+                    {e.message.split("\n")[0]}
+                  </Small>
+                )))
+          : null}
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="GitHub 에 버그 보고"
+              tone="primary"
+              onPress={async () => {
+                const url = await buildIssueUrl();
+                const ok = await Linking.openURL(url).then(() => true).catch(() => false);
+                if (!ok) setConnectionMsg("브라우저를 열지 못했습니다.");
+              }}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="로그 비우기"
+              onPress={async () => {
+                await clearDebugLog();
+                setDebugEntries([]);
+              }}
+            />
+          </View>
+        </View>
+      </Card>
+
       {/* 초기화 */}
       <Card>
         <GroupHead icon="trash-outline" color="#B3402F" title="데이터 삭제" />
         <Body muted>
           
-  기록 파일, 전사본, 학습 카드, 근무 기록을 모두 삭제합니다. 복구할 수 없습니다.
+  모든 데이터를 영구 삭제합니다. 복구할 수 없습니다.
 </Body>
         <Button label="모든 데이터 삭제" tone="danger" onPress={wipeEverything} />
       </Card>

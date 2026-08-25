@@ -283,7 +283,7 @@ export default function Study() {
             {sets.length === 0 ? (
               <Card>
                 <Body muted>
-                  {search ? "검색 결과가 없습니다." : "저장된 카드가 없습니다. 근무 전사 시 자동으로 생성됩니다."}
+                  {search ? "검색 결과가 없습니다." : "카드가 없습니다. 근무 전사 시 자동으로 만들어집니다."}
                 </Body>
               </Card>
             ) : (
@@ -361,7 +361,7 @@ export default function Study() {
             <Card>
               <Body muted>
                 
-  생성된 보고서가 없습니다. 전사 완료 후 &lsquo;카드·보고서 만들기&rsquo;를 실행하면 새로 배운 용어, 확인 사항, 실수 언급 등이 요약 기록됩니다.
+  보고서가 없습니다. 전사 후 ‘카드·보고서 만들기’를 실행하면 요약 보고서가 생성됩니다.
 </Body>
             </Card>
           ) : (
@@ -434,7 +434,7 @@ export default function Study() {
         {mode === "reports" ? (
           <Small>
             
-  근무 평가는 AI 보조 기능을 켜면 보고서에 포함됩니다 (설정 &gt; 보조 기능에서 활성화).
+  AI 보조 기능을 켜면 보고서에 근무 평가가 포함됩니다 (설정 › 보조 기능).
 </Small>
         ) : null}
       </ScrollView>

@@ -86,6 +86,8 @@ export async function upcomingWindows(now = Date.now()): Promise<RecordingWindow
 // 앱 프로세스 안에서 유일한 세션. 두 개가 동시에 마이크를 잡으면 둘 다 실패한다.
 let activeSession: RecordingSession | null = null;
 let activeShiftId: string | null = null;
+// 수동 시작 시각. 수동 세션은 듀티표 판정 밖이라 tick 이 못 끄는 대신 12시간 상한을 둔다.
+let manualStartedAt = 0;
 
 export function currentSession(): { session: RecordingSession; shiftId: string } | null {
   return activeSession && activeShiftId
@@ -113,12 +115,18 @@ export async function tick(now = Date.now()): Promise<{
   const window = policy.enabled ? activeWindowAt(windows, now) : null;
   const next = nextWindowAfter(windows, now);
 
-  if (window) {
+  const manual = activeShiftId?.endsWith(":MANUAL") ?? false;
+  if (window && !manual) {
     if (!activeSession || activeShiftId !== window.shiftId) {
       await stopActive(now);
       await startFor(window, policy, now);
     }
-  } else if (activeSession) {
+  } else if (activeSession && !manual) {
+    await stopActive(now);
+  } else if (activeSession && manual && now - manualStartedAt > 12 * 3600_000) {
+    // 홈 버튼으로 시작한 기록은 사용자가 끄는 것이 원칙이다. tick 이 "지금은
+    // 기록 구간이 아니다"라며 몇 초 만에 꺼 버리던 것이 바로 그 버그 —
+    // 수동 세션은 듀티표 판정의 대상이 아니다. 12시간 상한만 지킨다.
     await stopActive(now);
   }
 
@@ -178,6 +186,7 @@ async function stopActive(now: number): Promise<void> {
 export async function startManual(shiftId: string, now = Date.now()): Promise<boolean> {
   const policy = await loadPolicy();
   await stopActive(now);
+  manualStartedAt = now;
   await startFor(
     { shiftId, code: "OTHER", label: "수동", date: shiftId.split(":")[0], startAt: now, endAt: now + 12 * 3600_000 },
     policy,
@@ -261,8 +270,8 @@ export function platformCapability(iosContinuousSession: boolean): PlatformCapab
     return {
       fullyAutomatic: true,
       explanation:
-        "근무 시각에 맞춰 기록이 자동 시작됩니다. Android 정책상 포그라운드 알림이 유지되며," +
-        "소리·진동 없이 상단 알림창에 무음으로 표시됩니다. 해당 알림은 해제할 수 없습니다.",
+        "근무 시각에 맞춰 자동으로 녹음합니다. Android 정책상 강제 알림이 유지됩니다." +
+        "소리나 진동 없는 무음 알림이며, OS 정책이라 임의로 끌 수 없습니다.",
     };
   }
   if (iosContinuousSession) {
@@ -270,14 +279,14 @@ export function platformCapability(iosContinuousSession: boolean): PlatformCapab
       fullyAutomatic: true,
       explanation:
         "연속 세션 유지 설정으로 근무 시각에 기록이 자동 시작됩니다." +
-        "오디오 세션 상시 유지로 배터리 소모가 증가할 수 있습니다.",
+        "대기 상태를 유지하느라 배터리가 평소보다 많이 닳습니다.",
     };
   }
   return {
     fullyAutomatic: false,
     explanation:
-      "iOS 정책상 백그라운드 마이크 자동 활성화가 제한될 수 있습니다." +
-      "근무 시작 시 앱을 실행하십시오. 기록이 시작되면 화면을 꺼도 유지됩니다." +
-      "자동 기록을 원하는 경우 설정에서 '연속 세션 유지'를 활성화하십시오 (배터리 소모 증가).",
+      "iOS 정책상 앱을 열지 않은 상태에서의 마이크 자동 활성화가 막힐 수 있습니다." +
+      "인계 직전에 앱을 한 번 열어 주십시오. 켜진 기록은 화면을 꺼도 계속 유지됩니다." +
+      "백그라운드 자동 기록을 원하면 설정에서 '연속 세션 유지'를 켜십시오 (배터리 소모 큼).",
   };
 }

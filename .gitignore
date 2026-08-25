@@ -10,5 +10,8 @@ coverage/
 .env
 .env.*
 !.env.example
-ios/
-android/
+# prebuild 산출물만 무시한다. 경로를 앱 루트에 못박은 이유:
+# 전역 'android/' 는 apps/mobile/modules/*/android/ (로컬 네이티브 모듈의
+# 구현!)까지 삼켜서, CI 에는 설정 파일만 가고 모듈이 APK 에서 빠졌다.
+apps/mobile/ios/
+apps/mobile/android/

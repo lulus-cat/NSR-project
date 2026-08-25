@@ -83,10 +83,10 @@ export const LEVEL_LABELS: Record<TaeumLevel, string> = {
 };
 
 export const DISCLAIMER =
-  "해당 수치는 참고용 지표이며 텍스트 특성상 어조나 맥락이 제외됩니다." +
-  "실제 상황과 차이가 있을 수 있으므로 하단 발언 인용문을 직접 확인하십시오." +
-  "신고나 상담을 고려한다면 병원 고충처리 부서, 대한간호협회 간호사 인권센터, " +
-  "고용노동부 노동포털을 통해 전문가와 상담하십시오.";
+  "점수는 참고용일 뿐 어조나 뉘앙스가 담기지 않습니다." +
+  "숫자에 속지 말고 아래의 실제 발언 인용문을 꼭 직접 확인하십시오." +
+  "상담이 필요하면 병원 고충처리 부서나 간호협회 인권센터, " +
+  "노동포털을 통해 전문가의 도움을 받으십시오.";
 
 /** 선배·상급자로 볼 역할. 관계 우위가 인정되기 쉬운 쪽. */
 const SUPERIOR_ROLES: ReadonlySet<SpeakerRole> = new Set<SpeakerRole>([
@@ -357,13 +357,13 @@ export function summarizeTrend(points: TaeumTrendPoint[]): {
   const parts = [`최근 ${points.length}개 근무 평균 ${average}점.`];
   if (severeCount > 0) {
     parts.push(
-      `'심각' 단계가 ${severeCount}회 발생했습니다. 지속성 확인을 위해` +
-        `해당 근무의 발언 인용문을 보관하십시오.`,
+      `'심각' 단계가 ${severeCount}번 찍혔습니다. 지속적인 괴롭힘인지 입증하려면` +
+        `해당 근무의 발언 인용문을 안전하게 따로 보관해 두십시오.`,
     );
   } else if (average >= 30) {
-    parts.push("반복되는 지표 패턴이 있는지 인용문을 확인하십시오.");
+    parts.push("반복되는 괴롭힘 패턴이 있는지 발언 인용문을 꼼꼼히 살피십시오.");
   } else {
-    parts.push("두드러진 반복 패턴은 확인되지 않았습니다.");
+    parts.push("두드러지는 특정한 반복 패턴은 아직 보이지 않습니다.");
   }
   if (dominantCategory) {
     parts.push(`가장 자주 나타난 유형: ${CATEGORY_LABELS[dominantCategory]}.`);
