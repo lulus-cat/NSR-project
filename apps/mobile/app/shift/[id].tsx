@@ -34,7 +34,7 @@ const ROLE_OPTIONS: { role: SpeakerRole; label: string }[] = [
   { role: "self", label: "본인" },
   { role: "senior", label: "선배" },
   { role: "doctor", label: "의사" },
-  { role: "patient", label: "환자" },
+  { role: "patient", label: "대상자" },
   { role: "guardian", label: "보호자" },
   { role: "other", label: "기타" },
 ];
@@ -43,7 +43,7 @@ const ROLE_LABELS: Record<SpeakerRole, string> = {
   self: "본인",
   senior: "선배",
   doctor: "의사",
-  patient: "환자",
+  patient: "대상자",
   guardian: "보호자",
   other: "기타",
   unknown: "미확인",
@@ -330,12 +330,12 @@ export default function ShiftDetail() {
           {date} · {dutyLabel}
         </Heading>
         <Small>
-          녹음 {recordings.length}개 · 총 {Math.round(durationSec / 60)}분 · 전사 세그먼트{" "}
+          기록 {recordings.length}개 · 총 {Math.round(durationSec / 60)}분 · 전사 세그먼트{" "}
           {segments.length}개
         </Small>
         {pending.length > 0 ? (
           <Button
-            label={`미전사 녹음 ${pending.length}건 전사하기`}
+            label={`미전사 기록 ${pending.length}건 전사하기`}
             tone="primary"
             busy={busy?.startsWith("전사") ?? false}
             onPress={() => void runTranscription()}
@@ -452,7 +452,7 @@ export default function ShiftDetail() {
           <Card>
             <Body muted>
               
-  전사된 내용이 없습니다. 녹음 파일이 있다면 전사를 실행하십시오.
+  전사된 내용이 없습니다. 기록 파일이 있다면 전사를 실행하십시오.
 </Body>
           </Card>
         ) : (
@@ -487,7 +487,8 @@ export default function ShiftDetail() {
           <Heading>&ldquo;{wordTarget.word}&rdquo;</Heading>
           <Small>
             
-  전사 오기를 수정해 주십시오. 동일 교정이 2회 이상 반복되면 다음 전사부터 자동 반영됩니다.
+  
+  전사 오기를 수정하십시오. 동일 교정이 2회 이상 반복되면 다음 전사에 자동 반영됩니다.
 </Small>
           <TextInput
             value={wordTarget.replacement}
@@ -665,10 +666,10 @@ export default function ShiftDetail() {
 
             {taeum.patientAggression.length > 0 ? (
               <Card>
-                <Heading>환자·보호자 폭언</Heading>
+                <Heading>응대 중 폭언</Heading>
                 <Small>
                   
-  환자·보호자 폭언은 산업안전보건법상 보호 대상이며 병원 보안 절차에 따라 대응하십시오.
+  응대 중 폭언은 산업안전보건법상 보호 대상이며 병원 보안 절차에 따라 대응하십시오.
 </Small>
                 {taeum.patientAggression.map((e, i) => (
                   <View key={`${e.segmentId}-p${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>

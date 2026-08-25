@@ -372,7 +372,7 @@ export function makeCustomModel(input: CustomModelInput): {
     return { model: null, error: "whisper.cpp는 ggml .bin 파일만 지원합니다." };
   }
   if (input.url && !/^https:\/\//i.test(input.url)) {
-    return { model: null, error: "URL은 https로 시작해야 합니다." };
+    return { model: null, error: "URL은 https://로 시작해야 합니다." };
   }
   return {
     model: {

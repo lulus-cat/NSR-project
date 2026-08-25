@@ -88,7 +88,7 @@ export default function Care() {
           <Heading>아직 기록이 없습니다</Heading>
           <Body muted>
             
-  근무를 녹음하고 전사하면 근무 환경이 체온으로 기록됩니다. 36.5°C면 안정적인 병동입니다.
+  근무를 기록하고 전사하면 근무 환경이 체온으로 기록됩니다. 36.5°C면 안정적인 병동입니다.
 </Body>
         </Card>
       )}

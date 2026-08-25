@@ -1,7 +1,7 @@
 /**
- * 듀티표 기반 자동 녹음 스케줄러.
+ * 듀티표 기반 자동 기록 스케줄러.
  *
- * 플랫폼별로 되는 정도가 다르다. 이걸 숨기면 사용자는 "왜 어제 녹음이 없지"를
+ * 플랫폼별로 되는 정도가 다르다. 이걸 숨기면 사용자는 "왜 어제 기록이 없지"를
  * 겪게 된다. 그래서 앱은 아래 사실을 설정 화면에 그대로 적는다.
  *
  * ── Android ─────────────────────────────────────────────
@@ -11,12 +11,12 @@
  * 대가: 최소 중요도 알림 하나가 상시 떠 있어야 한다 (OS 요구사항, 우회 불가).
  *
  * ── iOS ─────────────────────────────────────────────────
- * "정해진 시각에 앱을 깨워서 녹음을 시작"하는 것은 **보장되지 않는다.**
+ * "정해진 시각에 앱을 깨워서 기록을 시작"하는 것은 **보장되지 않는다.**
  * iOS의 백그라운드 실행은 시스템이 재량으로 주는 것이고, 마이크 세션을
  * 새로 여는 것은 특히 제약이 크다. 두 가지 중 하나를 골라야 한다.
  *
  *   (A) 근무 시작 때 앱을 한 번 연다 (기본값)
- *       한 번 시작하면 오디오 세션이 살아 있는 동안은 화면을 꺼도 계속 녹음된다.
+ *       한 번 시작하면 오디오 세션이 살아 있는 동안은 화면을 꺼도 계속 기록된다.
  *       근무 시작 알림을 켜두면 잠금화면에서 탭 한 번으로 시작된다.
  *       (알림 숨김을 켜둔 경우엔 알림도 안 뜨므로 직접 열어야 한다.)
  *
@@ -74,7 +74,7 @@ export async function loadSchedule(): Promise<DutySchedule> {
   return createSchedule(entries);
 }
 
-/** 앞으로 2주치 녹음 구간. 화면 표시와 틱 판정에 함께 쓴다. */
+/** 앞으로 2주치 기록 구간. 화면 표시와 틱 판정에 함께 쓴다. */
 export async function upcomingWindows(now = Date.now()): Promise<RecordingWindow[]> {
   const [schedule, policy] = await Promise.all([loadSchedule(), loadPolicy()]);
   return recordingWindows(schedule, policy, {
@@ -97,7 +97,7 @@ export function currentSession(): { session: RecordingSession; shiftId: string }
  * 한 번의 판정. 백그라운드 태스크와 앱 포그라운드 진입 양쪽에서 호출한다.
  *
  * 하는 일:
- *   1. 지금이 녹음 구간인지 확인
+ *   1. 지금이 기록 구간인지 확인
  *   2. 구간이면 세션 시작, 아니면 정지
  *   3. 보관기간 지난 파일 정리
  */
@@ -151,8 +151,8 @@ async function startFor(
       });
     },
     onError(error) {
-      // 녹음 실패는 조용히 넘어가면 안 된다. 사용자는 녹음되고 있다고 믿고 있다.
-      console.error("[NSR] 녹음 오류", error);
+      // 기록 실패는 조용히 넘어가면 안 된다. 사용자는 기록되고 있다고 믿고 있다.
+      console.error("[NSR] 기록 오류", error);
       void setSetting("recording.lastError", {
         at: Date.now(),
         message: error instanceof Error ? error.message : String(error),
@@ -193,7 +193,7 @@ export async function stopManual(now = Date.now()): Promise<void> {
 /**
  * 보관기간·용량 정리.
  *
- * 오래된 녹음을 안 지우는 것이 이 앱의 가장 큰 개인정보 위험이다.
+ * 오래된 기록을 안 지우는 것이 이 앱의 가장 큰 개인정보 위험이다.
  * 기기를 잃어버렸을 때 나가는 환자 정보의 양이 여기서 정해진다.
  */
 async function housekeeping(policy: RecordingPolicy, now: number): Promise<void> {
@@ -250,7 +250,7 @@ export async function registerBackgroundTask(): Promise<void> {
 }
 
 export interface PlatformCapability {
-  /** 사용자가 앱을 열지 않아도 근무 시각에 녹음이 시작되는가. */
+  /** 사용자가 앱을 열지 않아도 근무 시각에 기록이 시작되는가. */
   fullyAutomatic: boolean;
   /** 사용자에게 보여줄 설명. */
   explanation: string;
@@ -261,7 +261,7 @@ export function platformCapability(iosContinuousSession: boolean): PlatformCapab
     return {
       fullyAutomatic: true,
       explanation:
-        "근무 시각에 맞춰 녹음이 자동 시작됩니다. Android 정책상 포그라운드 알림이 유지되며," +
+        "근무 시각에 맞춰 기록이 자동 시작됩니다. Android 정책상 포그라운드 알림이 유지되며," +
         "소리·진동 없이 상단 알림창에 무음으로 표시됩니다. 해당 알림은 해제할 수 없습니다.",
     };
   }
@@ -269,7 +269,7 @@ export function platformCapability(iosContinuousSession: boolean): PlatformCapab
     return {
       fullyAutomatic: true,
       explanation:
-        "연속 세션 유지 설정으로 근무 시각에 녹음이 자동 시작됩니다." +
+        "연속 세션 유지 설정으로 근무 시각에 기록이 자동 시작됩니다." +
         "오디오 세션 상시 유지로 배터리 소모가 증가할 수 있습니다.",
     };
   }
@@ -277,7 +277,7 @@ export function platformCapability(iosContinuousSession: boolean): PlatformCapab
     fullyAutomatic: false,
     explanation:
       "iOS 정책상 백그라운드 마이크 자동 활성화가 제한될 수 있습니다." +
-      "근무 시작 시 앱을 실행해 주십시오. 녹음이 시작되면 화면을 꺼도 유지됩니다." +
-      "자동 녹음을 원하는 경우 설정에서 '연속 세션 유지'를 활성화하십시오 (배터리 소모 증가).",
+      "근무 시작 시 앱을 실행하십시오. 기록이 시작되면 화면을 꺼도 유지됩니다." +
+      "자동 기록을 원하는 경우 설정에서 '연속 세션 유지'를 활성화하십시오 (배터리 소모 증가).",
   };
 }

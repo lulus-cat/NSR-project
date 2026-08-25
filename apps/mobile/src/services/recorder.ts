@@ -1,9 +1,9 @@
 /**
- * 녹음 서비스.
+ * 기록 서비스.
  *
  * 설계 형태
  * --------
- * 녹음 "정책"(언제 시작·회전·정지하는가)과 녹음 "장치"(실제 마이크 API)를 분리했다.
+ * 기록 "정책"(언제 시작·회전·정지하는가)과 기록 "장치"(실제 마이크 API)를 분리했다.
  * 정책은 `RecordingSession`이 갖고, 장치는 `AudioBackend` 포트 뒤에 있다.
  * Expo SDK가 오디오 API를 바꿔도 `expoAudioBackend`만 손보면 된다.
  *
@@ -34,7 +34,7 @@ export interface AudioBackend {
    * Android: 포그라운드 서비스 시작
    */
   prepareSession(options: { silent: boolean }): Promise<void>;
-  /** 새 파일로 녹음 시작. 반환값은 파일 URI. */
+  /** 새 파일로 기록 시작. 반환값은 파일 URI. */
   start(fileName: string): Promise<string>;
   /** 정지하고 결과를 돌려준다. */
   stop(): Promise<{ uri: string; durationSec: number; sizeBytes: number }>;
@@ -61,7 +61,7 @@ export interface SessionCallbacks {
 }
 
 /**
- * 한 근무의 녹음 세션.
+ * 한 근무의 기록 세션.
  *
  * 8시간을 한 파일에 담지 않는다. 이유가 셋이다.
  *   - 앱이 죽거나 파일이 손상되면 전부 잃는다
@@ -173,7 +173,7 @@ export class RecordingSession {
  *
  * 파일 경로에 대해: expo-audio는 자기 캐시 경로에 쓰고 `uri`로 알려줄 뿐,
  * 출력 위치를 지정하는 옵션이 없다. 캐시는 OS가 언제든 비울 수 있으므로
- * 녹음이 끝나면 곧바로 문서 디렉터리로 옮긴다.
+ * 기록이 끝나면 곧바로 문서 디렉터리로 옮긴다.
  */
 export function createExpoAudioBackend(): AudioBackend {
   let recorder: AudioRecorder | null = null;
@@ -189,9 +189,9 @@ export function createExpoAudioBackend(): AudioBackend {
 
     async prepareSession({ silent }) {
       await setAudioModeAsync({
-        // iOS에서 마이크를 쓰려면 세션이 녹음을 허용해야 한다.
+        // iOS에서 마이크를 쓰려면 세션이 기록을 허용해야 한다.
         allowsRecording: true,
-        // 화면을 꺼도 세션이 살아 있어야 녹음이 이어진다.
+        // 화면을 꺼도 세션이 살아 있어야 기록이 이어진다.
         shouldPlayInBackground: true,
         // 다른 앱 소리를 끊지 않는다. 통화나 알람이 죽으면 바로 들킨다.
         interruptionMode: "mixWithOthers",
@@ -212,7 +212,7 @@ export function createExpoAudioBackend(): AudioBackend {
     },
 
     async stop() {
-      if (!recorder) throw new Error("녹음이 시작되지 않았습니다.");
+      if (!recorder) throw new Error("기록이 시작되지 않았습니다.");
       await recorder.stop();
       recording = false;
 
@@ -224,7 +224,7 @@ export function createExpoAudioBackend(): AudioBackend {
       recorder = null;
 
       const uri = tempUri ? moveIntoRecordings(tempUri, currentName) : "";
-      // 크기를 못 구해도 녹음 자체는 유효하다. 저장 용량 계산만 부정확해진다.
+      // 크기를 못 구해도 기록 자체는 유효하다. 저장 용량 계산만 부정확해진다.
       return { uri, durationSec, sizeBytes: fileSize(uri) };
     },
 

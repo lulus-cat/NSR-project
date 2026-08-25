@@ -14,8 +14,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "app.nsr.shiftlog",
       "infoPlist": {
-        "NSMicrophoneUsageDescription": "근무 중 인계와 교육 내용을 본인이 나중에 복기할 수 있도록 녹음합니다. 녹음 파일은 이 기기 안에만 저장됩니다.",
-        "NSFaceIDUsageDescription": "앱을 열 때 본인 확인을 위해 사용합니다. 녹음에는 환자 정보가 포함될 수 있습니다.",
+        "NSMicrophoneUsageDescription": "근무 중 들은 인계와 교육 내용을 나중에 복기하기 위해 마이크를 사용합니다.",
+        "NSFaceIDUsageDescription": "앱을 열 때 본인 확인을 위해 사용합니다.",
         "UIBackgroundModes": [
           "audio",
           "processing"
@@ -52,14 +52,14 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "근무 중 인계와 교육 내용을 녹음하기 위해 마이크를 사용합니다."
+          "microphonePermission": "근무 중 들은 인계와 교육 내용을 나중에 복기하기 위해 마이크를 사용합니다."
         }
       ],
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "근무지에 들어오고 나가는 것을 감지해 녹음을 자동으로 켜고 끄기 위해 위치를 사용합니다.",
-          "locationAlwaysAndWhenInUsePermission": "근무지에 들어오고 나가는 것을 감지해 녹음을 자동으로 켜고 끄기 위해 위치를 사용합니다. 위치는 기기 밖으로 나가지 않습니다.",
+          "locationWhenInUsePermission": "근무지에 들어오고 나가는 것을 감지하기 위해 위치를 사용합니다.",
+          "locationAlwaysAndWhenInUsePermission": "근무지에 들어오고 나가는 것을 감지하기 위해 위치를 사용합니다. 위치는 기기 밖으로 나가지 않습니다.",
           "isAndroidBackgroundLocationEnabled": true
         }
       ],

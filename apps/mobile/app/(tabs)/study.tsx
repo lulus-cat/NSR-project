@@ -48,11 +48,11 @@ type Mode = "review" | "sets" | "reports";
 
 /** "2026-08-24:D" → "8월 24일 · 데이" */
 function setTitle(shiftId: string | undefined): string {
-  if (!shiftId) return "근무 밖에서 만든 카드";
+  if (!shiftId) return "직접 만든 카드";
   const [date, code] = shiftId.split(":");
   const label =
     code === "D" ? "데이" : code === "E" ? "이브닝" : code === "N" ? "나이트" :
-    code === "MANUAL" || code === "GEO" ? "수동 녹음" : code;
+    code === "MANUAL" || code === "GEO" ? "수동 기록" : code;
   return `${Number(date.slice(5, 7))}월 ${Number(date.slice(8, 10))}일 · ${label}`;
 }
 
@@ -164,7 +164,7 @@ export default function Study() {
           cards.length === 0 ? (
             <Card>
               <Body muted>
-                근무를 녹음하고 전사하면 실제 들은 문장으로 암기 카드가 생성됩니다. 내일
+                근무를 기록하고 전사하면 실제 들은 문장으로 암기 카드가 생성됩니다. 내일
                 병동에서 바로 쓰이는 실전 용어가 정리됩니다.
               </Body>
             </Card>
@@ -267,7 +267,7 @@ export default function Study() {
             {sets.length === 0 ? (
               <Card>
                 <Body muted>
-                  {search ? "검색 결과가 없습니다." : "아직 카드가 없습니다. 근무를 전사하면 세트가 생깁니다."}
+                  {search ? "검색 결과가 없습니다." : "저장된 카드가 없습니다. 근무 전사 시 자동으로 생성됩니다."}
                 </Body>
               </Card>
             ) : (
@@ -344,10 +344,9 @@ export default function Study() {
           reports.length === 0 ? (
             <Card>
               <Body muted>
-                생성된 보고서가 없습니다. 근무 기록에서 전사를 마치고 &lsquo;카드·보고서
-                만들기&rsquo;를 실행하면, 그 근무의 평가 — 새로 배운 용어, 잘한 점, 확인이
-                필요한 점, 실수 언급 — 가 여기에 쌓입니다.
-              </Body>
+                
+  생성된 보고서가 없습니다. 전사 완료 후 &lsquo;카드·보고서 만들기&rsquo;를 실행하면 새로 배운 용어, 확인 사항, 실수 언급 등이 요약 기록됩니다.
+</Body>
             </Card>
           ) : (
             reports.map((r) => {
@@ -396,9 +395,9 @@ export default function Study() {
 
         {mode === "reports" ? (
           <Small>
-            잘한 점·근무 평가는 보조 기능(AI)을 켜면 보고서에 함께 담깁니다. 설정 &gt; 보조
-            기능에서 켤 수 있습니다.
-          </Small>
+            
+  근무 평가는 AI 보조 기능을 켜면 보고서에 포함됩니다 (설정 &gt; 보조 기능에서 활성화).
+</Small>
         ) : null}
       </ScrollView>
     </SafeAreaView>

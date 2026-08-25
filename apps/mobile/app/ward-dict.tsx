@@ -185,7 +185,7 @@ export default function WardDict() {
           <Small muted={false}>{shareCheck.check.summary}</Small>
           <Small>
             
-  사전 작성 시 예문에 환자 개인정보가 포함되지 않도록 주의하십시오.
+  사전 작성 시 예문에 민감한 개인정보가 포함되지 않도록 주의하십시오.
 </Small>
 
           {shareCheck.check.findings.length > 0 ? (

@@ -10,7 +10,7 @@
  *
  * "클라우드"라고 부르는 옵션도 **상용 ASR API가 아니라 사용자가 지정한 서버**다.
  * 대부분의 경우 본인이 띄운 faster-whisper 서버이거나 병원이 제공한 내부 서버다.
- * 임의의 제3자 서비스에 병동 녹음을 올리는 경로는 이 앱이 제공하지 않는다.
+ * 임의의 제3자 서비스에 병동 기록을 올리는 경로는 이 앱이 제공하지 않는다.
  */
 
 import {
@@ -245,7 +245,7 @@ export async function buildAsrOptions(lexicon: Lexicon): Promise<AsrOptions> {
 }
 
 /**
- * 녹음 파일 하나를 전사하고 교정해 저장한다.
+ * 기록 파일 하나를 전사하고 교정해 저장한다.
  * 근무 단위 산출물(카드·보고서·지표)은 `finalizeShift`에서 만든다.
  */
 export async function processRecording(

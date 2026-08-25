@@ -23,7 +23,7 @@ export interface ShiftReportInput {
   date: string;
   /** "데이 (D)" 같은 표시용 라벨. */
   dutyLabel: string;
-  /** 실제 녹음된 길이(초). */
+  /** 실제 기록된 길이(초). */
   recordedSec: number;
   segments: CardSourceSegment[];
   /** 이 근무에서 등장한 용어 id (correctTranscript 결과를 합친 것). */
@@ -192,7 +192,7 @@ export function reportToMarkdown(report: ShiftReport): string {
   const lines: string[] = [];
   lines.push(`# ${report.date} 근무 기록 — ${report.dutyLabel}`);
   lines.push("");
-  lines.push(`- 녹음 길이: ${formatDuration(report.recordedSec)}`);
+  lines.push(`- 기록 길이: ${formatDuration(report.recordedSec)}`);
   lines.push(`- 감지된 용어: ${report.newTerms.length + report.reviewedTerms.length}개 (신규 ${report.newTerms.length}개)`);
   lines.push("");
 
@@ -264,7 +264,7 @@ export function reportToMarkdown(report: ShiftReport): string {
     if (t.patientAggression.length > 0) {
       lines.push("");
       lines.push(
-        `- 환자·보호자 폭언 ${t.patientAggression.length}건 별도 기록됨 (원내 보안 절차 적용 대상).`,
+        `- 응대 중 폭언 ${t.patientAggression.length}건 별도 기록됨 (원내 보안 절차 적용 대상).`,
       );
     }
     lines.push("");

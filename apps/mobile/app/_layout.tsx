@@ -100,7 +100,7 @@ function Gate() {
         <Card>
           <Body muted>
             
-  이 앱에는 환자 정보가 포함된 녹음 및 전사본이 저장되어 있습니다. 본인 인증 후 실행됩니다.
+  본인 확인 후 사용할 수 있습니다.
 </Body>
           <Button label="잠금 해제" tone="primary" onPress={() => void app.unlock()} />
         </Card>

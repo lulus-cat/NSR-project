@@ -70,6 +70,6 @@ export async function exportMonthToCalendar(
   return {
     ok: true,
     count: shifts.length,
-    message: `${month0 + 1}월 근무 ${shifts.length}건을 '${CAL_NAME}' 캘린더에 넣었습니다.`,
+    message: `${month0 + 1}월 근무 ${shifts.length}건을 '${CAL_NAME}' 캘린더에 내보냈습니다.`,
   };
 }

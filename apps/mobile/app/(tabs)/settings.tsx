@@ -207,7 +207,7 @@ export default function Settings() {
   const wipeEverything = useCallback(() => {
     Alert.alert(
       "모든 데이터를 지웁니다",
-      "녹음 파일, 전사본, 학습 카드, 근무 기록이 모두 삭제되며 복구할 수 없습니다.",
+      "기록 파일, 전사본, 학습 카드, 근무 기록이 모두 삭제되며 복구할 수 없습니다.",
       [
         { text: "취소", style: "cancel" },
         {
@@ -257,7 +257,7 @@ export default function Settings() {
           <View style={{ flex: 1, gap: 2 }}>
             <Heading>{workplace ? workplace.label : "근무지 미지정"}</Heading>
             <Small>
-              저장된 녹음 {storageMb} MB · 보관 {policy.retentionDays}일
+              저장된 기록 {storageMb} MB · 보관 {policy.retentionDays}일
             </Small>
           </View>
         </View>
@@ -327,17 +327,17 @@ export default function Settings() {
         <Small>릴리스: github.com/{RELEASE_REPO}/releases</Small>
       </Card>
 
-      {/* 녹음 */}
+      {/* 기록 */}
       <Card>
-        <GroupHead icon="mic-outline" color="#3E9B6F" title="자동 녹음" />
+        <GroupHead icon="mic-outline" color="#3E9B6F" title="자동 기록" />
         <Toggle
-          label="듀티표에 따라 자동 녹음"
+          label="듀티표에 따라 자동 기록"
           description={capability.explanation}
           value={policy.enabled}
           onChange={(v) => void app.updatePolicy({ ...policy, enabled: v })}
         />
         <Divider />
-        <Small muted={false}>녹음할 근무</Small>
+        <Small muted={false}>기록할 근무</Small>
         <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
           {(["D", "E", "N", "EDU"] as ShiftCode[]).map((code) => {
             const on = policy.codes.includes(code);
@@ -353,7 +353,7 @@ export default function Settings() {
         </View>
         <Divider />
         <Row
-          label="근무 시작 전 녹음 시작"
+          label="근무 시작 전 기록 시작"
           value={`${policy.leadMinutes}분 전`}
         />
         <Small>
@@ -370,7 +370,7 @@ export default function Settings() {
         <Row label="보관 기간" value={`${policy.retentionDays}일`} />
         <Small>
           
-  보관 기간이 지난 녹음은 자동 삭제됩니다. 오래된 녹음 보관은 보안상 위험합니다.
+  보관 기간이 지난 기록은 자동 삭제됩니다. 오래된 기록 보관은 보안상 위험합니다.
 </Small>
         <Divider />
         <Row label="현재 사용 중" value={`${storageMb} MB / ${policy.maxStorageMb} MB`} />
@@ -378,10 +378,10 @@ export default function Settings() {
 
       {/* 근무지 지오펜스 */}
       <Card>
-        <GroupHead icon="location-outline" color="#2E9AA8" title="근무지에서 자동 녹음" />
+        <GroupHead icon="location-outline" color="#2E9AA8" title="근무지에서 자동 기록" />
         <Small>
           
-  병원 반경 진입 시 녹음을 시작하고 벗어나면 종료합니다. 출퇴근 전후 오버타임까지 실제 체류 시간을 기록합니다. 근무일에만 작동하여 오프에는 녹음되지 않으며 위치 정보는 외부로 유출되지 않습니다.
+  병원 반경 진입 시 기록을 시작하고 벗어나면 종료합니다. 출퇴근 전후 오버타임까지 실제 체류 시간을 기록합니다. 근무일에만 작동하여 오프에는 기록되지 않으며 위치 정보는 외부로 유출되지 않습니다.
 </Small>
         <Divider />
         {workplace ? (
@@ -469,10 +469,10 @@ export default function Settings() {
           </>
         )}
         <Toggle
-          label="지오펜스 자동 녹음"
+          label="지오펜스 자동 기록"
           description={
             Platform.OS === "android"
-              ? "위치 권한을 '항상 허용'으로 설정해야 합니다. Android 14 이상에서는 백그라운드 녹음 제한으로 앱 실행 시 시작될 수 있습니다."
+              ? "위치 권한을 '항상 허용'으로 설정해야 합니다. Android 14 이상에서는 백그라운드 기록 제한으로 앱 실행 시 시작될 수 있습니다."
               : "위치 권한을 '항상 허용'으로 변경해야 합니다."
           }
           value={geoOn}
@@ -503,14 +503,14 @@ export default function Settings() {
         <Small>
           {Platform.OS === "ios"
             ? "iOS 주황색 마이크 표시와 제어센터 기록은 OS 정책상 임의로 끌 수 없습니다."
-            : "Android 마이크 표시와 개인정보 기록은 OS 정책입니다. 백그라운드 녹음 시 필수 알림이 발생하며, 소리·진동 없이 무음으로 표시됩니다."}
+            : "Android 마이크 표시와 개인정보 기록은 OS 정책입니다. 백그라운드 기록 시 필수 알림이 발생하며, 소리·진동 없이 무음으로 표시됩니다."}
         </Small>
         {Platform.OS === "ios" ? (
           <>
             <Divider />
             <Toggle
               label="연속 세션 유지 (배터리 소모 큼)"
-              description="오디오 세션을 계속 유지하여 앱을 열지 않아도 녹음이 시작됩니다. 배터리 소모가 큽니다."
+              description="오디오 세션을 계속 유지하여 앱을 열지 않아도 기록이 시작됩니다. 배터리 소모가 큽니다."
               value={iosContinuous}
               onChange={async (v) => {
                 setIosContinuous(v);
@@ -526,7 +526,7 @@ export default function Settings() {
         <GroupHead icon="lock-closed-outline" color="#5B5EA6" title="개인정보" />
         <Toggle
           label="앱 잠금"
-          description="앱 실행 시 생체인증을 확인합니다. 녹음 내용에 환자 정보가 포함될 수 있습니다."
+          description="앱 실행 시 생체인증을 확인합니다. 기록에는 민감한 내용이 포함될 수 있습니다."
           value={appLock}
           onChange={async (v) => {
             setAppLock(v);
@@ -536,13 +536,13 @@ export default function Settings() {
         <Divider />
         <Toggle
           label="본인 음성이 없는 구간 자동 폐기"
-          description="통신비밀보호법상 대화 당사자가 아닌 타인 간 대화 녹음은 금지됩니다. 법적 보호를 위해 이 설정을 유지하십시오."
+          description="통신비밀보호법상 대화 당사자가 아닌 타인 간 대화 기록은 금지됩니다. 법적 보호를 위해 이 설정을 유지하십시오."
           value={discardWithoutSelf}
           onChange={async (v) => {
             if (!v) {
               Alert.alert(
                 "정말 해제하시겠습니까",
-                "본인이 참여하지 않은 타인 간 대화 녹음은 통신비밀보호법 위반이며, 벌금형 없이 1년 이상 징역형 대상입니다.",
+                "본인이 참여하지 않은 타인 간 대화 기록은 통신비밀보호법 위반이며, 벌금형 없이 1년 이상 징역형 대상입니다.",
                 [
                   { text: "취소", style: "cancel" },
                   {
@@ -565,7 +565,7 @@ export default function Settings() {
 
       {/* 개인정보 가리기 */}
       <Card>
-        <GroupHead icon="eye-off-outline" color="#8A5F9E" title="환자 정보 가리기" />
+        <GroupHead icon="eye-off-outline" color="#8A5F9E" title="민감 정보 가리기" />
         <Small>
           
   보고서 내보내기, 공유, 외부 기능 송신 시 이름·전화번호·등록번호를 자동으로 마스킹합니다.
@@ -726,7 +726,7 @@ export default function Settings() {
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
         <Small>
           
-  전사는 기본적으로 기기 내에서 처리됩니다. 환자 정보 유출은 의료법 제19조 위반 대상입니다.
+  전사는 기본적으로 기기 내에서 처리됩니다. 민감 정보 유출은 의료법 제19조 위반 대상입니다.
 </Small>
         <Divider />
         <Row
@@ -917,7 +917,7 @@ export default function Settings() {
         <GroupHead icon="trash-outline" color="#B3402F" title="데이터 삭제" />
         <Body muted>
           
-  녹음 파일, 전사본, 학습 카드, 근무 기록을 모두 삭제합니다. 복구할 수 없습니다.
+  기록 파일, 전사본, 학습 카드, 근무 기록을 모두 삭제합니다. 복구할 수 없습니다.
 </Body>
         <Button label="모든 데이터 삭제" tone="danger" onPress={wipeEverything} />
       </Card>

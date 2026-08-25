@@ -159,7 +159,7 @@ export default function Home() {
       right={
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={app.recording ? "녹음 정지" : "녹음 시작"}
+          accessibilityLabel={app.recording ? "기록 정지" : "기록 시작"}
           onPress={async () => {
             if (app.recording) await stopManual();
             else await startManual(`${today}:MANUAL`);
@@ -216,7 +216,7 @@ export default function Home() {
           <DashedDivider />
           <BriefRow
             icon="document-text-outline"
-            label="전사할 녹음"
+            label="전사할 기록"
             value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
             valueColor={pendingCount > 0 ? t.warn : undefined}
             onPress={() =>

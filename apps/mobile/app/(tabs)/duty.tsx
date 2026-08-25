@@ -331,7 +331,9 @@ export default function Duty() {
                 실제 체류 예상 {formatClock(selShift.onSiteStartAt)}~{formatClock(selShift.onSiteEndAt)}
               </Small>
             ) : (
-              <Small>누르면 다음 날로 넘어갑니다. 한 달을 쭉 찍으세요.</Small>
+              <Small>
+  누르면 다음 날로 넘어갑니다. 한 달을 연속 선택하십시오.
+</Small>
             )}
             {CODE_ROWS.map((rowCodes, i) => (
               <View key={i} style={{ flexDirection: "row", gap: space.sm }}>
@@ -385,7 +387,9 @@ export default function Duty() {
               </Text>
             </View>
             {monthEntries.length === 0 ? (
-              <Body muted>이번 달 듀티가 아직 없습니다. 위 달력에서 찍어 주세요.</Body>
+              <Body muted>
+  이번 달 듀티가 없습니다. 상단 달력에서 입력하십시오.
+</Body>
             ) : (
               <>
                 {/* 한 줄 누적 막대 — 이번 달이 어떤 색인지 한눈에 */}
@@ -492,12 +496,13 @@ export default function Duty() {
 
           {/* ── 폰 캘린더 연동 ── */}
           <Card>
-            <Heading>폰 캘린더에 넣기</Heading>
+            <Heading>
+  폰 캘린더 내보내기
+</Heading>
             <Small>
-              이번 달 듀티를 폰의 캘린더에 &lsquo;NSR 듀티&rsquo;로 씁니다. 구글 계정
-              캘린더를 쓰는 폰이면 구글 캘린더에서도 보입니다. 다시 내보내면 해당
-              월을 새로 씁니다.
-            </Small>
+              
+  이번 달 듀티를 폰 캘린더에 &lsquo;NSR 듀티&rsquo; 항목으로 저장합니다. 재내보내기 시 해당 월 일정이 덮어씌워집니다.
+</Small>
             <Button
               label={`${month + 1}월 듀티 내보내기`}
               tone="primary"

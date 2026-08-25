@@ -27,7 +27,7 @@ import { restoreGeofence } from "../services/geofence";
 
 export interface AppStateValue {
   ready: boolean;
-  /** 최초 고지·동의를 마쳤는가. 마치기 전에는 녹음 기능을 켤 수 없다. */
+  /** 최초 고지·동의를 마쳤는가. 마치기 전에는 기록 기능을 켤 수 없다. */
   onboarded: boolean;
   /** 앱 잠금이 켜져 있고 아직 인증하지 않은 상태. */
   locked: boolean;
@@ -89,7 +89,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return true;
     }
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "녹음 내용에 환자 정보가 포함될 수 있습니다",
+      promptMessage: "기록 내용에 민감 정보가 포함될 수 있습니다",
       cancelLabel: "취소",
     });
     setLocked(!result.success);
@@ -128,7 +128,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, [refresh]);
 
   // 앱이 앞으로 나올 때마다 한 번 더 확인한다.
-  // iOS에서는 이 시점이 녹음이 시작되는 유일한 확실한 기회다.
+  // iOS에서는 이 시점이 기록이 시작되는 유일한 확실한 기회다.
   useEffect(() => {
     const onChange = (state: AppStateStatus) => {
       if (state === "active") {

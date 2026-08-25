@@ -31,7 +31,7 @@ const MODEL_CHOICES = [
   {
     key: "small-q5_1",
     title: "Small (추천 시작점)",
-    body: "가장 빨리 시작할 수 있습니다. 한국어 인식률은 낮은 편이라 익숙해지면 아래로 바꾸십시오.",
+    body: "즉시 사용 가능합니다. 한국어 인식률이 낮아 향후 타 모델 변경을 권장합니다.",
   },
   {
     key: "korean-medium",
@@ -41,28 +41,28 @@ const MODEL_CHOICES = [
   {
     key: "later",
     title: "나중에 정하기",
-    body: "지금은 넘어가고, 첫 전사 전에 설정 > 전사 모델에서 받으면 됩니다.",
+    body: "건너뛴 후 첫 전사 전 설정 > 전사 모델에서 다운로드할 수 있습니다.",
   },
 ];
 
 const ITEMS: { key: string; title: string; body: string }[] = [
   {
     key: "wiretap",
-    title: "당사자가 아닌 타인 간 대화 녹음 금지",
+    title: "당사자가 아닌 타인 간 대화 기록 금지",
     body:
-      "통신비밀보호법상 본인이 참여하지 않은 타인 간 대화 녹음은 불법이며 1년 이상 징역형 대상입니다. 항상 기기를 휴대해야 하며, 앱은 무음 및 타인 전용 구간을 자동 폐기합니다.",
+      "통신비밀보호법상 본인이 참여하지 않은 타인 간 대화 기록은 불법이며 1년 이상 징역형 대상입니다. 항상 기기를 휴대해야 하며, 앱은 무음 및 타인 전용 구간을 자동 폐기합니다.",
   },
   {
     key: "medical",
-    title: "녹음 내 환자 개인정보 포함 주의",
+    title: "기록 내 민감 정보 포함 주의",
     body:
-      "의료법 제19조는 업무상 비밀 누설을 금지합니다. 모든 데이터는 기기 내에서 처리되며 외부 송신은 기본 차단됩니다. 공유 및 내보내기 시 신중을 기하십시오.",
+      "의료법 제19조는 업무상 알게 된 비밀의 누설을 금지합니다. 모든 데이터는 기기 내에서 처리되며 외부 송신은 기본 차단됩니다. 공유 및 내보내기 시 신중을 기하십시오.",
   },
   {
     key: "hospital",
-    title: "원내 규정에 따른 녹음 금지 확인",
+    title: "원내 규정에 따른 기록 금지 확인",
     body:
-      "취업규칙상 원내 무단 녹음은 징계 사유가 될 수 있습니다. 병원별 내규를 반드시 사전에 확인하십시오.",
+      "취업규칙상 원내 무단 기록은 징계 사유가 될 수 있습니다. 병원별 내규를 반드시 사전에 확인하십시오.",
   },
   {
     key: "indicator",
@@ -80,13 +80,13 @@ const ITEMS: { key: string; title: string; body: string }[] = [
     key: "device",
     title: "기기 분실 시 데이터 유출 주의",
     body:
-      "개인정보 보호를 위해 앱 잠금 사용을 권장합니다. 보관 기간이 만료된 녹음 파일은 자동 삭제됩니다.",
+      "개인정보 보호를 위해 앱 잠금 사용을 권장합니다. 보관 기간이 만료된 기록 파일은 자동 삭제됩니다.",
   },
   {
     key: "alpha",
     title: "알파 버전 안내",
     body:
-      "알파 버전은 기능 및 저장 형식이 변경될 수 있습니다. 중요 녹음 파일은 별도로 백업하십시오. " +
+      "알파 버전은 기능 및 저장 형식이 변경될 수 있습니다. 중요 기록 파일은 별도로 백업하십시오. " +
       "화자는 자동 분리되지 않아 전사 화면에서 직접 지정해야 하며, 전사에는 모델 다운로드가 먼저 필요합니다.",
   },
 ];
@@ -157,9 +157,11 @@ export default function Onboarding() {
         {/* ── 1. 근무지 ── */}
         {step === 0 ? (
           <>
-            <Text style={[type.title, { color: t.text }]}>어느 병원에서 일하십니까?</Text>
+            <Text style={[type.title, { color: t.text }]}>
+  근무하는 병원을 선택하십시오.
+</Text>
             <Small>
-              근무지를 지정하면 병원에 들어설 때 녹음이 자동으로 켜지고 나설 때 꺼집니다.
+              근무지를 지정하면 병원에 들어설 때 기록이 자동으로 켜지고 나설 때 꺼집니다.
               검색어만 지도 서버(OpenStreetMap)로 가고, 내 위치는 보내지 않습니다.
             </Small>
             <View style={{ flexDirection: "row", gap: space.sm }}>
@@ -204,7 +206,7 @@ export default function Onboarding() {
             })}
             {searchMsg ? <Small muted={false}>{searchMsg}</Small> : null}
             <Button
-              label={picked ? "이 병원으로 하기" : "나중에 지정하기"}
+              label={picked ? "이 병원으로 선택" : "나중에 지정하기"}
               tone="primary"
               onPress={async () => {
                 if (picked) await setWorkplacePlace(picked);
@@ -217,8 +219,12 @@ export default function Onboarding() {
         {/* ── 2. 파트 ── */}
         {step === 1 ? (
           <>
-            <Text style={[type.title, { color: t.text }]}>어느 파트입니까?</Text>
-            <Small>파트에 따라 용어 사전의 우선순위가 달라집니다.</Small>
+            <Text style={[type.title, { color: t.text }]}>
+  근무 파트를 선택하십시오.
+</Text>
+            <Small>
+  파트에 따라 해당 사전의 우선순위가 적용됩니다.
+</Small>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
               {PARTS.map((p) => {
                 const on = part === p.key;
@@ -257,11 +263,13 @@ export default function Onboarding() {
         {/* ── 3. 모델 ── */}
         {step === 2 ? (
           <>
-            <Text style={[type.title, { color: t.text }]}>어떤 모델로 전사할까요?</Text>
+            <Text style={[type.title, { color: t.text }]}>
+  사용할 전사 모델을 선택하십시오.
+</Text>
             <Small>
-              다운로드는 지금 하지 않습니다 — Wi-Fi 에서 설정 &gt; 전사 모델로 받으면
-              됩니다. 여기서는 방향만 정합니다.
-            </Small>
+              
+  모델 다운로드는 설정 &gt; 전사 모델에서 진행되며, 여기서는 사용할 유형만 선택합니다.
+</Small>
             {MODEL_CHOICES.map((m) => {
               const on = model === m.key;
               return (
@@ -288,7 +296,9 @@ export default function Onboarding() {
         {step === 3 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>시작하기 전에</Text>
-            <Small>모든 항목에 동의해야 진행할 수 있습니다. 이것만은 건너뛸 수 없습니다.</Small>
+            <Small>
+  모든 항목에 동의해야 서비스를 이용할 수 있습니다.
+</Small>
             {ITEMS.map((item) => {
               const on = !!checked[item.key];
               return (
@@ -324,11 +334,11 @@ export default function Onboarding() {
                 </Pressable>
               );
             })}
-            {/* 권한 — 여기서 미리 받아 두면 첫 녹음에서 안 막힌다 */}
+            {/* 권한 — 여기서 미리 받아 두면 첫 기록에서 안 막힌다 */}
             <Card>
               <Heading>권한 허용</Heading>
               <Small>
-                마이크는 필수입니다. 위치는 근무지 자동 녹음을 쓸 때만 필요하고,
+                마이크는 필수입니다. 위치는 근무지 자동 기록을 쓸 때만 필요하고,
                 지금 건너뛰어도 설정에서 켤 수 있습니다.
               </Small>
               <Button
@@ -340,7 +350,7 @@ export default function Onboarding() {
                 }}
               />
               <Button
-                label={locGranted ? "✓ 위치 허용됨" : "위치 허용 (선택 — 근무지 자동 녹음)"}
+                label={locGranted ? "✓ 위치 허용됨" : "위치 허용 (선택 — 근무지 자동 기록)"}
                 onPress={async () => {
                   const r = await Location.requestForegroundPermissionsAsync();
                   setLocGranted(r.granted);
@@ -358,7 +368,7 @@ export default function Onboarding() {
                 void app.completeOnboarding();
               }}
             />
-            <Small>녹음 기능은 기본으로 비활성화되어 있습니다. 설정에서 직접 활성화하십시오.</Small>
+            <Small>기록 기능은 기본으로 비활성화되어 있습니다. 설정에서 직접 활성화하십시오.</Small>
           </>
         ) : null}
 
