@@ -11,6 +11,7 @@
     "fix-deps": "expo install --fix"
   },
   "dependencies": {
+    "@expo/vector-icons": "^15.1.1",
     "@nsr/core": "file:../../packages/core",
     "@react-navigation/bottom-tabs": "^7.18.17",
     "expo": "^57.0.15",

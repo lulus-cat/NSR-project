@@ -237,7 +237,7 @@ jobs:
           # 태그를 이 빌드가 만들어진 커밋에 붙인다. 이걸 빼면 GitHub 이 태그를
           # 기본 브랜치 끝에 만들어 버려서, APK 와 태그가 다른 코드를 가리키게 된다.
           target_commitish: ${{ github.sha }}
-          name: 근무기록 ${{ env.VERSION_NAME }} (알파)
+          name: NSR ${{ env.VERSION_NAME }} (알파)
           body_path: out/NOTES.md
           # 알파다. 받는 사람이 "정식판" 으로 오해하지 않도록 표시한다.
           prerelease: true
