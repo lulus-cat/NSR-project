@@ -83,7 +83,7 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     korean: null,
     relativeSpeed: 6,
     guidance:
-      "빠르지만 한국어는 많이 틀린다. 전사가 되는지 확인해 보는 용도로만 쓴다.",
+      "속도가 빠르나 한국어 인식률이 낮습니다. 전사 동작 테스트 용도로 사용합니다.",
   },
   {
     id: "base-q5_1",
@@ -94,7 +94,7 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     family: "whisper-official",
     korean: null,
     relativeSpeed: 3.5,
-    guidance: "구형 기기에서 겨우 돌릴 때. 용어는 거의 못 잡는다.",
+    guidance: "구형 기기용 모델입니다. 전문 용어 인식률은 낮습니다.",
   },
   {
     id: "small-q5_1",
@@ -106,8 +106,8 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     korean: { cer: 18.05, source: "ENERZAi 공개 실측" },
     relativeSpeed: 1,
     guidance:
-      "원본 기준선. 한국어 CER 이 18% 수준이라 이 앱에는 부족하다. " +
-      "같은 크기의 한국어 파인튜닝 모델이 있으면 그쪽을 쓴다.",
+      "원본 기본 모델입니다. 한국어 인식률이 낮아 보조용으로 적합합니다." +
+      "동일 크기의 한국어 파인튜닝 모델 사용을 권장합니다.",
   },
   {
     id: "medium-q5_0",
@@ -118,7 +118,7 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     family: "whisper-official",
     korean: null,
     relativeSpeed: 0.4,
-    guidance: "정확도와 속도의 중간. 최신 기기에서 오프 날 돌릴 만하다.",
+    guidance: "정확도와 속도의 균형 모델입니다. 성능이 높은 기기에 적합합니다.",
   },
   {
     id: "large-v3-turbo-q5_0",
@@ -130,8 +130,8 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     korean: null,
     relativeSpeed: 0.7,
     guidance:
-      "large 계열인데 디코더를 줄여 훨씬 빠르다. 큰 모델을 쓰겠다면 " +
-      "보통 이쪽이 large-v3 원본보다 실용적이다.",
+      "Large 계열의 속도 개선 모델입니다. 고성능 모델 사용 시" +
+      "Large-v3 원본보다 실용적입니다.",
   },
   {
     id: "large-v3-q5_0",
@@ -143,9 +143,9 @@ export const OFFICIAL_MODELS: AsrModel[] = [
     korean: { cer: 10, source: "공개 벤치마크 종합 (8~12% 범위의 중간값)" },
     relativeSpeed: 0.25,
     guidance:
-      "원본 중 가장 정확하지만 폰에서는 느리고 뜨겁다. " +
-      "충전 중에 밤새 돌릴 각오가 있을 때만. " +
-      "한국어만 놓고 보면 파인튜닝된 중간 크기 모델이 이걸 이긴다.",
+      "원본 모델 중 가장 정확하지만 기기 발열과 속도 저하가 발생할 수 있습니다." +
+      "충전 중 장시간 전사 작업 시에만 사용을 권장합니다." +
+      "한국어 전사는 파인튜닝된 Medium 모델의 성능이 더 우수합니다.",
   },
 ];
 
@@ -179,22 +179,22 @@ export const KOREAN_MODEL_GUIDE = {
     {
       id: "royshilkrot/whisper-large-v3-turbo-korean-ggml",
       base: "large-v3-turbo",
-      note: "한국어 오픈 데이터 약 200시간 학습. 제작자 보고 WER 24 → 16. ggml 변환 완료라 바로 넣을 수 있다.",
+      note: "한국어 데이터 200시간 학습 모델입니다. ggml 변환이 완료되어 즉시 추가할 수 있습니다.",
       ready: true,
     },
     {
       id: "royshilkrot/whisper-medium-korean-ggml",
       base: "medium",
-      note: "같은 제작자의 medium 한국어. 역시 ggml 이라 바로 넣을 수 있지만, 학습 데이터가 낭독 위주다. 대화체는 아래 jangmin 쪽이 맞다.",
+      note: "동일 제작자의 Medium 모델입니다. 낭독 데이터 기반이므로 대화체 전사 시 아래 장민(jangmin) 모델을 권장합니다.",
       ready: true,
     },
     {
       id: "jangmin/whisper-medium-ko-normalized-1273h",
       base: "medium",
       note:
-        "**대화체로 학습된 medium 은 이것이다.** AI Hub 명령어 음성 796시간 + " +
-        "소음 환경 대화 363시간 등 1,273시간 — 낭독이 아니라 실제 대화·소음 데이터라 " +
-        "병동 환경에 제일 가깝다. Safetensors 라서 ggml 변환 + 양자화가 필요하다.",
+        "**대화체 특화 Medium 모델입니다.** AI Hub 음성 796시간 및" +
+        "소음 대화 363시간 등 총 1,273시간 학습 — 실전 대화 데이터로" +
+        "병동 대화 환경에 적합합니다. Safetensors 형식으로 ggml 변환 및 양자화가 필요합니다.",
       ready: false,
     },
     {
@@ -202,26 +202,26 @@ export const KOREAN_MODEL_GUIDE = {
       base: "large-v3-turbo",
       note:
         "Zeroth Korean 206시간 학습. 모델 카드 실측 test CER 7.58% → 2.06%. " +
-        "**다만 Zeroth 는 낭독 음성이고 test 도 같은 데이터에서 쪼갠 것이라 " +
-        "병동 대화에서 2% 가 나오지는 않는다.** 절대값이 아니라 개선폭(3.7배)을 보라. " +
-        "Safetensors F32 라서 ggml 변환 + 양자화가 필요하다. " +
-        "제작자 주: 수렴 전이라 더 나아질 여지가 있다.",
+        "**다만 Zeroth는 낭독 음성 기반 데이터이므로" +
+        "병동 대화 환경의 수치와는 차이가 있을 수 있습니다.**" +
+        "Safetensors F32 형식으로 ggml 변환 및 양자화가 필요합니다." +
+        "제작자 주: 학습 진행 중인 모델입니다.",
       ready: false,
     },
     {
       id: "ghost613/whisper-large-v3-turbo-korean",
       base: "large-v3-turbo",
-      note: "같은 Zeroth 계열. 변환 필요.",
+      note: "동일 Zeroth 계열 모델입니다. ggml 변환이 필요합니다.",
       ready: false,
     },
     {
       id: "seastar105/whisper-medium-ko-zeroth",
       base: "medium",
-      note: "Zeroth Korean. 변환 필요.",
+      note: "Zeroth Korean 모델입니다. ggml 변환이 필요합니다.",
       ready: false,
     },
   ],
-  searchHint: "HuggingFace 에서 위 id 로 찾거나 'whisper korean ggml' 로 검색한다",
+  searchHint: "HuggingFace에서 해당 ID로 검색하거나 'whisper korean ggml'을 검색하십시오.",
   convertCommand:
     "python3 whisper.cpp/models/convert-h5-to-ggml.py ./모델폴더/ ./whisper ./출력",
   /**
@@ -232,7 +232,7 @@ export const KOREAN_MODEL_GUIDE = {
     "./build/bin/quantize ./출력/ggml-model.bin ./ggml-ko-turbo-q5_0.bin q5_0",
   why:
     "같은 크기에서 원본 CER 18.05% → 한국어 재학습 6.45%. " +
-    "모델을 키우는 것보다 효과가 크다.",
+    "모델 크기 확대보다 정확도 개선 효과가 큽니다.",
   /**
    * 직접 파인튜닝을 생각한다면 알아야 할 것.
    *
@@ -247,7 +247,7 @@ export const KOREAN_MODEL_GUIDE = {
     fullVramGb: 24,
     loraVramGb: 8,
     minHours: 8,
-    note: "파인튜닝 전에 위 known 모델을 먼저 써 보는 편이 거의 언제나 낫다.",
+    note: "파인튜닝 전 사전 학습(known) 모델 테스트를 권장합니다.",
   },
 } as const;
 
@@ -294,7 +294,7 @@ export function estimateMinutes(
     return {
       minutes: 0,
       estimated: true,
-      label: "기기에서 한 번 재봐야 알 수 있습니다.",
+      label: "기기 측정을 통해 확인할 수 있습니다.",
     };
   }
   const base = getModel(sample.modelId);
@@ -333,21 +333,21 @@ export function checkFeasible(
   hoursUntilNextShift: number,
 ): Feasibility {
   if (estimate.minutes === 0) {
-    return { ok: true, reason: "아직 재보지 않아 판단할 수 없습니다." };
+    return { ok: true, reason: "측정 데이터가 없어 판단할 수 없습니다." };
   }
   const available = hoursUntilNextShift * 60;
   if (estimate.minutes > available) {
     return {
       ok: false,
       reason:
-        `${estimate.label} 걸리는데 다음 근무까지 ${Math.round(available)}분 남았습니다. ` +
-        "더 작은 모델을 쓰거나 다음 오프로 미루세요.",
+        `소요 예상 시간 ${estimate.label}, 다음 근무까지 ${Math.round(available)}분 남았습니다.` +
+        "더 작은 모델을 선택하거나 오프 날 진행하십시오.",
     };
   }
   if (estimate.minutes > available * 0.6) {
     return {
       ok: true,
-      reason: "시간은 되지만 폰을 계속 충전해 두어야 합니다.",
+      reason: "전사 중에는 기기 충전을 유지하십시오.",
     };
   }
   return { ok: true };
@@ -367,12 +367,12 @@ export function makeCustomModel(input: CustomModelInput): {
 } {
   const name = input.name.trim();
   const file = input.file.trim();
-  if (!name) return { model: null, error: "이름을 적어 주세요." };
+  if (!name) return { model: null, error: "이름을 입력하십시오." };
   if (!file.endsWith(".bin")) {
-    return { model: null, error: "whisper.cpp 는 ggml .bin 파일만 읽습니다." };
+    return { model: null, error: "whisper.cpp는 ggml .bin 파일만 지원합니다." };
   }
   if (input.url && !/^https:\/\//i.test(input.url)) {
-    return { model: null, error: "주소는 https 로 시작해야 합니다." };
+    return { model: null, error: "URL은 https로 시작해야 합니다." };
   }
   return {
     model: {
@@ -388,7 +388,7 @@ export function makeCustomModel(input: CustomModelInput): {
       relativeSpeed: input.approxSizeMb
         ? Math.max(0.15, 181 / Math.max(input.approxSizeMb, 1))
         : 1,
-      guidance: "직접 넣은 모델입니다. 속도는 기기에서 재봐야 알 수 있습니다.",
+      guidance: "사용자 추가 모델입니다. 속도는 기기 측정을 통해 확인하십시오.",
     },
   };
 }

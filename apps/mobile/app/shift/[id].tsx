@@ -110,7 +110,7 @@ function SentenceCard({
             <Pressable
               key={i}
               accessibilityRole="button"
-              accessibilityLabel={`${word} — 길게 누르면 고칩니다`}
+              accessibilityLabel={`${word} — 길게 눌러 수정`}
               onPress={onPressSentence}
               onLongPress={() => onPressWord(word)}
               delayLongPress={300}
@@ -232,7 +232,7 @@ export default function ShiftDetail() {
       const outcome = await shareText({
         text: preview.text,
         fileName: `${date ?? "근무"}-${code ?? ""}-보고서`,
-        title: `${dutyLabel} 보고서 보내기`,
+        title: `${dutyLabel} 보고서 내보내기`,
       });
       if (!outcome.shared && outcome.message) setError(outcome.message);
       else setPreview(null);
@@ -307,7 +307,7 @@ export default function ShiftDetail() {
     if (!wordTarget) return;
     const surface = wordTarget.word.trim();
     if (surface.length < 2) {
-      setError("두 글자 이상만 담을 수 있습니다.");
+      setError("2자 이상 입력해야 합니다.");
       return;
     }
     await saveUserTerm({
@@ -315,12 +315,12 @@ export default function ShiftDetail() {
       ko: surface,
       aliases: [],
       category: "workflow",
-      definition: "우리 병동에서 쓰는 말. 뜻을 채워 주세요.",
+      definition: "병동 전용 용어입니다. 의미를 입력하십시오.",
     });
     setWordTarget(null);
     setError(null);
     setBusy(null);
-    setNotice(`'${surface}'${josa(surface, "을")} 내 사전에 담았습니다. 뜻은 병동 사전 화면에서 채우세요.`);
+    setNotice(`'${surface}'${josa(surface, "을")} 사전에 추가했습니다. 의미는 병동 사전에서 입력하십시오.`);
   }, [wordTarget]);
 
   return (
@@ -335,7 +335,7 @@ export default function ShiftDetail() {
         </Small>
         {pending.length > 0 ? (
           <Button
-            label={`전사하지 않은 녹음 ${pending.length}개 전사하기`}
+            label={`미전사 녹음 ${pending.length}건 전사하기`}
             tone="primary"
             busy={busy?.startsWith("전사") ?? false}
             onPress={() => void runTranscription()}
@@ -356,7 +356,9 @@ export default function ShiftDetail() {
       {/* 화자 지정 — 태움 판단의 전제 */}
       {segments.length > 0 ? (
         <Card tone={coverage.readyForScoring ? "default" : "warn"}>
-          <Heading>누가 말했나요</Heading>
+          <Heading>
+  발언자 지정
+</Heading>
           <Badge
             text={`${coverage.total}개 중 ${coverage.labeled}개 지정`}
             tone={coverage.readyForScoring ? "ok" : "warn"}
@@ -364,16 +366,19 @@ export default function ShiftDetail() {
           <Small muted={false}>{coverage.message}</Small>
           <Divider />
           <Small>
-            기기 안에서 도는 Whisper 는{" "}
-            <Text style={{ fontWeight: "700" }}>목소리를 구별하지 못합니다.</Text> 음성을
-            글자로 옮기는 모델이지 누가 말했는지 가리는 모델이 아닙니다. 그건 별개의 모델이
-            하는 일이고 폰에 올릴 수 있는 물건이 아닙니다. 그래서 직접 지정하셔야 합니다.
-          </Small>
+            
+  온디바이스 Whisper는
+{" "}
+            <Text style={{ fontWeight: "700" }}>목소리를 구별하지 못합니다.</Text> 
+  음성 인식 전용 모델로 발언자 구별 기능은 지원하지 않습니다. 화자 라벨을 직접 지정해야 합니다.
+</Small>
           <Small>
-            한 줄씩 누르지 마세요. 아래에서 역할을 고른 뒤 전사 탭에서 <Text
-            style={{ fontWeight: "700" }}>시작 문장과 끝 문장</Text>을 누르면 그 사이가
-            한 번에 지정됩니다. 인계는 덩어리로 흐르니 대여섯 번이면 끝납니다.
-          </Small>
+            
+  문장별 선택 대신 역할 선택 후 전사 탭에서
+<Text
+            style={{ fontWeight: "700" }}>시작 문장과 끝 문장</Text>
+  시작과 끝 문장을 선택하면 범위가 일괄 지정됩니다.
+</Small>
           <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
             {ROLE_OPTIONS.map((opt) => {
               const on = pendingRole === opt.role;
@@ -400,9 +405,11 @@ export default function ShiftDetail() {
           {rangeStart ? (
             <>
               <Small muted={false}>
-                시작 지점을 잡았습니다. 끝 문장을 누르면 그 사이가 &lsquo;
-                {ROLE_LABELS[pendingRole]}&rsquo;로 지정됩니다.
-              </Small>
+                
+  시작 문장이 선택되었습니다. 끝 문장을 누르면 &lsquo;
+{ROLE_LABELS[pendingRole]}
+  &rsquo;(으)로 일괄 지정됩니다.
+</Small>
               <Button label="구간 지정 취소" onPress={() => setRangeStart(null)} />
             </>
           ) : null}
@@ -444,17 +451,20 @@ export default function ShiftDetail() {
         segments.length === 0 ? (
           <Card>
             <Body muted>
-              아직 전사된 내용이 없습니다. 녹음이 있다면 위에서 전사를 실행하세요.
-            </Body>
+              
+  전사된 내용이 없습니다. 녹음 파일이 있다면 전사를 실행하십시오.
+</Body>
           </Card>
         ) : (
           <>
             <Card>
               <Small>
-                문장을 누르면 화자 구간을 지정하고, <Text style={{ fontWeight: "700" }}>
-                단어를 길게 누르면</Text> 고치거나 병동 사전에 담을 수 있습니다.
-                고친 것은 다음 전사부터 자동으로 반영됩니다.
-              </Small>
+                
+  문장을 누르면 화자 구간을 지정하고
+<Text style={{ fontWeight: "700" }}>
+                단어를 길게 누르면</Text> 
+  수정하거나 병동 사전에 등록할 수 있습니다. 수정 내역은 다음 전사에 자동 적용됩니다.
+</Small>
             </Card>
             {segments.map((seg) => (
               <SentenceCard
@@ -476,9 +486,9 @@ export default function ShiftDetail() {
         <Card tone="accent">
           <Heading>&ldquo;{wordTarget.word}&rdquo;</Heading>
           <Small>
-            음성인식이 잘못 받아적었다면 고쳐 주세요. 두 번 넘게 같은 교정을 하면
-            다음 전사부터 앱이 알아서 바꿉니다.
-          </Small>
+            
+  전사 오기를 수정해 주십시오. 동일 교정이 2회 이상 반복되면 다음 전사부터 자동 반영됩니다.
+</Small>
           <TextInput
             value={wordTarget.replacement}
             onChangeText={(replacement) =>
@@ -511,12 +521,14 @@ export default function ShiftDetail() {
             </View>
           </View>
           <Divider />
-          <Small muted={false}>우리 병동에서만 쓰는 말인가요?</Small>
+          <Small muted={false}>
+  병동 전용 용어입니까?
+</Small>
           <Small>
-            내 사전에 담아 두면 다음부터 이 말을 알아듣고, 학습카드에도 나옵니다.
-            뜻은 나중에 병동 사전 화면에서 채우면 됩니다.
-          </Small>
-          <Button label="내 사전에 담기" onPress={() => void addToMyDict()} />
+            
+  사전에 등록하면 전사 및 암기 카드에 자동 반영됩니다. 상세 의미는 병동 사전에서 편집할 수 있습니다.
+</Small>
+          <Button label="내 사전에 추가" onPress={() => void addToMyDict()} />
         </Card>
       ) : null}
 
@@ -527,8 +539,9 @@ export default function ShiftDetail() {
               <Text style={[type.body, { color: t.text }]}>{reportMd}</Text>
             ) : (
               <Body muted>
-                아직 보고서가 없습니다. 전사를 마친 뒤 &lsquo;카드·보고서 만들기&rsquo;를 눌러주세요.
-              </Body>
+                
+  생성된 보고서가 없습니다. 전사 완료 후 &lsquo;카드·보고서 만들기&rsquo;를 선택하십시오.
+</Body>
             )}
           </Card>
 
@@ -536,16 +549,18 @@ export default function ShiftDetail() {
             <Card>
               <Heading>내보내기</Heading>
               <Small>
-                환자 이름·전화번호·등록번호를 가린 뒤 무엇을 가렸는지 보여 드립니다.
-                확인하고 나서 보내세요.
-              </Small>
+                
+  개인정보(이름·연락처·등록번호) 마스킹 내역을 확인한 후 전송하십시오.
+</Small>
               <Button label="내보낼 내용 확인" onPress={() => void prepareExport()} />
             </Card>
           ) : null}
 
           {preview ? (
             <Card tone={preview.masked ? "default" : "warn"}>
-              <Heading>이대로 나갑니다</Heading>
+              <Heading>
+  위 내용으로 내보냅니다
+</Heading>
               <Badge
                 text={preview.summary}
                 tone={preview.masked ? "ok" : "danger"}
@@ -570,9 +585,9 @@ export default function ShiftDetail() {
               </View>
               <Divider />
               <Small>
-                받는 사람의 폰에도 남습니다. 카카오톡으로 보내면 그 서버를 거칩니다.
-                꼭 보내야 하는 것인지 한 번만 더 생각해 주세요.
-              </Small>
+                
+  수신자 기기 및 메신저 서버에 기록이 남습니다. 전송 전 포함된 정보를 다시 확인하십시오.
+</Small>
               <View style={{ flexDirection: "row", gap: space.sm }}>
                 <View style={{ flex: 1 }}>
                   <Button
@@ -622,7 +637,9 @@ export default function ShiftDetail() {
             {taeum.events.length > 0 ? (
               <Card>
                 <Heading>기록된 발언</Heading>
-                <Small>점수가 아니라 여기가 본체입니다.</Small>
+                <Small>
+  수치보다 실제 인용문이 중요합니다.
+</Small>
                 {taeum.events.map((e, i) => (
                   <View key={`${e.segmentId}-${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
                     <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
@@ -636,10 +653,13 @@ export default function ShiftDetail() {
               </Card>
             ) : (
               <Card>
-                <Body muted>어휘 기준으로 잡힌 발언이 없습니다.</Body>
+                <Body muted>
+  감지된 특이 발언이 없습니다.
+</Body>
                 <Small>
-                  잡히지 않았다고 아무 일도 없었다는 뜻은 아닙니다. 어조와 맥락은 텍스트에 남지 않습니다.
-                </Small>
+                  
+  발언 미감지가 문제 없음을 의미하지는 않습니다. 텍스트에는 어조와 맥락이 남지 않습니다.
+</Small>
               </Card>
             )}
 
@@ -647,9 +667,9 @@ export default function ShiftDetail() {
               <Card>
                 <Heading>환자·보호자 폭언</Heading>
                 <Small>
-                  이건 동료 간 문제와 성격이 다릅니다. 산업안전보건법상 고객응대근로자 보호와
-                  병원 보안 절차의 영역이며, 대응 경로도 다릅니다.
-                </Small>
+                  
+  환자·보호자 폭언은 산업안전보건법상 보호 대상이며 병원 보안 절차에 따라 대응하십시오.
+</Small>
                 {taeum.patientAggression.map((e, i) => (
                   <View key={`${e.segmentId}-p${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
                     <Small>{formatTime(e.atSec)}</Small>
@@ -663,10 +683,9 @@ export default function ShiftDetail() {
             <Card>
               <Heading>참고</Heading>
               <Small>
-                근로기준법 제76조의2는 지위·관계의 우위를 이용해 업무상 적정범위를 넘어
-                고통을 주거나 근무환경을 악화시키는 행위를 금지합니다. 제76조의3 제6항은
-                신고자에 대한 불리한 처우를 별도로 금지합니다.
-              </Small>
+                
+  근로기준법 제76조의2는 직장 내 괴롭힘을 금지하며, 제76조의3 제6항은 신고자에 대한 불리한 처우를 금지합니다.
+</Small>
               <Small>
                 상담·신고: 소속 병원 고충처리 부서 · 대한간호협회 간호사 인권센터 ·
                 고용노동부 노동포털
@@ -676,8 +695,9 @@ export default function ShiftDetail() {
         ) : (
           <Card>
             <Body muted>
-              아직 계산되지 않았습니다. 화자 라벨을 지정하고 &lsquo;카드·보고서 만들기&rsquo;를 눌러주세요.
-            </Body>
+              
+  화자 라벨 지정 후 &lsquo;카드·보고서 만들기&rsquo;를 실행하십시오.
+</Body>
           </Card>
         )
       ) : null}

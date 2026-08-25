@@ -119,9 +119,9 @@ export default function Settings() {
     const [statuses, activeId] = await Promise.all([listModels(), activeModelId()]);
     const installed = statuses.filter((m) => m.installed);
     const active = statuses.find((m) => m.model.id === activeId);
-    if (installed.length === 0) setModelSummary("받아 둔 모델 없음");
-    else if (active?.installed) setModelSummary(`${active.model.name} · 받아 둔 것 ${installed.length}개`);
-    else setModelSummary(`고른 모델 미설치 · 받아 둔 것 ${installed.length}개`);
+    if (installed.length === 0) setModelSummary("설치된 모델 없음");
+    else if (active?.installed) setModelSummary(`${active.model.name} · 보유 ${installed.length}개`);
+    else setModelSummary(`선택 모델 미설치 · 보유 ${installed.length}개`);
   }, []);
 
   useEffect(() => {
@@ -151,7 +151,7 @@ export default function Settings() {
   const wipeEverything = useCallback(() => {
     Alert.alert(
       "모든 데이터를 지웁니다",
-      "녹음 파일, 전사본, 학습카드, 근무 기록이 전부 삭제됩니다. 되돌릴 수 없습니다.",
+      "녹음 파일, 전사본, 학습 카드, 근무 기록이 모두 삭제되며 복구할 수 없습니다.",
       [
         { text: "취소", style: "cancel" },
         {
@@ -200,9 +200,9 @@ export default function Settings() {
         </View>
         <Small muted={false}>{version ? `지금 ${version}` : "개발 중 실행"}</Small>
         <Small>
-          스토어가 아니라 APK 로 나눠 쓰는 앱이라, 새 판이 나오면 여기서 알려 드립니다.
-          받은 뒤 기존 앱 위에 덮어 설치하면 녹음과 전사본이 그대로 남습니다.
-        </Small>
+          
+  스토어가 아닌 APK 설치 앱이므로 새 버전이 나오면 알려 드립니다. 다운로드 후 덮어 설치하면 기존 기록이 유지됩니다.
+</Small>
 
         {update?.show && update.release ? (
           <>
@@ -212,7 +212,9 @@ export default function Settings() {
               <Small key={i}>· {h}</Small>
             ))}
             {update.release.apkSizeMb > 0 ? (
-              <Small>내려받을 크기 약 {update.release.apkSizeMb} MB</Small>
+              <Small>
+  다운로드 크기 약
+{update.release.apkSizeMb} MB</Small>
             ) : null}
             <View style={{ flexDirection: "row", gap: space.sm }}>
               <View style={{ flex: 1 }}>
@@ -222,17 +224,17 @@ export default function Settings() {
                   onPress={async () => {
                     if (!update.release) return;
                     const ok = await openDownload(update.release);
-                    if (!ok) setConnectionMsg("받는 곳을 열지 못했습니다.");
+                    if (!ok) setConnectionMsg("다운로드 페이지를 열지 못했습니다.");
                   }}
                 />
               </View>
               <View style={{ flex: 1 }}>
                 <Button
-                  label="이 판 건너뛰기"
+                  label="이 버전 건너뛰기"
                   onPress={async () => {
                     if (!update.version) return;
                     await skipVersion(update.version);
-                    setUpdate({ ...update, show: false, message: "건너뛰기로 해 두었습니다." });
+                    setUpdate({ ...update, show: false, message: "이번 버전을 건너뜁니다." });
                   }}
                 />
               </View>
@@ -247,8 +249,8 @@ export default function Settings() {
 
         <Divider />
         <Toggle
-          label="새 판이 나오면 알려주기"
-          description="하루에 몇 번만 확인합니다. 배터리와 데이터를 거의 쓰지 않습니다."
+          label="새 버전 알림 받기"
+          description="하루 몇 회만 확인하여 배터리와 데이터를 거의 사용하지 않습니다."
           value={autoUpdate}
           onChange={async (v) => {
             setAutoUpdate(v);
@@ -288,18 +290,21 @@ export default function Settings() {
           value={`${policy.leadMinutes}분 전`}
         />
         <Small>
-          인계는 근무표 시각보다 이르게 시작합니다. 이 값이 인계 시간보다 짧으면 가장 중요한 부분을 놓칩니다.
-        </Small>
+          
+  인계는 근무표 시각보다 일찍 시작합니다. 설정 시간이 인계보다 짧으면 주요 내용을 놓칠 수 있습니다.
+</Small>
         <Divider />
         <Row label="파일 분할" value={`${policy.segmentMinutes}분`} />
         <Small>
-          8시간을 한 파일에 담지 않습니다. 손상 시 전부 잃고, 근무 중 전사도 못 합니다.
-        </Small>
+          
+  8시간을 한 파일로 저장하지 않습니다. 파일 손실을 막고 근무 중 전사를 가능하게 합니다.
+</Small>
         <Divider />
         <Row label="보관 기간" value={`${policy.retentionDays}일`} />
         <Small>
-          기간이 지난 녹음은 자동으로 지워집니다. 오래된 녹음을 쌓아두는 것이 가장 큰 위험입니다.
-        </Small>
+          
+  보관 기간이 지난 녹음은 자동 삭제됩니다. 오래된 녹음 보관은 보안상 위험합니다.
+</Small>
         <Divider />
         <Row label="현재 사용 중" value={`${storageMb} MB / ${policy.maxStorageMb} MB`} />
       </Card>
@@ -308,11 +313,9 @@ export default function Settings() {
       <Card>
         <Heading>근무지에서 자동 녹음</Heading>
         <Small>
-          병원 반경에 들어오면 녹음을 켜고, 나가면 끕니다. 근무표가 모르는
-          출근 전·퇴근 후 오버타임까지 실제 있었던 시간이 그대로 덮입니다.
-          근무일(오늘·어제 나이트)에만 켜지므로 오프 날 병원 근처를 지나가도
-          녹음되지 않습니다. 위치는 기기 밖으로 나가지 않습니다.
-        </Small>
+          
+  병원 반경 진입 시 녹음을 시작하고 벗어나면 종료합니다. 출퇴근 전후 오버타임까지 실제 체류 시간을 기록합니다. 근무일에만 작동하여 오프에는 녹음되지 않으며 위치 정보는 외부로 유출되지 않습니다.
+</Small>
         <Divider />
         {workplace ? (
           <Row
@@ -326,7 +329,7 @@ export default function Settings() {
           />
         ) : (
           <Button
-            label="지금 서 있는 곳을 근무지로 지정"
+            label="현재 위치를 근무지로 지정"
             tone="primary"
             onPress={async () => {
               const wp = await setWorkplaceHere();
@@ -339,13 +342,15 @@ export default function Settings() {
             }}
           />
         )}
-        {workplace ? <Small>지정된 항목을 누르면 해제됩니다. 병동에서 누르는 것이 가장 정확합니다.</Small> : null}
+        {workplace ? <Small>
+  지정된 항목을 누르면 해제됩니다. 병동 내에서 설정해야 정확합니다.
+</Small> : null}
         <Toggle
           label="지오펜스 자동 녹음"
           description={
             Platform.OS === "android"
-              ? "위치를 '항상 허용'으로 두어야 합니다. 안드로이드 14부터는 백그라운드 마이크 시작이 막힐 수 있어, 그때는 앱을 여는 순간 이어받습니다."
-              : "위치를 '항상'으로 허용해야 합니다."
+              ? "위치 권한을 '항상 허용'으로 설정해야 합니다. Android 14 이상에서는 백그라운드 녹음 제한으로 앱 실행 시 시작될 수 있습니다."
+              : "위치 권한을 '항상 허용'으로 변경해야 합니다."
           }
           value={geoOn}
           onChange={async (v) => {
@@ -374,15 +379,15 @@ export default function Settings() {
         <Badge text="끌 수 없는 것" tone="warn" />
         <Small>
           {Platform.OS === "ios"
-            ? "iOS의 주황색 마이크 표시와 제어센터의 사용 기록은 OS가 강제하는 것이라 어떤 앱도 끌 수 없습니다."
-            : "Android의 마이크 인디케이터와 개인정보 대시보드 기록은 OS가 강제합니다. 또 백그라운드 녹음에는 알림 하나가 반드시 떠 있어야 하며, 이 알림은 소리·진동 없이 목록 안쪽에만 표시되도록 설정되어 있습니다."}
+            ? "iOS 주황색 마이크 표시와 제어센터 기록은 OS 정책상 임의로 끌 수 없습니다."
+            : "Android 마이크 표시와 개인정보 기록은 OS 정책입니다. 백그라운드 녹음 시 필수 알림이 발생하며, 소리·진동 없이 무음으로 표시됩니다."}
         </Small>
         {Platform.OS === "ios" ? (
           <>
             <Divider />
             <Toggle
               label="연속 세션 유지 (배터리 소모 큼)"
-              description="근무 사이에도 오디오 세션을 놓지 않아 앱을 열지 않아도 자동으로 시작됩니다. 배터리가 빠르게 답니다."
+              description="오디오 세션을 계속 유지하여 앱을 열지 않아도 녹음이 시작됩니다. 배터리 소모가 큽니다."
               value={iosContinuous}
               onChange={async (v) => {
                 setIosContinuous(v);
@@ -398,7 +403,7 @@ export default function Settings() {
         <Heading>개인정보</Heading>
         <Toggle
           label="앱 잠금"
-          description="열 때마다 생체인증을 요구합니다. 녹음에는 환자 정보가 포함될 수 있습니다."
+          description="앱 실행 시 생체인증을 확인합니다. 녹음 내용에 환자 정보가 포함될 수 있습니다."
           value={appLock}
           onChange={async (v) => {
             setAppLock(v);
@@ -408,13 +413,13 @@ export default function Settings() {
         <Divider />
         <Toggle
           label="본인 음성이 없는 구간 자동 폐기"
-          description="통신비밀보호법은 내가 참여하지 않은 타인간 대화의 녹음을 금지합니다. 이 설정을 끄면 그 위험을 본인이 지게 됩니다. 켜두시는 것을 강하게 권합니다."
+          description="통신비밀보호법상 대화 당사자가 아닌 타인 간 대화 녹음은 금지됩니다. 법적 보호를 위해 이 설정을 유지하십시오."
           value={discardWithoutSelf}
           onChange={async (v) => {
             if (!v) {
               Alert.alert(
-                "정말 끄시겠습니까",
-                "내가 없는 자리에서 남들끼리 나눈 대화가 녹음되면 통신비밀보호법 위반이며, 벌금형 없이 1년 이상의 징역형 대상입니다.",
+                "정말 해제하시겠습니까",
+                "본인이 참여하지 않은 타인 간 대화 녹음은 통신비밀보호법 위반이며, 벌금형 없이 1년 이상 징역형 대상입니다.",
                 [
                   { text: "취소", style: "cancel" },
                   {
@@ -439,20 +444,19 @@ export default function Settings() {
       <Card>
         <Heading>환자 정보 가리기</Heading>
         <Small>
-          전사본이 기기 밖으로 나갈 때 — 보고서를 내보내거나 공유할 때, 보조 기능으로
-          보낼 때 — 이름·전화번호·등록번호를 자동으로 가립니다.
-        </Small>
+          
+  보고서 내보내기, 공유, 외부 기능 송신 시 이름·전화번호·등록번호를 자동으로 마스킹합니다.
+</Small>
         <Divider />
-        <Badge text="저장할 때는 가리지 않습니다" tone="muted" />
+        <Badge text="기기 내 저장 시에는 마스킹하지 않습니다" tone="muted" />
         <Small>
-          전사본은 증거입니다. 태움 신고나 노동위원회 절차에서 쓰일 수 있고, 그때
-          누구에 대한 이야기였는지가 통째로 지워져 있으면 증거로서 값이 떨어집니다.
-          그래서 원본은 그대로 두고 나갈 때만 가립니다.
-        </Small>
+          
+  전사본은 직장 내 괴롭힘 신고나 노동위원회 제출 시 증거가 됩니다. 대상자 정보가 지워지면 증거 효력이 낮아지므로 원본은 유지하고 내보낼 때만 가립니다.
+</Small>
         <Divider />
         <Toggle
           label="내보낼 때 가리기"
-          description="꺼도 무엇이 들어 있는지는 내보내기 전에 알려 드립니다."
+          description="기능을 꺼도 내보내기 전 포함된 개인정보를 미리 안내합니다."
           value={privacy.enabled}
           onChange={(v) => void updatePrivacy({ ...privacy, enabled: v })}
         />
@@ -479,11 +483,13 @@ export default function Settings() {
           </>
         ) : null}
         <Divider />
-        <Small muted={false}>반드시 가릴 말</Small>
+        <Small muted={false}>
+  필수 마스킹 단어
+</Small>
         <Small>
-          자동으로는 못 잡는 이름이 있습니다. 호칭 없이 부르는 이름(&ldquo;영희야&rdquo;)이
-          특히 그렇습니다. 여기 적어 두면 항상 가립니다.
-        </Small>
+          
+  호칭 없는 이름 등 자동 인식이 어려운 단어를 등록하면 항상 마스킹 처리합니다.
+</Small>
         {privacy.extraTerms.length > 0 ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
             {privacy.extraTerms.map((term) => (
@@ -504,7 +510,7 @@ export default function Settings() {
           <TextInput
             value={newTerm}
             onChangeText={setNewTerm}
-            placeholder="가릴 말 (2글자 이상)"
+            placeholder="마스킹 단어 (2자 이상)"
             placeholderTextColor={t.textMuted}
             style={{
               flex: 1,
@@ -530,19 +536,23 @@ export default function Settings() {
         </View>
         <Divider />
         <Small>
-          가리기는 완전하지 않습니다. 한국어 이름은 일반명사와 겹치고, 호칭 없이
-          이름만 부르면 잡을 방법이 사실상 없습니다. 그리고 <Text style={{ fontWeight: "700" }}>
-          음성 파일 자체는 가릴 수 없습니다</Text> — 목소리에는 이름과 진단이 그대로 담깁니다.
-        </Small>
+          
+  자동 마스킹은 완벽하지 않습니다. 일반명사와 겹치거나 호칭이 없는 이름은 누락될 수 있으며,
+<Text style={{ fontWeight: "700" }}>
+          
+  음성 파일 자체는 마스킹할 수 없습니다
+</Text> 
+  — 음성에는 이름과 진단명이 그대로 포함됩니다.
+</Small>
       </Card>
 
       {/* 전사 */}
       <Card>
         <Heading>전사</Heading>
         <Small>
-          기본은 기기 안에서 처리합니다. 병동 대화에는 환자 정보가 들어 있어 외부로 보내는 것은
-          의료법 제19조가 걸리는 행위입니다.
-        </Small>
+          
+  전사는 기본적으로 기기 내에서 처리됩니다. 환자 정보 유출은 의료법 제19조 위반 대상입니다.
+</Small>
         <Divider />
         <Row
           label="전사 모델"
@@ -550,13 +560,13 @@ export default function Settings() {
           onPress={() => router.push("/models")}
         />
         <Small>
-          기기 성능과 상황에 따라 골라 씁니다. 크기를 키우는 것보다 한국어로 학습된
-          모델을 쓰는 쪽이 훨씬 크게 먹힙니다.
-        </Small>
+          
+  기기 성능에 맞춰 선택하십시오. 모델 크기보다 한국어 학습 모델을 사용하는 것이 정확도 향상에 훨씬 효과적입니다.
+</Small>
         <Divider />
         <Toggle
           label="자체 서버로 전사"
-          description="본인이 띄운 faster-whisper 서버나 병원 내부 서버를 쓸 때만 켜세요. 임의의 상용 API로 보내는 경로는 제공하지 않습니다."
+          description="자체 구축한 faster-whisper 또는 병원 내부 서버 사용 시에만 활성화하십시오. 외부 상용 API 연동은 지원하지 않습니다."
           value={cloudAsr.enabled}
           onChange={async (v) => {
             const next = { ...cloudAsr, enabled: v };
@@ -591,10 +601,9 @@ export default function Settings() {
       <Card>
         <Heading>보조 기능 (선택)</Heading>
         <Small>
-          규칙으로 못 푸는 것 — 문맥에 따라 뜻이 갈리는 약어, 흩어진 지시를 하나로 묶기,
-          근무 요약 — 에만 모델을 씁니다. 켜면 전사본이 기기를 벗어나며, 전송 직전 비식별화가
-          자동 적용됩니다. 비식별화는 완전하지 않습니다.
-        </Small>
+          
+  문맥상 약어 해석, 지시사항 정돈, 근무 요약 등에 AI 모델을 사용합니다. 활성화 시 전사본이 외부로 전송되며, 자동 비식별화가 적용되나 완벽하지 않을 수 있습니다.
+</Small>
         <Toggle
           label="문맥 교정·근무 요약 사용"
           value={llmEnabled}
@@ -628,10 +637,9 @@ export default function Settings() {
               ))}
             </View>
             <Small>
-              둘 다 API 키 방식입니다. OpenAI 의 &ldquo;ChatGPT 로 로그인&rdquo;(OAuth)은
-              승인받은 앱만 쓸 수 있는 베타이고, Anthropic 은 서드파티 앱용 OAuth 가
-              없습니다. 그래서 정직하게 키 입력입니다.
-            </Small>
+              
+  두 서비스 모두 API 키 방식을 사용합니다. 서드파티 앱용 OAuth 미지원으로 API 키를 직접 입력해야 합니다.
+</Small>
             <TextInput
               value={apiKeyInput}
               onChangeText={setApiKeyInput}
@@ -649,9 +657,9 @@ export default function Settings() {
               }}
             />
             <Small>
-              키는 이 기기의 보안 저장소(iOS 키체인 / Android 키스토어)에만 저장되고
-              앱 번들에는 들어가지 않습니다.
-            </Small>
+              
+  API 키는 기기의 보안 저장소(iOS 키체인 / Android 키스토어)에만 안전하게 보관됩니다.
+</Small>
             <View style={{ flexDirection: "row", gap: space.sm }}>
               <View style={{ flex: 1 }}>
                 <Button
@@ -684,8 +692,9 @@ export default function Settings() {
       <Card>
         <Heading>데이터 삭제</Heading>
         <Body muted>
-          녹음 파일, 전사본, 학습카드, 근무 기록을 전부 지웁니다. 되돌릴 수 없습니다.
-        </Body>
+          
+  녹음 파일, 전사본, 학습 카드, 근무 기록을 모두 삭제합니다. 복구할 수 없습니다.
+</Body>
         <Button label="모든 데이터 삭제" tone="danger" onPress={wipeEverything} />
       </Card>
 

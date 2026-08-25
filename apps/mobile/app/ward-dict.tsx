@@ -104,7 +104,7 @@ export default function WardDict() {
     await saveWardPack(pack);
     setNewName("");
     setNewHospital("");
-    setMsg(`'${name}' 사전을 만들었습니다. 아래 제안에서 말을 담아 보세요.`);
+    setMsg(`'${name}' 사전을 생성했습니다. 아래 추천 용어를 추가하십시오.`);
     await load();
   }, [load, newHospital, newName]);
 
@@ -113,10 +113,10 @@ export default function WardDict() {
       const draft: LexiconEntry = draftTermFromSuggestion(
         suggestion,
         stored.pack.id,
-        `${stored.pack.name}에서 쓰는 말. 뜻을 채워 주세요.`,
+        `${stored.pack.name} 용어입니다. 의미를 입력하십시오.`,
       );
       await saveWardPack(addTermToPack(stored.pack, draft, Date.now()));
-      setMsg(`'${suggestion.surface}'${josa(suggestion.surface, "을")} ${stored.pack.name}에 담았습니다. 뜻을 채워 주세요.`);
+      setMsg(`'${suggestion.surface}'${josa(suggestion.surface, "을")} ${stored.pack.name}에 추가했습니다. 의미를 입력하십시오.`);
       await load();
     },
     [load],
@@ -125,8 +125,8 @@ export default function WardDict() {
   const removePack = useCallback(
     (stored: StoredPack) => {
       Alert.alert(
-        `'${stored.pack.name}' 사전을 지웁니다`,
-        "이 사전의 용어는 더 이상 인식되지 않습니다. 잠시 안 쓸 거라면 지우지 말고 꺼두셔도 됩니다.",
+        `'${stored.pack.name}' 사전을 삭제합니다`,
+        "해당 사전 용어가 인식되지 않습니다. 삭제 대신 비활성화할 수 있습니다.",
         [
           { text: "취소", style: "cancel" },
           {
@@ -148,15 +148,17 @@ export default function WardDict() {
       <Card>
         <Heading>병동 사전</Heading>
         <Body muted>
-          내장 사전은 어느 병원에서나 통하는 말을 담습니다. 그런데 실제로 막히는 건
-          그 병동에서만 쓰는 말입니다. 그건 어떤 사전에도 안 실립니다.
-        </Body>
+          
+  내장 사전은 표준 간호 용어를 제공합니다. 병동 전용 용어는 직접 등록하여 사용하십시오.
+</Body>
         <Divider />
-        <Small muted={false}>사전은 세 층으로 겹칩니다</Small>
+        <Small muted={false}>
+  사전 적용 우선순위
+</Small>
         <Small>
-          내 사전 &gt; 병동 사전 &gt; 내장 사전 — 구체적인 쪽이 일반적인 쪽을 이깁니다.
-          같은 말을 병동 사전이 다르게 정의하면 그쪽이 적용됩니다.
-        </Small>
+          
+  내 사전 &gt; 병동 사전 &gt; 내장 사전 순으로 적용됩니다. 상위 사전의 정의가 우선 적용됩니다.
+</Small>
         <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.sm }}>
           <View style={{ flex: 1 }}>
             <Button
@@ -182,17 +184,17 @@ export default function WardDict() {
           </View>
           <Small muted={false}>{shareCheck.check.summary}</Small>
           <Small>
-            사전은 전사본에서 자랍니다. 뜻을 적다가 예문에 환자 이야기가 딸려 들어가기 쉽고,
-            사전은 애초에 남에게 주려고 만드는 물건이라 전사본보다 위험이 큽니다.
-          </Small>
+            
+  사전 작성 시 예문에 환자 개인정보가 포함되지 않도록 주의하십시오.
+</Small>
 
           {shareCheck.check.findings.length > 0 ? (
             <>
               <Divider />
               <Small>
-                여기서 자동으로 지우지 않습니다. 이름만 빼면 문장이 이상해지고, 그건
-                지워야 하는 게 아니라 다시 써야 하는 것입니다. 아래를 보고 직접 고쳐 주세요.
-              </Small>
+                
+  자동 삭제되지 않는 항목입니다. 문맥을 확인하여 직접 수정하십시오.
+</Small>
               {shareCheck.check.findings.slice(0, 20).map((f, i) => (
                 <View key={`${f.termId}-${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
                   <Small muted={false}>{f.where}</Small>
@@ -240,17 +242,16 @@ export default function WardDict() {
             <Heading>받은 교정 규칙 {pending.length}건</Heading>
           </View>
           <Small>
-            받은 사전에 글자를 바꾸는 규칙이 함께 왔습니다. 치환은 전사본의 글자를 그대로
-            바꾸는 일이라 자동으로 켜지 않습니다. 하나씩 보고 정해 주세요.
-            숫자가 바뀌는 규칙은 특히 조심하세요.
-          </Small>
+            
+  사전에 포함된 텍스트 치환 규칙입니다. 전사 결과에 직접 영향을 주므로 확인 후 적용하십시오. 수치 변경 규칙은 주의가 필요합니다.
+</Small>
           {pending.map((p) => (
             <View key={p.key} style={{ gap: space.xs, paddingVertical: space.sm }}>
               <Text style={[type.body, { color: t.text }]}>
                 &ldquo;{p.from}&rdquo; → &ldquo;{p.to}&rdquo;
               </Text>
               {/^\d|\d$/.test(p.from) || /\d/.test(p.to) ? (
-                <Badge text="숫자가 바뀝니다" tone="danger" />
+                <Badge text="수치 변경 주의" tone="danger" />
               ) : null}
               <View style={{ flexDirection: "row", gap: space.sm }}>
                 <View style={{ flex: 1 }}>
@@ -315,7 +316,9 @@ export default function WardDict() {
                 {stats.terms > 6 ? <Small>… 외 {stats.terms - 6}개</Small> : null}
               </>
             ) : (
-              <Small>아직 담긴 말이 없습니다.</Small>
+              <Small>
+  등록된 용어가 없습니다.
+</Small>
             )}
 
             <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.sm }}>
@@ -339,8 +342,9 @@ export default function WardDict() {
       <Card>
         <Heading>사전 만들기</Heading>
         <Small>
-          우리 병동 말을 직접 모읍니다. 만들어 두면 다음에 들어오는 신규에게 파일 하나로 넘길 수 있습니다.
-        </Small>
+          
+  병동 용어를 등록해 두면 신규 간호사에게 파일로 공유할 수 있습니다.
+</Small>
         <TextInput
           value={newName}
           onChangeText={setNewName}
@@ -380,9 +384,9 @@ export default function WardDict() {
         <Card tone="accent">
           <Heading>사전에 없는 말 {suggestions.length}개</Heading>
           <Small>
-            전사본에서 반복해서 고치신 말인데 어느 사전에도 없습니다. 이 병동에서만 쓰는
-            말일 가능성이 높습니다. 담아 두면 다음부터 자동으로 인식됩니다.
-          </Small>
+            
+  전사에서 자주 수정된 미등록 용어입니다. 사전에 추가하면 다음 전사부터 자동 인식됩니다.
+</Small>
           {suggestions.slice(0, 10).map((s) => (
             <View key={s.surface} style={{ gap: space.xs, paddingVertical: space.sm }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
@@ -391,7 +395,9 @@ export default function WardDict() {
               </View>
               <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
                 {packs.length === 0 ? (
-                  <Small>담을 사전이 없습니다. 위에서 사전을 먼저 만들어 주세요.</Small>
+                  <Small>
+  등록할 사전이 없습니다. 사전을 먼저 생성하십시오.
+</Small>
                 ) : (
                   packs.map((stored) => (
                     <Pressable

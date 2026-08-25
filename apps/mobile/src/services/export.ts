@@ -36,15 +36,15 @@ export const PRIVACY_KEYS = {
 
 /** 화면에서 켜고 끌 수 있는 항목들. 순서가 곧 화면 순서다. */
 export const MASKABLE_KINDS: { kind: PiiKind; label: string; hint: string }[] = [
-  { kind: "name", label: PII_LABELS.name, hint: "호칭이 붙은 이름. \"김○○ 님\", \"○○ 선생님\"" },
-  { kind: "phone", label: PII_LABELS.phone, hint: "휴대폰과 지역번호" },
+  { kind: "name", label: PII_LABELS.name, hint: "호칭이 포함된 성명 (\"김○○ 님\", \"○○ 선생님\")" },
+  { kind: "phone", label: PII_LABELS.phone, hint: "휴대전화 및 지역번호" },
   { kind: "rrn", label: PII_LABELS.rrn, hint: "주민등록번호" },
   { kind: "mrn", label: PII_LABELS.mrn, hint: "등록번호·차트번호" },
   { kind: "dob", label: PII_LABELS.dob, hint: "생년월일" },
   {
     kind: "location",
     label: PII_LABELS.location,
-    hint: "병실·침상 번호. 기본은 꺼져 있습니다 — 어느 방 이야기인지가 기록에 필요한 경우가 많습니다.",
+    hint: "병실·침상 번호 (기본 비활성화 — 기록 필요 시 설정)",
   },
 ];
 
@@ -104,11 +104,13 @@ export async function redactForExport(
       result,
       summary:
         result.redactedCount > 0
-          ? `가리기가 꺼져 있습니다. 이대로 내보내면 ${describeRedactions(result).replace(
-              "을(를) 가렸습니다.",
-              "이 그대로 나갑니다.",
+          ? // 핵심 문구는 core 가 만든다. 꼬리만 갈아끼우는데, 조사(을/를)가
+            // 자동 선택이라 글자 그대로 찾으면 안 맞는다 — 정규식으로 꼬리를 잡는다.
+            `가리기가 꺼져 있습니다. 이대로 내보내면 ${describeRedactions(result).replace(
+              /[을를] 가렸습니다\.$/,
+              "이 그대로 포함됩니다.",
             )}`
-          : "가리기가 꺼져 있습니다.",
+          : "마스킹이 비활성화되어 있습니다.",
       warnings,
     };
   }
@@ -186,7 +188,7 @@ export async function shareText(input: {
   if (!(await Sharing.isAvailableAsync())) {
     return {
       shared: false,
-      message: `이 기기에서는 공유를 열 수 없습니다. 파일은 여기 있습니다: ${file.uri}`,
+      message: `이 기기에서는 공유 기능을 실행할 수 없습니다. 파일 위치: ${file.uri}`,
     };
   }
   await Sharing.shareAsync(file.uri, {

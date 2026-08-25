@@ -192,7 +192,7 @@ export function decideUpdate(input: {
 }): UpdateDecision {
   const latest = input.latest;
   if (!latest?.version) {
-    return { show: false, reason: "none", message: "릴리스를 찾지 못했습니다." };
+    return { show: false, reason: "none", message: "배포 버전을 찾지 못했습니다." };
   }
   // 현재 판을 모르면(개발 중 실행 등) 알림을 띄우지 않는다.
   // 늘 "새 판이다" 가 되어 버려 알림이 무의미해진다.
@@ -201,7 +201,7 @@ export function decideUpdate(input: {
       show: false,
       version: latest.version,
       reason: "unknown",
-      message: `최신 판은 ${latest.version} 입니다. 지금 쓰는 판을 알 수 없어 비교하지 못했습니다.`,
+      message: `최신 버전은 ${latest.version}입니다. 현재 설치 버전을 확인할 수 없습니다.`,
     };
   }
   if (compareVersions(latest.version, input.current) <= 0) {
@@ -209,7 +209,7 @@ export function decideUpdate(input: {
       show: false,
       version: latest.version,
       reason: "current",
-      message: `최신입니다 (${latest.version}).`,
+      message: `최신 버전입니다 (${latest.version}).`,
     };
   }
   if (input.skipped && compareVersions(latest.version, input.skipped) <= 0) {
@@ -217,14 +217,14 @@ export function decideUpdate(input: {
       show: false,
       version: latest.version,
       reason: "skipped",
-      message: `${latest.version} 은 건너뛰기로 해 두셨습니다.`,
+      message: `${latest.version} 버전을 건너뛰도록 설정했습니다.`,
     };
   }
   return {
     show: true,
     version: latest.version,
     reason: "new",
-    message: `새 판 ${latest.version} 이 있습니다 (지금 ${input.current}).`,
+    message: `새 버전 ${latest.version}이 있습니다 (현재 버전 ${input.current}).`,
   };
 }
 

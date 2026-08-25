@@ -52,7 +52,7 @@ describe("전사 시간 추정", () => {
   it("재본 적 없으면 모른다고 말한다", () => {
     const e = estimateMinutes(small, 90);
     expect(e.minutes).toBe(0);
-    expect(e.label).toContain("재봐야");
+    expect(e.label).toContain("기기 측정");
   });
 
   it("잰 모델은 그대로 환산한다", () => {

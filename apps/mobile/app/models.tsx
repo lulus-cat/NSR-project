@@ -106,11 +106,11 @@ function ModelCard({
           한국어 정확도{" "}
           {model.korean
             ? `문자 오류율 ${model.korean.cer}% (${model.korean.source})`
-            : "공개된 실측이 없습니다"}
+            : "공개된 실측 데이터가 없습니다"}
         </Small>
         <Small>
           8시간 근무 전사 예상 시간: {estimate.label}
-          {estimate.estimated && estimate.minutes > 0 ? " (다른 모델로 잰 값에서 환산)" : ""}
+          {estimate.estimated && estimate.minutes > 0 ? "(타 모델 측정값 기준 환산)" : ""}
         </Small>
         {!feasible.ok && feasible.reason ? (
           <Small muted={false}>⚠ {feasible.reason}</Small>
@@ -123,7 +123,7 @@ function ModelCard({
           <Small>
             {progress.totalMb > 0
               ? `${progress.receivedMb} / ${progress.totalMb} MB`
-              : `${progress.receivedMb} MB 받는 중`}
+              : `${progress.receivedMb} MB 다운로드 중`}
           </Small>
           <Button label="취소" onPress={onCancel} />
         </>
@@ -193,7 +193,7 @@ export default function Models() {
 
       if (outcome.canceled) return;
       if (!outcome.ok) {
-        Alert.alert("내려받지 못했습니다", outcome.error ?? "알 수 없는 오류입니다.");
+        Alert.alert("다운로드에 실패했습니다", outcome.error ?? "알 수 없는 오류입니다.");
         return;
       }
       // 처음 받은 모델이면 바로 쓰게 한다. 받아 놓고 안 고르는 실수를 막는다.
@@ -209,8 +209,8 @@ export default function Models() {
   const confirmDownload = useCallback(
     (model: AsrModel) => {
       Alert.alert(
-        `${model.name} 내려받기`,
-        `약 ${model.approxSizeMb} MB 를 받습니다. 셀룰러로 받으면 요금이 나갈 수 있으니 Wi-Fi 를 권합니다.`,
+        `${model.name} 다운로드`,
+        `약 ${model.approxSizeMb} MB를 다운로드합니다. 데이터 요금이 발생할 수 있으므로 Wi-Fi 사용을 권장합니다.`,
         [
           { text: "취소", style: "cancel" },
           { text: "받기", onPress: () => void start(model) },
@@ -224,10 +224,10 @@ export default function Models() {
     (status: ModelStatus) => {
       const { model } = status;
       Alert.alert(
-        `${model.name} 지우기`,
+        `${model.name} 삭제`,
         status.active
-          ? "지금 쓰는 모델입니다. 지우면 받아 둔 다른 모델로 전사합니다."
-          : "파일만 지웁니다. 필요하면 다시 받을 수 있습니다.",
+          ? "현재 사용 중인 모델입니다. 삭제 시 저장된 다른 모델로 전사합니다."
+          : "모델 파일만 삭제되며 필요시 재다운로드할 수 있습니다.",
         [
           { text: "취소", style: "cancel" },
           {
@@ -278,21 +278,24 @@ export default function Models() {
       <Card>
         <Heading>전사 모델</Heading>
         <Body muted>
-          전사는 기기 안에서 돌아갑니다. 어떤 모델로 돌릴지는 기기 성능과 상황에 따라
-          다르므로 여러 개를 놓고 골라 쓸 수 있게 했습니다.
-        </Body>
+          
+  전사는 기기 내에서 실행됩니다. 기기 성능에 맞게 원하는 모델을 선택하여 사용할 수 있습니다.
+</Body>
         <Divider />
-        <Small muted={false}>크기보다 한국어가 먼저입니다</Small>
+        <Small muted={false}>
+  모델 크기보다 한국어 최적화가 중요합니다
+</Small>
         <Small>
-          {KOREAN_MODEL_GUIDE.why} 모델을 키우는 것보다 한국어로 학습된 것을 쓰는 쪽이
-          훨씬 크게 먹힙니다.
-        </Small>
+          {KOREAN_MODEL_GUIDE.why} 
+  모델 크기를 늘리는 것보다 한국어로 학습된 모델을 사용하는 것이 성능 향상에 효과적입니다.
+</Small>
         {installedCount === 0 ? (
           <>
             <Divider />
             <Small muted={false}>
-              아직 받아 둔 모델이 없습니다. 하나는 받아야 전사가 됩니다.
-            </Small>
+              
+  설치된 전사 모델이 없습니다. 음성을 전사하려면 모델 다운로드가 필요합니다.
+</Small>
           </>
         ) : null}
       </Card>
@@ -300,17 +303,16 @@ export default function Models() {
       {sample ? (
         <Card>
           <Small>
-            이 기기에서 잰 속도를 기준으로 시간을 추정합니다. 다른 모델의 시간은
-            상대 속도로 환산한 값이라 오차가 있습니다.
-          </Small>
+            
+  현재 기기의 측정 속도를 기준으로 추정합니다. 타 모델 기준 환산값은 오차가 발생할 수 있습니다.
+</Small>
         </Card>
       ) : (
         <Card>
           <Small>
-            아직 이 기기에서 전사를 해 본 적이 없어 걸리는 시간을 알 수 없습니다.
-            남의 폰에서 잰 숫자를 이 폰의 숫자인 것처럼 보여주지 않습니다.
-            한 번 전사하고 나면 여기에 예상 시간이 나옵니다.
-          </Small>
+            
+  전사 실행 이력이 없어 소요 시간을 측정할 수 없습니다. 최초 1회 전사 완료 후 예상 시간이 표시됩니다.
+</Small>
         </Card>
       )}
 
@@ -332,12 +334,13 @@ export default function Models() {
 
       {/* 직접 넣기 */}
       <Card>
-        <Heading>한국어 파인튜닝 모델 넣기</Heading>
+        <Heading>
+  한국어 파인튜닝 모델 추가
+</Heading>
         <Small>
-          공개된 한국어 재학습 모델이 여럿 있지만 주소를 앱에 박아 두지 않습니다.
-          모델은 사라지고 이름이 바뀌고 라이선스가 달라집니다. 죽은 링크를 넣어 두는 것보다
-          넣는 방법을 알려 드리는 편이 오래갑니다.
-        </Small>
+          
+  외부 모델 링크의 변경 가능성 때문에 직접 등록 방식을 제공합니다. 안내에 따라 모델 파일이나 주소를 입력하십시오.
+</Small>
         <Divider />
         <Small muted={false}>1. 찾기</Small>
         <Small>{KOREAN_MODEL_GUIDE.searchHint}</Small>
@@ -353,7 +356,9 @@ export default function Models() {
             <Small>{m.note}</Small>
           </View>
         ))}
-        <Small muted={false}>2. ggml 로 바꾸고 양자화하기</Small>
+        <Small muted={false}>
+  2. ggml 변환 및 양자화
+</Small>
         <View
           style={{
             backgroundColor: t.surfaceAlt,
@@ -371,7 +376,9 @@ export default function Models() {
             {KOREAN_MODEL_GUIDE.quantizeCommand}
           </Text>
         </View>
-        <Small muted={false}>3. 아래에 등록하고, 파일을 모델 폴더에 넣거나 주소로 받기</Small>
+        <Small muted={false}>
+  3. 아래 항목 등록 후 모델 폴더에 파일 이동 또는 URL 입력
+</Small>
 
         {adding ? (
           <>
@@ -395,7 +402,7 @@ export default function Models() {
             <TextInput
               value={form.url}
               onChangeText={(url) => setForm((f) => ({ ...f, url }))}
-              placeholder="받을 주소 (https://…, 없으면 비워 두세요)"
+              placeholder="다운로드 URL (https://…, 미입력 가능)"
               placeholderTextColor={t.textMuted}
               autoCapitalize="none"
               autoCorrect={false}
@@ -404,7 +411,7 @@ export default function Models() {
             <TextInput
               value={form.sizeMb}
               onChangeText={(sizeMb) => setForm((f) => ({ ...f, sizeMb }))}
-              placeholder="대략 크기 (MB, 몰라도 됩니다)"
+              placeholder="예상 크기 (MB, 선택 사항)"
               placeholderTextColor={t.textMuted}
               keyboardType="number-pad"
               style={input}
@@ -432,9 +439,9 @@ export default function Models() {
 
       <Card>
         <Small>
-          모델 파일은 이 기기의 앱 폴더에만 있습니다. 어디로도 올라가지 않고,
-          앱을 지우면 함께 사라집니다.
-        </Small>
+          
+  모델 파일은 기기 내부 저장소에만 보관되며, 앱 삭제 시 함께 제거됩니다.
+</Small>
       </Card>
     </ScrollView>
   );

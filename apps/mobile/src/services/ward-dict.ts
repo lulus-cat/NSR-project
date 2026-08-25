@@ -100,12 +100,12 @@ export async function shareWardPack(pack: WardPack): Promise<void> {
 
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error(
-      `이 기기에서는 공유를 열 수 없습니다. 파일은 여기 있습니다: ${file.uri}`,
+      `이 기기에서는 공유 기능을 실행할 수 없습니다. 파일 위치: ${file.uri}`,
     );
   }
   await Sharing.shareAsync(file.uri, {
     mimeType: "application/json",
-    dialogTitle: `${pack.name} 사전 보내기`,
+    dialogTitle: `${pack.name} 사전 내보내기`,
     UTI: "public.json",
   });
 }
@@ -174,6 +174,6 @@ export function describePack(stored: StoredPack): string {
   const stats = packStats(stored.pack);
   const where = [stored.pack.hospital, stored.pack.ward].filter(Boolean).join(" ");
   const bits = [`용어 ${stats.terms}개`, `표기 ${stats.surfaces}개`];
-  if (stored.pack.author) bits.push(`만든 사람 ${stored.pack.author}`);
+  if (stored.pack.author) bits.push(`작성자 ${stored.pack.author}`);
   return [where, bits.join(" · ")].filter(Boolean).join(" — ");
 }

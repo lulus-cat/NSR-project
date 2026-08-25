@@ -90,7 +90,7 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
         ...EMPTY,
         message:
           response.status === 404
-            ? "아직 올라온 판이 없습니다."
+            ? "등록된 새 버전이 없습니다."
             : `확인하지 못했습니다 (${response.status}).`,
       };
     }

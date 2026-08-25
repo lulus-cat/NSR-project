@@ -135,7 +135,7 @@ export async function setGeofence(on: boolean): Promise<{ ok: boolean; message?:
   }
 
   const wp = await getWorkplace();
-  if (!wp) return { ok: false, message: "먼저 근무지를 지정해 주세요." };
+  if (!wp) return { ok: false, message: "먼저 근무지를 지정하십시오." };
 
   const fg = await Location.requestForegroundPermissionsAsync();
   if (!fg.granted) return { ok: false, message: "위치 권한이 필요합니다." };
@@ -143,7 +143,7 @@ export async function setGeofence(on: boolean): Promise<{ ok: boolean; message?:
   if (!bg.granted) {
     return {
       ok: false,
-      message: "백그라운드에서 감지하려면 위치를 '항상 허용'으로 바꿔야 합니다.",
+      message: "백그라운드 감지를 위해 위치 권한을 '항상 허용'으로 변경하십시오.",
     };
   }
 

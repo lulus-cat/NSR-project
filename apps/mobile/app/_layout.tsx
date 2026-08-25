@@ -30,9 +30,9 @@ function Gate() {
       <Screen title="잠겨 있습니다">
         <Card>
           <Body muted>
-            이 앱에는 근무 중 녹음과 환자 정보가 포함될 수 있는 전사본이 들어 있습니다.
-            본인 확인 후 열립니다.
-          </Body>
+            
+  이 앱에는 환자 정보가 포함된 녹음 및 전사본이 저장되어 있습니다. 본인 인증 후 실행됩니다.
+</Body>
           <Button label="잠금 해제" tone="primary" onPress={() => void app.unlock()} />
         </Card>
       </Screen>

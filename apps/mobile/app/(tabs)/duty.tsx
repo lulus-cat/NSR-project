@@ -274,9 +274,9 @@ export default function Duty() {
 
         {/* 선택한 날에 코드 찍기. 찍으면 다음날로 넘어간다. */}
         <Small muted={false}>
-          {selected.replace(/-/g, ".")} ({WEEKDAYS[new Date(`${selected}T00:00:00`).getDay()]}) —
-          누르면 다음날로 넘어갑니다
-        </Small>
+          {selected.replace(/-/g, ".")} ({WEEKDAYS[new Date(`${selected}T00:00:00`).getDay()]}
+  ) — 누르면 다음 날로 넘어갑니다
+</Small>
         {CODE_ROWS.map((rowCodes, i) => (
           <View key={i} style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
             {rowCodes.map((code) => {
@@ -345,9 +345,9 @@ export default function Duty() {
         {pasteOpen ? (
           <View style={{ gap: space.sm }}>
             <Small>
-              `DDEENNOO`, `데데이이나나오오`, `상상상상상오오` 모두 읽습니다. 첫 글자가
-              시작 날짜에 대응합니다.
-            </Small>
+              
+  `DDEENNOO`, `데데이이나나오오`, `상상상상상오오` 형식을 모두 인식합니다. 첫 글자가 시작 날짜가 됩니다.
+</Small>
             <Text style={[type.small, { color: t.textMuted }]}>시작 날짜</Text>
             <TextInput
               value={startDate}
@@ -389,9 +389,9 @@ export default function Duty() {
       <Card>
         <Heading>근무 시간 설정</Heading>
         <Small>
-          병원마다 근무 시간이 다릅니다. 아래는 현재 적용 중인 기본값입니다. 스페셜은
-          병동마다 달라서 자리만 잡아 둔 값입니다.
-        </Small>
+          
+  병원마다 근무 시간이 다릅니다. 아래는 현재 적용 중인 기본값이며, 스페셜은 임시 설정값입니다.
+</Small>
         {(["D", "E", "N", "ADM", "SPC"] as ShiftCode[]).map((code) => {
           const tpl = DEFAULT_TEMPLATES[code];
           return (

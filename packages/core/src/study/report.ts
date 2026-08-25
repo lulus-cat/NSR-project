@@ -193,11 +193,11 @@ export function reportToMarkdown(report: ShiftReport): string {
   lines.push(`# ${report.date} 근무 기록 — ${report.dutyLabel}`);
   lines.push("");
   lines.push(`- 녹음 길이: ${formatDuration(report.recordedSec)}`);
-  lines.push(`- 오늘 나온 용어: ${report.newTerms.length + report.reviewedTerms.length}개 (새로운 것 ${report.newTerms.length}개)`);
+  lines.push(`- 감지된 용어: ${report.newTerms.length + report.reviewedTerms.length}개 (신규 ${report.newTerms.length}개)`);
   lines.push("");
 
   if (report.newTerms.length > 0) {
-    lines.push("## 오늘 새로 나온 말");
+    lines.push("## 신규 용어");
     lines.push("");
     for (const t of report.newTerms) {
       const label = t.abbr ? `**${t.ko}** (${t.abbr})` : `**${t.ko}**`;
@@ -216,9 +216,9 @@ export function reportToMarkdown(report: ShiftReport): string {
   }
 
   if (report.unresolved.length > 0) {
-    lines.push("## 확인이 남은 것");
+    lines.push("## 미확인·확인 필요 사항");
     lines.push("");
-    lines.push("다음 근무 전에 찾아보거나 물어볼 것들입니다.");
+    lines.push("다음 근무 전 확인 및 숙지가 필요한 사항입니다.");
     lines.push("");
     for (const q of report.unresolved) {
       lines.push(`- [ ] \`${formatTime(q.atSec)}\` ${q.text}`);
@@ -227,10 +227,10 @@ export function reportToMarkdown(report: ShiftReport): string {
   }
 
   if (report.mistakes.length > 0) {
-    lines.push("## 실수·누락이 언급된 지점");
+    lines.push("## 누락 및 특이사항 언급");
     lines.push("");
     lines.push(
-      "자책하라고 모은 게 아니라, 같은 일이 반복되는지 보려고 모읍니다. 반복되면 그건 개인 문제가 아니라 절차 문제일 가능성이 큽니다.",
+      "업무 절차 개선 및 반복적 누락 방지를 위한 기록입니다.",
     );
     lines.push("");
     for (const q of report.mistakes) {
@@ -240,9 +240,9 @@ export function reportToMarkdown(report: ShiftReport): string {
   }
 
   if (report.glossaryFixes.length > 0) {
-    lines.push("## 기록에 쓸 때 바꿔야 할 표현");
+    lines.push("## 간호기록 용어 전환");
     lines.push("");
-    lines.push("| 대화에서 쓴 말 | 간호기록 표현 |");
+    lines.push("| 구어체 표현 | 간호기록 용어 |");
     lines.push("| --- | --- |");
     for (const g of report.glossaryFixes) {
       lines.push(`| ${g.informal} | ${g.formal} |`);
@@ -264,7 +264,7 @@ export function reportToMarkdown(report: ShiftReport): string {
     if (t.patientAggression.length > 0) {
       lines.push("");
       lines.push(
-        `- 환자·보호자로부터의 폭언 ${t.patientAggression.length}건이 별도로 기록되었습니다. 이건 동료 간 문제와 대응 경로가 다릅니다(병원 안전요원·보안 절차).`,
+        `- 환자·보호자 폭언 ${t.patientAggression.length}건 별도 기록됨 (원내 보안 절차 적용 대상).`,
       );
     }
     lines.push("");

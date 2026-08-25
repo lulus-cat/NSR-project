@@ -404,17 +404,17 @@ export function laborWarnings(
     warnings.push({
       kind: "quick-return",
       message:
-        `근무 사이 간격이 11시간 미만인 경우가 ${stats.quickReturns.length}회 있습니다 ` +
-        `(가장 짧은 간격 ${worst.gapHours}시간). 이동·식사·수면을 빼면 실제 휴식은 더 짧습니다.`,
+        `근무 간 휴식시간 11시간 미만 ${stats.quickReturns.length}회 발생` +
+        `(최단 간격 ${worst.gapHours}시간). 출퇴근 및 식사 시간을 제외하면 실질 휴식이 부족합니다.`,
       reference:
-        "근로기준법 제59조 제2항 — 근로시간 특례를 도입한 사업장은 근무일 사이에 연속 11시간 이상의 휴식시간을 주어야 합니다. 보건업은 특례업종에 포함됩니다.",
+        "근로기준법 제59조 제2항 — 보건업 등 특례사업장은 근무일 간 11시간 이상의 연속 휴식시간을 보장해야 합니다.",
     });
   }
 
   if (stats.longestConsecutiveDays >= 6) {
     warnings.push({
       kind: "consecutive-days",
-      message: `연속 근무가 최장 ${stats.longestConsecutiveDays}일입니다.`,
+      message: `최장 연속 근무일수는 ${stats.longestConsecutiveDays}일입니다.`,
       reference:
         "근로기준법 제55조 — 사용자는 1주에 평균 1회 이상의 유급휴일을 보장해야 합니다.",
     });
@@ -424,18 +424,18 @@ export function laborWarnings(
     warnings.push({
       kind: "consecutive-nights",
       message:
-        `이 기간 야간근무가 ${stats.nightShiftCount}회, 야간근로 시간은 ${stats.nightHours}시간입니다.`,
+        `해당 기간 야간근무 ${stats.nightShiftCount}회, 야간근로 총 ${stats.nightHours}시간입니다.`,
       reference:
-        "근로기준법 제56조 제3항 — 야간근로(22시~06시)는 통상임금의 50% 이상을 가산해 지급해야 합니다. 급여명세서와 대조해보세요.",
+        "근로기준법 제56조 제3항 — 야간근로(22시~06시)는 통상임금의 50% 이상을 가산 지급해야 합니다. 급여명세서를 확인하십시오.",
     });
   }
 
   if (stats.scheduledHours > 52) {
     warnings.push({
       kind: "weekly-hours",
-      message: `집계 구간의 근무표상 근무시간이 ${stats.scheduledHours}시간입니다. 기간을 1주 단위로 나누어 확인해보세요.`,
+      message: `해당 구간의 예정 근무시간은 총 ${stats.scheduledHours}시간입니다. 주 단위 근로시간을 확인하십시오.`,
       reference:
-        "근로기준법 제50조·제53조 — 1주 소정근로 40시간, 연장근로를 더해 52시간이 원칙입니다. 다만 특례·탄력근로 도입 여부에 따라 달라질 수 있습니다.",
+        "근로기준법 제50조·제53조 — 주당 소정근로 40시간, 연장근로 포함 최대 52시간 기준입니다 (탄력근로/특례 도입 시 변동 가능).",
     });
   }
 

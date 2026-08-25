@@ -49,7 +49,7 @@ export function taeumTemperature(score: number): TaeumTemperature {
       celsius,
       label: "저체온",
       tone: "ok",
-      description: "더없이 평온한 근무였습니다.",
+      description: "안정적인 근무 환경입니다.",
     };
   }
   if (celsius < 37.0) {
@@ -57,7 +57,7 @@ export function taeumTemperature(score: number): TaeumTemperature {
       celsius,
       label: "정상체온",
       tone: "ok",
-      description: "괜찮은 근무 환경입니다.",
+      description: "양호한 근무 환경입니다.",
     };
   }
   if (celsius <= 37.5) {
@@ -65,7 +65,7 @@ export function taeumTemperature(score: number): TaeumTemperature {
       celsius,
       label: "미열",
       tone: "muted",
-      description: "지켜볼 신호가 있었습니다. 인용문을 확인해 보세요.",
+      description: "주의가 필요한 발언이 기록되었습니다. 인용문을 확인하십시오.",
     };
   }
   if (celsius <= 38.5) {
@@ -73,7 +73,7 @@ export function taeumTemperature(score: number): TaeumTemperature {
       celsius,
       label: "발열",
       tone: "warn",
-      description: "반복되면 기록을 남겨 두세요. 날짜·상황·인용문이 힘이 됩니다.",
+      description: "지속 발생 시 날짜·상황·인용문 기록을 보관하십시오.",
     };
   }
   return {
@@ -81,6 +81,6 @@ export function taeumTemperature(score: number): TaeumTemperature {
     label: "고열",
     tone: "danger",
     description:
-      "혼자 견딜 단계가 아닙니다. 기록을 모으고, 믿을 수 있는 사람과 상의하세요.",
+      "전문적인 도움이 필요한 상태입니다. 기록을 취합하여 상담을 진행하십시오.",
   };
 }

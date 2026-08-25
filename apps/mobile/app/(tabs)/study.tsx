@@ -130,23 +130,23 @@ export default function Study() {
         <Card>
           <Heading>아직 카드가 없습니다</Heading>
           <Body muted>
-            근무를 녹음하고 전사하면 그날 실제로 들은 문장으로 카드가 만들어집니다.
-            시중 암기장과 다른 점은, 여기 나오는 말이 내일도 그 병동에서 나온다는 것입니다.
-          </Body>
+            
+  근무를 녹음하고 전사하면 실제 들은 문장으로 암기 카드가 생성됩니다. 내일 병동에서 바로 쓰이는 실전 용어가 정리됩니다.
+</Body>
         </Card>
       ) : !current ? (
         <>
           <Card tone="accent">
             <Heading>오늘 복습 끝</Heading>
-            <Body>{done > 0 ? `${done}장 봤습니다.` : "지금 볼 카드가 없습니다."}</Body>
+            <Body>{done > 0 ? `${done}장을 복습했습니다.` : "현재 복습할 카드가 없습니다."}</Body>
           </Card>
           {stats.leeches > 0 ? (
             <Card>
               <Badge text={`계속 틀리는 카드 ${stats.leeches}장`} tone="warn" />
               <Small>
-                반복해서 틀리는 카드는 대개 카드가 나쁜 게 아니라 그 앞의 개념이 비어 있다는 뜻입니다.
-                해당 용어의 공식 자료를 한 번 읽어보는 편이 빠릅니다.
-              </Small>
+                
+  반복해 틀리는 용어는 기초 개념 정리 부족일 수 있습니다. 해당 용어의 공식 자료를 확인해 보십시오.
+</Small>
             </Card>
           ) : null}
         </>

@@ -129,7 +129,7 @@ export function createOnDeviceProvider(
         } catch {
           throw new Error(
             "온디바이스 전사에는 whisper.rn 네이티브 모듈이 필요합니다. " +
-              "`npx expo install whisper.rn` 후 개발 빌드를 만들어 주세요. " +
+              "`npx expo install whisper.rn` 실행 후 개발 빌드를 생성하십시오." +
               "설정에서 자체 서버 전사로 전환할 수도 있습니다.",
           );
         }
@@ -376,7 +376,7 @@ export async function resolveProvider(): Promise<AsrProvider> {
   const { path, model, fellBack } = await resolveModelPath();
   if (!path) {
     throw new Error(
-      "전사에 쓸 모델이 아직 없습니다. 설정 → 전사 모델에서 하나 받아 주세요.",
+      "전사 모델이 없습니다. 설정 → 전사 모델에서 다운로드하십시오.",
     );
   }
   return createOnDeviceProvider(path, model?.id ?? DEFAULT_MODEL_ID, fellBack);

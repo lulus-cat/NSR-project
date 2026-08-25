@@ -172,11 +172,11 @@ export async function downloadModel(
     return {
       ok: false,
       sizeMb: 0,
-      error: "받을 주소가 없는 모델입니다. 파일을 직접 넣어 주세요.",
+      error: "다운로드 URL이 없는 모델입니다. 모델 파일을 직접 추가하십시오.",
     };
   }
   if (inFlight.has(model.id)) {
-    return { ok: false, sizeMb: 0, error: "이미 받고 있습니다." };
+    return { ok: false, sizeMb: 0, error: "이미 다운로드 중입니다." };
   }
 
   const dir = modelsDirectory();
@@ -203,7 +203,7 @@ export async function downloadModel(
     const done = new File(dir, model.file);
     if (!done.exists || done.size === 0) {
       deleteModelFile(model);
-      return { ok: false, sizeMb: 0, error: "파일이 비어 있습니다. 다시 받아 주세요." };
+      return { ok: false, sizeMb: 0, error: "파일이 비어 있습니다. 다시 다운로드하십시오." };
     }
     const sizeMb = round(done.size / MB);
     onProgress?.({ receivedMb: sizeMb, totalMb: sizeMb, ratio: 1 });
@@ -217,7 +217,7 @@ export async function downloadModel(
     return {
       ok: false,
       sizeMb: 0,
-      error: error instanceof Error ? error.message : "내려받기에 실패했습니다.",
+      error: error instanceof Error ? error.message : "다운로드에 실패했습니다.",
     };
   } finally {
     inFlight.delete(model.id);

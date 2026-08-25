@@ -159,14 +159,16 @@ export default function Home() {
           <Card tone="warn">
             <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
               <Badge text="설정 필요" tone="warn" />
-              <Heading>전사 모델을 받아야 합니다</Heading>
+              <Heading>
+  전사 모델 설치가 필요합니다
+</Heading>
             </View>
             <Body muted>
-              녹음은 지금도 되지만, 모델이 없으면 글자로 옮기지 못합니다.
-              Wi-Fi 에서 한 번만 받으면 됩니다.
-            </Body>
+              
+  녹음은 가능하지만 모델이 없으면 전사하지 못합니다. Wi-Fi 환경에서 내려받으십시오.
+</Body>
             <Button
-              label="모델 받으러 가기"
+              label="모델 다운로드하기"
               tone="primary"
               onPress={() => router.push("/models")}
             />
@@ -176,7 +178,9 @@ export default function Home() {
         {/* 새 판 */}
         {update?.show ? (
           <Card tone="accent">
-            <Heading>새 판이 나왔습니다</Heading>
+            <Heading>
+  새 버전이 출시되었습니다
+</Heading>
             <Small muted={false}>{update.message}</Small>
             {update.highlights.slice(0, 3).map((h, i) => (
               <Small key={i}>· {h}</Small>
@@ -212,7 +216,7 @@ export default function Home() {
           ) : (
             <Small>
               {app.policy.enabled
-                ? "예정된 근무가 없습니다. 듀티표를 입력해 주세요."
+                ? "예정된 근무가 없습니다. 듀티표를 입력하십시오."
                 : "자동 녹음이 꺼져 있습니다."}
             </Small>
           )}

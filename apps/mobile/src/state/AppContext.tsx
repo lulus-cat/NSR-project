@@ -89,7 +89,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       return true;
     }
     const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "녹음에는 환자 정보가 포함될 수 있습니다",
+      promptMessage: "녹음 내용에 환자 정보가 포함될 수 있습니다",
       cancelLabel: "취소",
     });
     setLocked(!result.success);

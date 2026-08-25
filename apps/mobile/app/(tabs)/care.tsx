@@ -60,7 +60,7 @@ export default function Care() {
   return (
     <HeaderScreen
       title="마음"
-      heroLabel="최근 근무의 체온"
+      heroLabel="최근 근무 체온"
       hero={latest ? `${latest.temp.celsius}°C` : "—"}
       rows={[
         { label: "최근 30근무 평균", value: avg !== null ? `${avg}°C` : "기록 없음" },
@@ -79,15 +79,17 @@ export default function Care() {
             <Heading>{latest.date.replace(/-/g, ".")} 근무</Heading>
           </View>
           <Body>{latest.temp.description}</Body>
-          <Small>점수보다 인용문이 중요합니다. 근무 기록에서 실제 말을 확인하세요.</Small>
+          <Small>
+  점수보다 인용문이 중요합니다. 근무 기록에서 실제 발언을 확인하십시오.
+</Small>
         </Card>
       ) : (
         <Card>
           <Heading>아직 기록이 없습니다</Heading>
           <Body muted>
-            근무를 녹음하고 전사하면, 그 근무의 환경이 체온으로 여기에 쌓입니다.
-            36.5°C 면 괜찮은 병동입니다.
-          </Body>
+            
+  근무를 녹음하고 전사하면 근무 환경이 체온으로 기록됩니다. 36.5°C면 안정적인 병동입니다.
+</Body>
         </Card>
       )}
 
@@ -147,17 +149,18 @@ export default function Care() {
       <Card>
         <Heading>열이 계속되면</Heading>
         <Body>
-          체온이 며칠씩 37.6°C 를 넘는 병동이라면, 그건 견디는 힘의 문제가 아니라
-          환경의 문제입니다. 기록이 쌓이는 것 자체가 이미 대비입니다 —
-          날짜·상황·실제 인용문이 이 앱에 남습니다.
-        </Body>
+          
+  체온이 며칠씩 37.6°C를 넘는다면 개인 버티기의 문제가 아닌 환경 문제입니다. 기록 자체가 대비입니다 — 날짜·상황·실제 인용문이 앱에 남습니다.
+</Body>
         <Divider />
         <Row
           label="직장 내 괴롭힘 상담"
           value="1522-9000"
           onPress={() => void Linking.openURL("tel:15229000")}
         />
-        <Small>고용노동부 직장 내 괴롭힘 상담센터. 익명 상담이 됩니다.</Small>
+        <Small>
+  고용노동부 직장 내 괴롭힘 상담센터입니다. 익명 상담이 가능합니다.
+</Small>
         <Divider />
         <Row
           label="정신건강 위기상담"
@@ -170,7 +173,9 @@ export default function Care() {
           value="109"
           onPress={() => void Linking.openURL("tel:109")}
         />
-        <Small>24시간, 전국 어디서나. 전화 한 통이면 됩니다.</Small>
+        <Small>
+  24시간 전국 어디서나 전화 한 통이면 연결됩니다.
+</Small>
       </Card>
 
       <Card>

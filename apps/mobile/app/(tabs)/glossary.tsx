@@ -110,8 +110,9 @@ export default function Glossary() {
       {tab === "terms" ? (
         <>
           <Small>
-            검색은 발음으로도 됩니다. "카데타"라고 쳐도 "카테터"가 나옵니다.
-          </Small>
+            
+  발음으로도 검색할 수 있습니다. "카데타"를 입력해도 "카테터"가 검색됩니다.
+</Small>
           {terms.map((entry) => {
             const open = expanded === entry.id;
             const linked = open ? sourcesForTerm(entry) : [];
@@ -182,15 +183,17 @@ export default function Glossary() {
           {terms.length === 0 ? (
             <Card>
               <Body muted>
-                찾는 말이 없습니다. 병동마다 쓰는 말이 다릅니다.
-              </Body>
+                
+  검색 결과가 없습니다. 병동마다 용어가 다를 수 있습니다.
+</Body>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => router.push("/ward-dict")}
               >
                 <Text style={[type.small, { color: t.accent }]}>
-                  병동 사전에 이 말을 담으러 가기 →
-                </Text>
+                  
+  병동 사전에 이 용어 추가하기 →
+</Text>
               </Pressable>
             </Card>
           ) : null}
@@ -198,9 +201,9 @@ export default function Glossary() {
       ) : (
         <>
           <Small>
-            검색 상단에 뜨는 블로그 대신 여기서 시작하세요. 지침 본문은 각 기관에 저작권이 있어
-            앱은 링크만 보관합니다.
-          </Small>
+            
+  포털 검색 블로그 대신 여기서 확인하십시오. 지침 본문 저작권 문제로 앱에는 링크만 저장됩니다.
+</Small>
           {sources.map((s) => (
             <Pressable
               key={s.id}

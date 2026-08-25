@@ -196,7 +196,7 @@ describe("근무 보고서", () => {
   it("마크다운으로 내보낸다", () => {
     const md = reportToMarkdown(report);
     expect(md).toContain("# 2026-08-24 근무 기록");
-    expect(md).toContain("## 오늘 새로 나온 말");
-    expect(md).toContain("## 확인이 남은 것");
+    expect(md).toContain("## 신규 용어");
+    expect(md).toContain("## 미확인·확인 필요 사항");
   });
 });
