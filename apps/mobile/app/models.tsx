@@ -31,6 +31,9 @@ interface ServerAsr {
   model?: string;
 }
 
+/** 노트북(speaches 등)이 받아 쓰는 한국어 CT2 모델. 러너로 파일 구성을 확인해 둔 id 다. */
+const KOREAN_SERVER_MODEL = "ghost613/faster-whisper-large-v3-turbo-korean";
+
 /** 8시간 근무에서 VAD로 무음을 걷어내면 실제 발화는 대략 이 정도다. */
 const TYPICAL_SPEECH_MINUTES = 90;
 
@@ -368,6 +371,22 @@ export default function Models() {
               autoCapitalize="none"
               autoCorrect={false}
               style={input}
+            />
+            <Divider />
+            <Small muted={false}>한국어 파인튜닝 모델을 노트북에 설치할까요?</Small>
+            <Small>
+              누르면 서버 모델이 한국어 파인튜닝판(ghost613 turbo)으로 지정됩니다. 첫 전사 때
+              노트북이 알아서 내려받습니다(약 3.2GB, 한 번만). 폰에는 아무것도 안 받습니다.
+            </Small>
+            <Button
+              label={
+                server.model === KOREAN_SERVER_MODEL
+                  ? "한국어 모델 사용 중"
+                  : "노트북에 한국어 모델 쓰기"
+              }
+              tone="primary"
+              disabled={server.model === KOREAN_SERVER_MODEL}
+              onPress={() => void saveServer({ ...server, model: KOREAN_SERVER_MODEL })}
             />
           </>
         ) : null}

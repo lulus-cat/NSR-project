@@ -72,7 +72,41 @@ const HF = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
  * 한국어 CER 은 공개 벤치마크 종합이라 폭이 넓다 — 테스트셋에 따라 달라진다.
  * 양자화(q5_1 등)는 파일을 절반 이하로 줄이고 정확도 손실은 작은 편이다.
  */
+/**
+ * 한국어 파인튜닝 모델은 우리 저장소 Releases(models 태그)에 미러해 두고
+ * 거기서 받는다. HF 원본은 f16(1.5GB)뿐이라 릴리스 워크플로가 q5_0 으로
+ * 양자화해 올린다. 링크가 우리 손에 있으니 죽지 않는다.
+ */
+const MIRROR = "https://github.com/lulus-cat/NSR-project/releases/download/models";
+
 export const OFFICIAL_MODELS: AsrModel[] = [
+  {
+    id: "korean-medium-q5_0",
+    name: "한국어 Medium (파인튜닝)",
+    file: "ggml-korean-medium-q5_0.bin",
+    url: `${MIRROR}/ggml-korean-medium-q5_0.bin`,
+    approxSizeMb: 539,
+    family: "whisper-korean",
+    // 제작자가 밝힌 것은 학습량(한국어 200시간)뿐, 이 판의 CER 실측은 없다.
+    korean: null,
+    relativeSpeed: 0.4,
+    guidance:
+      "한국어 200시간으로 재학습된 Medium입니다. 같은 크기의 원본보다 한국어가 " +
+      "크게 낫습니다. 대부분의 기기에서 이 모델을 권장합니다.",
+  },
+  {
+    id: "korean-large-v3-turbo-q5_0",
+    name: "한국어 Large v3 Turbo (파인튜닝)",
+    file: "ggml-korean-large-v3-turbo-q5_0.bin",
+    url: `${MIRROR}/ggml-korean-large-v3-turbo-q5_0.bin`,
+    approxSizeMb: 574,
+    family: "whisper-korean",
+    korean: null,
+    relativeSpeed: 0.7,
+    guidance:
+      "한국어로 재학습된 Turbo입니다. Medium보다 빠르고 정확도도 좋은 편이나 " +
+      "낭독 음성으로 학습되어 대화체에서는 체감이 다를 수 있습니다.",
+  },
   {
     id: "tiny-q5_1",
     name: "Tiny (양자화)",
@@ -179,13 +213,13 @@ export const KOREAN_MODEL_GUIDE = {
     {
       id: "royshilkrot/whisper-large-v3-turbo-korean-ggml",
       base: "large-v3-turbo",
-      note: "한국어 데이터 200시간 학습 모델입니다. ggml 변환이 완료되어 즉시 추가할 수 있습니다.",
+      note: "위 모델 목록의 '한국어 Large v3 Turbo'가 이 모델입니다 — 버튼으로 바로 받아집니다.",
       ready: true,
     },
     {
       id: "royshilkrot/whisper-medium-korean-ggml",
       base: "medium",
-      note: "동일 제작자의 Medium 모델입니다. 낭독 데이터 기반이므로 대화체 전사 시 아래 장민(jangmin) 모델을 권장합니다.",
+      note: "위 모델 목록의 '한국어 Medium'이 이 모델입니다 — 버튼으로 바로 받아집니다. 대화체 특화는 아래 장민(jangmin) 모델을 참고하십시오.",
       ready: true,
     },
     {
