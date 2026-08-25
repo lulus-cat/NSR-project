@@ -1,18 +1,30 @@
-import { useCallback, useEffect, useState } from "react";
-import { Linking, Pressable, RefreshControl, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  TextInput,
+  View,
+} from "react-native";
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
-import { DISCLAIMER, taeumTemperature } from "@nsr/core";
-import { Badge, Body, Card, Divider, Heading, HeaderScreen, Row, Small } from "../../src/components/ui";
+import { SafeAreaView } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { taeumTemperature } from "@nsr/core";
+import { Badge, Body, Button, Card, Enter, GaugeBar, Heading, Small } from "../../src/components/ui";
 import { TABULAR, radius, space, type, useTheme } from "../../src/theme";
-import { listTaeumScores } from "../../src/db";
+import { getSetting, listTaeumScores, setSetting } from "../../src/db";
+import { careChat, llmReady, type ChatTurn } from "../../src/services/llm";
 
 /**
- * 마음 — 근무 환경을 체온으로 본다.
+ * 마음 — 왼쪽엔 커다란 체온계, 그 아래는 상담 대화.
  *
  * 숫자 점수는 감각이 없다. 체온은 간호사의 직업 감각 그 자체다.
- * 36.5 는 설명이 필요 없고 38.6 은 보는 순간 "조치" 로 읽힌다.
- * 그래서 태움 지수를 여기서는 처음부터 끝까지 체온으로만 말한다.
+ * 그래서 태움 지수를 여기서는 처음부터 끝까지 체온으로만 말하고,
+ * 수은주가 실제로 차오르는 걸 보여준다.
  */
 
 interface TempRecord {
@@ -21,11 +33,225 @@ interface TempRecord {
   temp: ReturnType<typeof taeumTemperature>;
 }
 
+interface Msg extends ChatTurn {
+  at: number;
+}
+
+const CHAT_SETTING = "care.chat";
+
+/** 표시 눈금 범위. 35.5°가 바닥, 42°가 꼭대기 — 그 위는 가득 찬 채로 라벨이 말한다. */
+const SCALE_MIN = 35.5;
+const SCALE_MAX = 42;
+
+/** 수은 체온계. 수은주가 스프링으로 차오른다. */
+function Thermometer({
+  celsius,
+  color,
+}: {
+  celsius: number | null;
+  color: string;
+}) {
+  const t = useTheme();
+  const TUBE_W = 22;
+  const TUBE_H = 132;
+  const BULB = 44;
+  const MIN_MERCURY = 12;
+
+  const ratio =
+    celsius === null
+      ? 0
+      : Math.min(1, Math.max(0, (celsius - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)));
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(v, {
+      toValue: ratio,
+      friction: 10,
+      tension: 26,
+      // height 애니메이션이라 JS 드라이버. 화면당 한 번 차오르는 것이 전부다.
+      useNativeDriver: false,
+    }).start();
+  }, [v, ratio]);
+
+  return (
+    <View style={{ width: 92, alignItems: "center" }}>
+      <View style={{ width: 64 }}>
+        {/* 유리관 */}
+        <View
+          style={{
+            width: TUBE_W,
+            height: TUBE_H,
+            alignSelf: "center",
+            borderTopLeftRadius: TUBE_W / 2,
+            borderTopRightRadius: TUBE_W / 2,
+            backgroundColor: t.surfaceAlt,
+            overflow: "hidden",
+          }}
+        >
+          <Animated.View
+            style={{
+              position: "absolute",
+              bottom: 0,
+              left: 0,
+              right: 0,
+              height: v.interpolate({
+                inputRange: [0, 1],
+                outputRange: [MIN_MERCURY, TUBE_H - 6],
+              }),
+              backgroundColor: color,
+              borderTopLeftRadius: TUBE_W / 2,
+              borderTopRightRadius: TUBE_W / 2,
+            }}
+          />
+          {/* 유리 반사광 */}
+          <View
+            style={{
+              position: "absolute",
+              top: 8,
+              bottom: 0,
+              left: 4,
+              width: 3,
+              borderRadius: 2,
+              backgroundColor: "rgba(255,255,255,0.22)",
+            }}
+          />
+        </View>
+        {/* 눈금 — 36·38·40·42 */}
+        {[36, 38, 40, 42].map((deg) => {
+          const y = ((deg - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)) * (TUBE_H - 6);
+          return (
+            <View
+              key={deg}
+              pointerEvents="none"
+              style={{
+                position: "absolute",
+                right: 0,
+                bottom: BULB / 2 - 10 + y,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 3,
+              }}
+            >
+              <View style={{ width: 7, height: 1.5, backgroundColor: t.border }} />
+              <Text style={{ fontSize: 10, lineHeight: 12, color: t.textMuted, fontWeight: "600" }}>
+                {deg}
+              </Text>
+            </View>
+          );
+        })}
+        {/* 수은 저장고 */}
+        <View
+          style={{
+            width: BULB,
+            height: BULB,
+            borderRadius: BULB / 2,
+            backgroundColor: color,
+            alignSelf: "center",
+            marginTop: -10,
+          }}
+        >
+          <View
+            style={{
+              position: "absolute",
+              top: 8,
+              left: 9,
+              width: 10,
+              height: 10,
+              borderRadius: 5,
+              backgroundColor: "rgba(255,255,255,0.3)",
+            }}
+          />
+        </View>
+      </View>
+    </View>
+  );
+}
+
+/** 답을 기다리는 동안 숨 쉬는 점 세 개. */
+function TypingDots() {
+  const t = useTheme();
+  const vals = [useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current, useRef(new Animated.Value(0)).current];
+  useEffect(() => {
+    const loops = vals.map((v, i) =>
+      Animated.loop(
+        Animated.sequence([
+          Animated.delay(i * 160),
+          Animated.timing(v, { toValue: 1, duration: 360, easing: Easing.out(Easing.quad), useNativeDriver: true }),
+          Animated.timing(v, { toValue: 0, duration: 360, easing: Easing.in(Easing.quad), useNativeDriver: true }),
+          Animated.delay((2 - i) * 160),
+        ]),
+      ),
+    );
+    loops.forEach((l) => l.start());
+    return () => loops.forEach((l) => l.stop());
+  }, [vals]);
+  return (
+    <View style={{ flexDirection: "row", gap: 5, paddingVertical: 6, paddingHorizontal: 2 }}>
+      {vals.map((v, i) => (
+        <Animated.View
+          key={i}
+          style={{
+            width: 7,
+            height: 7,
+            borderRadius: 4,
+            backgroundColor: t.textMuted,
+            opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.35, 1] }),
+            transform: [{ translateY: v.interpolate({ inputRange: [0, 1], outputRange: [0, -4] }) }],
+          }}
+        />
+      ))}
+    </View>
+  );
+}
+
+/** 말풍선. 나타날 때 살짝 커지며 자리 잡는다. */
+function Bubble({ msg }: { msg: Msg }) {
+  const t = useTheme();
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(v, { toValue: 1, friction: 8, tension: 160, useNativeDriver: true }).start();
+  }, [v]);
+  const mine = msg.role === "user";
+  return (
+    <Animated.View
+      style={{
+        alignSelf: mine ? "flex-end" : "flex-start",
+        maxWidth: "84%",
+        opacity: v,
+        transform: [
+          { scale: v.interpolate({ inputRange: [0, 1], outputRange: [0.94, 1] }) },
+          { translateY: v.interpolate({ inputRange: [0, 1], outputRange: [8, 0] }) },
+        ],
+      }}
+    >
+      <View
+        style={{
+          backgroundColor: mine ? t.accent : t.surface,
+          borderRadius: 18,
+          borderBottomRightRadius: mine ? 6 : 18,
+          borderBottomLeftRadius: mine ? 18 : 6,
+          paddingHorizontal: space.lg,
+          paddingVertical: space.md,
+        }}
+      >
+        <Text style={[type.body, { color: mine ? "#FFFFFF" : t.text }]}>{msg.text}</Text>
+      </View>
+    </Animated.View>
+  );
+}
+
+const STARTERS = ["오늘 태움 당했어요", "실수해서 자책 중이에요", "그냥 지쳤어요"];
+
 export default function Care() {
   const t = useTheme();
   const router = useRouter();
   const [records, setRecords] = useState<TempRecord[]>([]);
-  const [refreshing, setRefreshing] = useState(false);
+  const [showRecords, setShowRecords] = useState(false);
+  const [msgs, setMsgs] = useState<Msg[]>([]);
+  const [input, setInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
+  const [ready, setReady] = useState<{ ok: boolean; reason?: string } | null>(null);
+  const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
     const scores = await listTaeumScores(30);
@@ -36,19 +262,15 @@ export default function Care() {
         temp: taeumTemperature(s.score),
       })),
     );
+    setMsgs(await getSetting<Msg[]>(CHAT_SETTING, []));
+    setReady(await llmReady());
   }, []);
 
   useEffect(() => {
     void load();
   }, [load]);
 
-  const onRefresh = useCallback(async () => {
-    setRefreshing(true);
-    await load();
-    setRefreshing(false);
-  }, [load]);
-
-  const latest = records[0];
+  const latest = records[0] ?? null;
   const feverish = records.filter((r) => r.temp.tone === "danger" || r.temp.tone === "warn");
   const avg =
     records.length > 0
@@ -56,131 +278,287 @@ export default function Care() {
       : null;
 
   const toneColor = { ok: t.ok, muted: t.textMuted, warn: t.warn, danger: t.danger } as const;
+  const mercury = latest ? toneColor[latest.temp.tone] : t.textMuted;
+
+  const send = useCallback(
+    async (raw?: string) => {
+      const text = (raw ?? input).trim();
+      if (!text || busy) return;
+      const next: Msg[] = [...msgs, { role: "user", text, at: Date.now() }];
+      setMsgs(next);
+      setInput("");
+      setBusy(true);
+      setErr(null);
+      try {
+        const reply = await careChat(
+          next.map((m) => ({ role: m.role, text: m.text })),
+          { temp: latest ? `${latest.temp.celsius}°C (${latest.temp.label})` : undefined },
+        );
+        const done: Msg[] = [...next, { role: "assistant", text: reply, at: Date.now() }];
+        setMsgs(done);
+        await setSetting(CHAT_SETTING, done.slice(-40));
+      } catch (e) {
+        setErr(e instanceof Error ? e.message : "답을 받지 못했습니다. 다시 시도해 보십시오.");
+        await setSetting(CHAT_SETTING, next.slice(-40));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [busy, input, latest, msgs],
+  );
+
+  const canSend = input.trim().length > 0 && !busy && (ready?.ok ?? false);
 
   return (
-    <HeaderScreen
-      title="마음"
-      heroLabel="최근 근무 체온"
-      hero={latest ? `${latest.temp.celsius}°C` : "—"}
-      rows={[
-        { label: "최근 30근무 평균", value: avg !== null ? `${avg}°C` : "기록 없음" },
-        {
-          label: "열이 있었던 근무",
-          value: `${feverish.length}번`,
-          tone: feverish.length > 0 ? "alert" : "default",
-        },
-      ]}
-      refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
-    >
-      {latest ? (
-        <Card tone={latest.temp.tone === "danger" ? "warn" : "default"}>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Badge text={latest.temp.label} tone={latest.temp.tone} />
-            <Heading>{latest.date.replace(/-/g, ".")} 근무</Heading>
-          </View>
-          <Body>{latest.temp.description}</Body>
-          <Small>
-  점수보다 인용문이 중요합니다. 근무 기록에서 실제 발언을 확인하십시오.
-</Small>
-        </Card>
-      ) : (
-        <Card>
-          <Heading>아직 기록이 없습니다</Heading>
-          <Body muted>
-            
-  근무를 기록하고 전사하면 근무 환경이 체온으로 기록됩니다. 36.5°C면 안정적인 병동입니다.
-</Body>
-        </Card>
-      )}
+    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        {/* 제목 줄 */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: space.lg,
+            paddingTop: space.md,
+            paddingBottom: space.sm,
+          }}
+        >
+          <Text style={{ fontSize: 28, lineHeight: 36, fontWeight: "700", color: t.text }}>
+            마음
+          </Text>
+          <View style={{ flex: 1 }} />
+          {msgs.length > 0 ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={async () => {
+                setMsgs([]);
+                await setSetting(CHAT_SETTING, []);
+              }}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: space.sm })}
+            >
+              <Text style={[type.small, { color: t.textMuted }]}>대화 비우기</Text>
+            </Pressable>
+          ) : null}
+        </View>
 
-      {/* 체온 기록 */}
-      {records.length > 0 ? (
-        <Card>
-          <Heading>체온 기록</Heading>
-          {records.map((r) => (
-            <View key={r.shiftId}>
-              <Pressable
-                accessibilityRole="button"
-                onPress={() => router.push(`/shift/${encodeURIComponent(r.shiftId)}`)}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  justifyContent: "space-between",
-                  paddingVertical: space.sm,
-                  minHeight: 44,
-                }}
-              >
-                <Text style={[type.body, { color: t.text }]}>{r.date.replace(/-/g, ".")}</Text>
-                <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                  {/* 체온 막대 — 35.5~40.0 을 폭으로 */}
-                  <View
-                    style={{
-                      width: 72,
-                      height: 6,
-                      borderRadius: 3,
-                      backgroundColor: t.surfaceAlt,
-                      overflow: "hidden",
-                    }}
+        {/* 체온계 패널 */}
+        <View style={{ paddingHorizontal: space.lg }}>
+          <Enter index={0}>
+            <Card>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
+                <Thermometer celsius={latest ? latest.temp.celsius : null} color={mercury} />
+                <View style={{ flex: 1, gap: space.xs }}>
+                  <Small>최근 근무 체온</Small>
+                  <Text
+                    style={[
+                      TABULAR,
+                      {
+                        fontSize: 44,
+                        lineHeight: 50,
+                        fontWeight: "800",
+                        color: latest ? mercury : t.textMuted,
+                      },
+                    ]}
                   >
-                    <View
-                      style={{
-                        width: Math.max(
-                          6,
-                          Math.min(72, ((r.temp.celsius - 35.5) / 4.5) * 72),
-                        ),
-                        height: 6,
-                        backgroundColor: toneColor[r.temp.tone],
-                      }}
-                    />
-                  </View>
-                  <Text style={[type.body, TABULAR, { color: toneColor[r.temp.tone], fontWeight: "700" }]}>
-                    {r.temp.celsius.toFixed(1)}°
+                    {latest ? `${latest.temp.celsius.toFixed(1)}°` : "—"}
                   </Text>
+                  {latest ? (
+                    <Badge text={latest.temp.label} tone={latest.temp.tone} />
+                  ) : (
+                    <Small>근무를 기록하고 전사하면 온도가 올라옵니다.</Small>
+                  )}
+                  <Small>
+                    {avg !== null ? `최근 30근무 평균 ${avg}°` : "아직 평균이 없습니다"}
+                  </Small>
+                  {feverish.length > 0 ? (
+                    <Small muted={false}>열이 있었던 근무 {feverish.length}번</Small>
+                  ) : null}
+                  {records.length > 0 ? (
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={() => setShowRecords((s) => !s)}
+                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
+                    >
+                      <Text style={[type.small, { color: t.accent, fontWeight: "700" }]}>
+                        {showRecords ? "기록 접기" : `기록 ${records.length}개 보기`}
+                      </Text>
+                    </Pressable>
+                  ) : null}
                 </View>
-              </Pressable>
-              <Divider />
+              </View>
+            </Card>
+          </Enter>
+
+          {showRecords ? (
+            <Enter index={0}>
+              <Card style={{ marginTop: space.sm }}>
+                {latest ? <Small muted={false}>{latest.temp.description}</Small> : null}
+                {records.slice(0, 8).map((r) => (
+                  <Pressable
+                    key={r.shiftId}
+                    accessibilityRole="button"
+                    onPress={() => router.push(`/shift/${encodeURIComponent(r.shiftId)}`)}
+                    style={({ pressed }) => ({
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: space.md,
+                      minHeight: 36,
+                      opacity: pressed ? 0.7 : 1,
+                    })}
+                  >
+                    <Text style={[type.small, TABULAR, { color: t.text, width: 74 }]}>
+                      {r.date.replace(/-/g, ".")}
+                    </Text>
+                    <View style={{ flex: 1 }}>
+                      <GaugeBar
+                        ratio={(r.temp.celsius - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)}
+                        color={toneColor[r.temp.tone]}
+                      />
+                    </View>
+                    <Text
+                      style={[
+                        type.small,
+                        TABULAR,
+                        { color: toneColor[r.temp.tone], fontWeight: "700", width: 44, textAlign: "right" },
+                      ]}
+                    >
+                      {r.temp.celsius.toFixed(1)}°
+                    </Text>
+                  </Pressable>
+                ))}
+                <Small>36.5° 정상 · 37.6° 발열 · 38.6° 고열 · 42°를 넘으면 측정 한계</Small>
+              </Card>
+            </Enter>
+          ) : null}
+        </View>
+
+        {/* 대화 */}
+        <ScrollView
+          ref={scrollRef}
+          style={{ flex: 1 }}
+          contentContainerStyle={{ padding: space.lg, gap: space.sm, flexGrow: 1 }}
+          onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          keyboardShouldPersistTaps="handled"
+        >
+          {msgs.length === 0 ? (
+            <Enter index={1}>
+              {ready && !ready.ok ? (
+                <Card>
+                  <Heading>이야기 상대를 연결해야 합니다</Heading>
+                  <Body muted>{ready.reason}</Body>
+                  <Button label="설정 열기" tone="primary" onPress={() => router.push("/settings")} />
+                </Card>
+              ) : (
+                <Card>
+                  <Heading>오늘 어땠습니까</Heading>
+                  <Body muted>
+                    병동에서 있었던 일, 서운했던 말, 무엇이든 좋습니다. 대화는 이 화면에만
+                    남습니다.
+                  </Body>
+                  <Small>
+                    메시지는 설정한 AI 공급자로 전송되며, 이름 같은 민감 정보는 자동으로 가리고
+                    보냅니다.
+                  </Small>
+                  <Small>많이 위험하다고 느껴지면 지금 전화하십시오 — 1577-0199 · 109</Small>
+                </Card>
+              )}
+            </Enter>
+          ) : (
+            msgs.map((m) => <Bubble key={m.at + m.role} msg={m} />)
+          )}
+
+          {msgs.length === 0 && (ready?.ok ?? false) ? (
+            <Enter index={2}>
+              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+                {STARTERS.map((s) => (
+                  <Pressable
+                    key={s}
+                    accessibilityRole="button"
+                    onPress={() => void send(s)}
+                    style={({ pressed }) => ({
+                      backgroundColor: t.surface,
+                      borderRadius: radius.full,
+                      paddingHorizontal: space.lg,
+                      paddingVertical: space.md,
+                      transform: [{ scale: pressed ? 0.95 : 1 }],
+                    })}
+                  >
+                    <Text style={[type.small, { color: t.text, fontWeight: "600" }]}>{s}</Text>
+                  </Pressable>
+                ))}
+              </View>
+            </Enter>
+          ) : null}
+
+          {busy ? (
+            <View
+              style={{
+                alignSelf: "flex-start",
+                backgroundColor: t.surface,
+                borderRadius: 18,
+                borderBottomLeftRadius: 6,
+                paddingHorizontal: space.lg,
+                paddingVertical: space.sm,
+              }}
+            >
+              <TypingDots />
             </View>
-          ))}
-          <Small>36.5° 정상 · 37.0° 미열 · 37.6° 발열 · 38.6° 고열</Small>
-        </Card>
-      ) : null}
+          ) : null}
+          {err ? <Small muted={false}>{err}</Small> : null}
+        </ScrollView>
 
-      {/* 스스로 살피기 */}
-      <Card>
-        <Heading>열이 계속되면</Heading>
-        <Body>
-          
-  체온이 며칠씩 37.6°C를 넘는다면 개인 버티기의 문제가 아닌 환경 문제입니다. 기록 자체가 대비입니다 — 날짜·상황·실제 인용문이 앱에 남습니다.
-</Body>
-        <Divider />
-        <Row
-          label="직장 내 괴롭힘 상담"
-          value="1522-9000"
-          onPress={() => void Linking.openURL("tel:15229000")}
-        />
-        <Small>
-  고용노동부 직장 내 괴롭힘 상담센터입니다. 익명 상담이 가능합니다.
-</Small>
-        <Divider />
-        <Row
-          label="정신건강 위기상담"
-          value="1577-0199"
-          onPress={() => void Linking.openURL("tel:15770199")}
-        />
-        <Divider />
-        <Row
-          label="마음이 많이 힘든 날"
-          value="109"
-          onPress={() => void Linking.openURL("tel:109")}
-        />
-        <Small>
-  24시간 전국 어디서나 전화 한 통이면 연결됩니다.
-</Small>
-      </Card>
-
-      <Card>
-        <Small>{DISCLAIMER}</Small>
-      </Card>
-    </HeaderScreen>
+        {/* 입력줄 */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "flex-end",
+            gap: space.sm,
+            paddingHorizontal: space.lg,
+            paddingVertical: space.sm,
+            backgroundColor: t.bg,
+          }}
+        >
+          <TextInput
+            value={input}
+            onChangeText={setInput}
+            placeholder={ready?.ok === false ? "설정에서 AI 를 연결하면 시작됩니다" : "무슨 일이 있었는지 적어 보십시오"}
+            placeholderTextColor={t.textMuted}
+            editable={ready?.ok ?? false}
+            multiline
+            style={{
+              flex: 1,
+              color: t.text,
+              backgroundColor: t.surfaceAlt,
+              borderRadius: 22,
+              paddingHorizontal: space.lg,
+              paddingTop: 12,
+              paddingBottom: 12,
+              maxHeight: 110,
+              fontSize: 15,
+              lineHeight: 21,
+            }}
+          />
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="보내기"
+            disabled={!canSend}
+            onPress={() => void send()}
+            style={({ pressed }) => ({
+              width: 46,
+              height: 46,
+              borderRadius: 23,
+              alignItems: "center",
+              justifyContent: "center",
+              backgroundColor: canSend ? t.accent : t.surfaceAlt,
+              transform: [{ scale: pressed ? 0.9 : 1 }],
+            })}
+          >
+            <Ionicons name="arrow-up" size={20} color={canSend ? "#FFFFFF" : t.textMuted} />
+          </Pressable>
+        </View>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }

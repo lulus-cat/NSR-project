@@ -39,6 +39,11 @@ const MODEL_CHOICES = [
     body: "실전 대화 데이터로 학습된 모델입니다. 정확도가 훨씬 높지만 파일 준비 단계가 필요합니다 — 설정 > 전사 모델의 안내를 따르십시오.",
   },
   {
+    key: "server",
+    title: "노트북·PC 서버",
+    body: "노트북에 whisper 서버를 켜 두고 폰은 결과만 받습니다. 같은 Wi-Fi에서 가장 빠릅니다. 켜는 방법은 설정 > 전사 모델에 있습니다.",
+  },
+  {
     key: "later",
     title: "나중에 정하기",
     body: "건너뛴 후 첫 전사 전 설정 > 전사 모델에서 다운로드할 수 있습니다.",
@@ -187,7 +192,13 @@ export default function Onboarding() {
                   try {
                     const r = await searchWorkplace(query);
                     setHits(r.hits);
-                    setSearchMsg(r.hits.length === 0 ? "찾지 못했습니다. 정식 명칭으로 다시 시도해 보십시오. 설정 > 공공데이터 키를 등록하면 전국 병원에서 검색됩니다." : null);
+                    setSearchMsg(
+                      r.hits.length === 0
+                        ? r.source === "kakao"
+                          ? "찾지 못했습니다. 지점명을 빼거나 철자를 바꿔 보십시오."
+                          : "찾지 못했습니다. 정식 명칭(요양기관명)으로 다시 시도해 보십시오."
+                        : null,
+                    );
                   } catch (e) {
                     setSearchMsg(e instanceof Error ? e.message : "검색에 실패했습니다.");
                   }

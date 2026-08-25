@@ -22,6 +22,14 @@ import {
   type DownloadProgress,
   type ModelStatus,
 } from "../src/services/models";
+import { getSetting, setSetting } from "../src/db";
+import { SETTINGS_KEYS } from "../src/services/scheduler";
+
+interface ServerAsr {
+  enabled: boolean;
+  endpoint: string;
+  model?: string;
+}
 
 /** 8시간 근무에서 VAD로 무음을 걷어내면 실제 발화는 대략 이 정도다. */
 const TYPICAL_SPEECH_MINUTES = 90;
@@ -168,10 +176,22 @@ export default function Models() {
   const [adding, setAdding] = useState(false);
   const [form, setForm] = useState({ name: "", file: "", url: "", sizeMb: "" });
   const [formError, setFormError] = useState<string | null>(null);
+  const [server, setServer] = useState<ServerAsr>({ enabled: false, endpoint: "" });
 
   const load = useCallback(async () => {
     setStatuses(await listModels());
     setSample(await loadSpeedSample());
+    setServer(
+      await getSetting<ServerAsr>(SETTINGS_KEYS.cloudTranscription, {
+        enabled: false,
+        endpoint: "",
+      }),
+    );
+  }, []);
+
+  const saveServer = useCallback(async (next: ServerAsr) => {
+    setServer(next);
+    await setSetting(SETTINGS_KEYS.cloudTranscription, next);
   }, []);
 
   useEffect(() => {
@@ -300,10 +320,63 @@ export default function Models() {
         ) : null}
       </Card>
 
+      {/* 노트북·서버 전사 — 폰이 느릴 때의 탈출구 */}
+      <Card tone={server.enabled ? "accent" : "default"}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Heading>노트북·서버로 전사</Heading>
+          {server.enabled ? <Badge text="사용 중" tone="ok" /> : null}
+        </View>
+        <Small>
+          같은 Wi-Fi의 노트북이 전사를 대신합니다. 폰보다 몇 배 빠르고 배터리를 아낍니다.
+          기록 음성이 그 서버로 전송되므로 <Text style={{ fontWeight: "700" }}>내 컴퓨터에만</Text>{" "}
+          연결하십시오.
+        </Small>
+        <Divider />
+        <Small muted={false}>노트북에서 한 번만 하면 됩니다</Small>
+        <Small>1. Docker 설치(docker.com) 후 터미널에서:</Small>
+        <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.md, padding: space.md }}>
+          <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
+            docker run -d -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
+          </Text>
+        </View>
+        <Small>
+          2. 노트북의 Wi-Fi IP(예: 192.168.0.10)를 확인해 아래에 넣으십시오. 3. 모델 칸은
+          비워도 됩니다 — 서버 기본값을 씁니다. OpenAI 호환(/v1/audio/transcriptions) 서버라면
+          무엇이든 붙습니다. 집 밖에서도 쓰려면 Tailscale 이 가장 쉽습니다.
+        </Small>
+        <Button
+          label={server.enabled ? "서버 전사 끄기" : "서버 전사 켜기"}
+          tone={server.enabled ? "default" : "primary"}
+          onPress={() => void saveServer({ ...server, enabled: !server.enabled })}
+        />
+        {server.enabled ? (
+          <>
+            <TextInput
+              value={server.endpoint}
+              onChangeText={(endpoint) => void saveServer({ ...server, endpoint })}
+              placeholder="http://192.168.0.10:8000"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={input}
+            />
+            <TextInput
+              value={server.model ?? ""}
+              onChangeText={(model) => void saveServer({ ...server, model: model || undefined })}
+              placeholder="모델 (선택, 예: Systran/faster-whisper-medium)"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={input}
+            />
+          </>
+        ) : null}
+      </Card>
+
       {sample ? (
         <Card>
           <Small>
-            
+
   현재 기기의 측정 속도를 기준으로 추정합니다. 타 모델 기준 환산값은 오차가 발생할 수 있습니다.
 </Small>
         </Card>

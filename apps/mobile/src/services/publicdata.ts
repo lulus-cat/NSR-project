@@ -25,18 +25,29 @@ import { getSetting, setSetting } from "../db";
 const SHARED_CONFIG_URL =
   "https://raw.githubusercontent.com/lulus-cat/NSR-project/main/app-config.json";
 
-async function getSharedKey(): Promise<string | null> {
-  const cached = await getSetting<{ key: string; at: number } | null>("publicdata.shared", null);
-  if (cached && Date.now() - cached.at < 24 * 3600_000) return cached.key || null;
+interface SharedConfig {
+  publicDataKey?: string;
+  kakaoKey?: string;
+}
+
+async function getSharedConfig(): Promise<SharedConfig> {
+  const cached = await getSetting<{ cfg: SharedConfig; at: number } | null>(
+    "publicdata.sharedCfg",
+    null,
+  );
+  if (cached && Date.now() - cached.at < 24 * 3600_000) return cached.cfg;
   try {
     const res = await fetch(SHARED_CONFIG_URL);
-    if (!res.ok) return cached?.key || null;
-    const cfg = (await res.json()) as { publicDataKey?: string };
-    const key = (cfg.publicDataKey ?? "").trim();
-    await setSetting("publicdata.shared", { key, at: Date.now() });
-    return key || null;
+    if (!res.ok) return cached?.cfg ?? {};
+    const cfg = (await res.json()) as SharedConfig;
+    const clean: SharedConfig = {
+      publicDataKey: (cfg.publicDataKey ?? "").trim() || undefined,
+      kakaoKey: (cfg.kakaoKey ?? "").trim() || undefined,
+    };
+    await setSetting("publicdata.sharedCfg", { cfg: clean, at: Date.now() });
+    return clean;
   } catch {
-    return cached?.key || null;
+    return cached?.cfg ?? {};
   }
 }
 
@@ -45,7 +56,7 @@ async function getKey(): Promise<string | null> {
   const SecureStore = await import("expo-secure-store");
   const own = await SecureStore.getItemAsync("publicdata.serviceKey");
   if (own) return own;
-  return getSharedKey();
+  return (await getSharedConfig()).publicDataKey ?? null;
 }
 
 export async function setPublicDataKey(key: string | null): Promise<void> {
@@ -61,6 +72,66 @@ export async function setPublicDataKey(key: string | null): Promise<void> {
 
 export async function hasPublicDataKey(): Promise<boolean> {
   return (await getKey()) !== null;
+}
+
+/* ── 카카오 로컬 검색 ─────────────────────────────────────────────
+ * 병원 이름 검색은 카카오가 제일 잘 안다 (지도 앱과 같은 데이터).
+ * developers.kakao.com → 내 애플리케이션 → REST API 키. 무료·카드 등록 없음.
+ * 내 키가 우선, 없으면 저장소 공유 키. */
+
+const KAKAO_KEY_SECURE = "kakao.restKey";
+
+export async function setKakaoKey(key: string | null): Promise<void> {
+  const SecureStore = await import("expo-secure-store");
+  if (key) {
+    await SecureStore.setItemAsync(KAKAO_KEY_SECURE, key.trim(), {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+  } else {
+    await SecureStore.deleteItemAsync(KAKAO_KEY_SECURE);
+  }
+}
+
+async function getKakaoKey(): Promise<string | null> {
+  const SecureStore = await import("expo-secure-store");
+  const own = await SecureStore.getItemAsync(KAKAO_KEY_SECURE);
+  if (own) return own;
+  return (await getSharedConfig()).kakaoKey ?? null;
+}
+
+export async function hasKakaoKey(): Promise<boolean> {
+  return (await getKakaoKey()) !== null;
+}
+
+export interface KakaoPlace {
+  name: string;
+  address: string;
+  latitude: number;
+  longitude: number;
+}
+
+/** 카카오 키워드 장소 검색. 키가 없으면 null (호출 쪽이 심평원으로 넘어간다). */
+export async function searchPlacesKakao(query: string): Promise<KakaoPlace[] | null> {
+  const key = await getKakaoKey();
+  if (!key) return null;
+  const res = await fetch(
+    `https://dapi.kakao.com/v2/local/search/keyword.json?size=8&query=${encodeURIComponent(query.trim())}`,
+    { headers: { Authorization: `KakaoAK ${key}` } },
+  );
+  if (res.status === 401) throw new Error("카카오 REST 키가 올바르지 않습니다. 설정에서 다시 확인하십시오.");
+  if (!res.ok) throw new Error(`카카오 검색 실패 (${res.status})`);
+  const data = (await res.json()) as {
+    documents?: { place_name?: string; address_name?: string; road_address_name?: string; x?: string; y?: string }[];
+  };
+  return (data.documents ?? [])
+    .filter((d) => d.x && d.y)
+    .map((d) => ({
+      name: String(d.place_name ?? ""),
+      address: String(d.road_address_name || d.address_name || ""),
+      latitude: Number(d.y),
+      longitude: Number(d.x),
+    }))
+    .filter((p) => p.name && Number.isFinite(p.latitude));
 }
 
 /** items.item 이 하나면 객체, 여럿이면 배열로 온다 — 공공데이터의 오래된 버릇. */

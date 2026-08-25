@@ -13,7 +13,9 @@ import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../../
 import { SETTINGS_KEYS, platformCapability } from "../../src/services/scheduler";
 import { deleteAllRecordings } from "../../src/services/files";
 import {
+  hasKakaoKey,
   hasPublicDataKey,
+  setKakaoKey,
   setPublicDataKey,
 } from "../../src/services/publicdata";
 import {
@@ -125,6 +127,8 @@ export default function Settings() {
   const [hospitalHits, setHospitalHits] = useState<PlaceHit[]>([]);
   const [publicKeyInput, setPublicKeyInput] = useState("");
   const [hasPublicKey, setHasPublicKey] = useState(false);
+  const [kakaoInput, setKakaoInput] = useState("");
+  const [hasKakao, setHasKakao] = useState(false);
   const [discardWithoutSelf, setDiscardWithoutSelf] = useState(true);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -154,6 +158,7 @@ export default function Settings() {
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
     setWorkplace(await getWorkplace());
     setHasPublicKey(await hasPublicDataKey());
+    setHasKakao(await hasKakaoKey());
     setGeoOn(await geofenceEnabled());
     setDiscardWithoutSelf(await getSetting<boolean>(SETTINGS_KEYS.discardWithoutSelf, true));
     setLlmEnabled(await getSetting<boolean>(SETTINGS_KEYS.llmPostEdit, false));
@@ -433,10 +438,12 @@ export default function Settings() {
                     setHospitalHits(r.hits);
                     setGeoMsg(
                       r.hits.length === 0
-                        ? r.source === "hira"
-                          ? "찾지 못했습니다. 정식 명칭(요양기관명)으로 다시 시도해 보십시오."
-                          : "찾지 못했습니다. 아래 공공데이터 키를 등록하면 전국 병원 전체에서 검색됩니다."
-                        : null,
+                        ? r.source === "kakao"
+                          ? "찾지 못했습니다. 지점명을 빼거나 철자를 바꿔 보십시오."
+                          : "찾지 못했습니다. 정식 명칭(요양기관명)으로 다시 시도해 보십시오."
+                        : r.source === "kakao"
+                          ? "카카오 지도에서 찾았습니다."
+                          : "심평원 병원 목록에서 찾았습니다.",
                     );
                   } catch (e) {
                     setGeoMsg(e instanceof Error ? e.message : "검색에 실패했습니다.");
@@ -459,8 +466,8 @@ export default function Settings() {
               />
             ))}
             <Small>
-              공공데이터 키를 등록하면 심평원 전국 병원 목록에서, 없으면
-              OpenStreetMap 에서 찾습니다. 검색어만 나가고 내 위치는 보내지 않습니다.
+              카카오 지도(키가 있으면)나 심평원 병원 목록에서 찾습니다. 검색어만 나가고 내
+              위치는 보내지 않습니다. 키는 아래 &lsquo;검색·데이터 키&rsquo; 카드에서 넣습니다.
             </Small>
             <Button
               label="지금 있는 곳을 근무지로"
@@ -677,21 +684,68 @@ export default function Settings() {
 </Small>
       </Card>
 
-      {/* 전사 */}
+      {/* 검색·데이터 키 */}
       <Card>
-      {/* 공공데이터 */}
-      <Card>
-        <GroupHead icon="server-outline" color="#3E7BB6" title="공공데이터 키 (무료)" />
+        <GroupHead icon="key-outline" color="#3E7BB6" title="검색·데이터 키 (무료)" />
         <Small>
-          심평원 전국 병원 검색과 식약처 e약은요 의약품 정보가 이 키로 켜집니다.
-          기본으로는 앱에 내장된 공유 키를 함께 쓰므로 아무것도 안 해도 됩니다.
-          공유 트래픽이 모자라거나 내 키를 쓰고 싶으면 data.go.kr 에서 발급받아
-          여기 붙여넣으십시오 — 내 키가 항상 우선합니다.
+          기본으로는 저장소의 공유 키를 함께 쓰므로 아무것도 안 해도 됩니다. 내 키를 넣으면
+          항상 내 키가 우선합니다. 두 키 모두 무료이고 이 기기의 보안 저장소에만 저장됩니다.
+        </Small>
+        <Divider />
+        <Small muted={false}>카카오 REST 키 — 근무지 지도 검색</Small>
+        <Small>
+          developers.kakao.com → 내 애플리케이션 만들기 → 앱 키의 &lsquo;REST API 키&rsquo;를
+          붙여넣으십시오. 카드 등록 없이 발급됩니다.
+        </Small>
+        <TextInput
+          value={kakaoInput}
+          onChangeText={setKakaoInput}
+          placeholder={hasKakao ? "키가 있습니다 (공유 키 포함)" : "카카오 REST API 키 입력"}
+          placeholderTextColor={t.textMuted}
+          secureTextEntry
+          autoCapitalize="none"
+          autoCorrect={false}
+          style={{
+            color: t.text,
+            backgroundColor: t.surfaceAlt,
+            borderRadius: radius.md,
+            padding: space.md,
+            fontSize: 14,
+          }}
+        />
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="저장"
+              tone="primary"
+              onPress={async () => {
+                if (!kakaoInput.trim()) return;
+                await setKakaoKey(kakaoInput.trim());
+                setKakaoInput("");
+                setHasKakao(true);
+              }}
+            />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button
+              label="삭제"
+              onPress={async () => {
+                await setKakaoKey(null);
+                setHasKakao(await hasKakaoKey());
+              }}
+            />
+          </View>
+        </View>
+        <Divider />
+        <Small muted={false}>공공데이터포털 키 — 심평원 병원 목록 · e약은요 의약품</Small>
+        <Small>
+          data.go.kr 가입 → 각 서비스 활용신청 → 마이페이지의 일반 인증키(Decoding)를
+          붙여넣으십시오.
         </Small>
         <TextInput
           value={publicKeyInput}
           onChangeText={setPublicKeyInput}
-          placeholder={hasPublicKey ? "키가 저장되어 있습니다" : "공공데이터포털 인증키 입력"}
+          placeholder={hasPublicKey ? "키가 있습니다 (공유 키 포함)" : "공공데이터포털 인증키 입력"}
           placeholderTextColor={t.textMuted}
           secureTextEntry
           autoCapitalize="none"
@@ -717,20 +771,20 @@ export default function Settings() {
               }}
             />
           </View>
-          {hasPublicKey ? (
-            <View style={{ flex: 1 }}>
-              <Button
-                label="삭제"
-                onPress={async () => {
-                  await setPublicDataKey(null);
-                  setHasPublicKey(false);
-                }}
-              />
-            </View>
-          ) : null}
+          <View style={{ flex: 1 }}>
+            <Button
+              label="삭제"
+              onPress={async () => {
+                await setPublicDataKey(null);
+                setHasPublicKey(await hasPublicDataKey());
+              }}
+            />
+          </View>
         </View>
       </Card>
 
+      {/* 전사 */}
+      <Card>
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
         <Small>
           
@@ -748,8 +802,8 @@ export default function Settings() {
 </Small>
         <Divider />
         <Toggle
-          label="자체 서버로 전사"
-          description="자체 구축한 faster-whisper 또는 병원 내부 서버 사용 시에만 활성화하십시오. 외부 상용 API 연동은 지원하지 않습니다."
+          label="노트북·서버로 전사"
+          description="같은 Wi-Fi의 노트북에 whisper 서버를 켜 두면 폰보다 몇 배 빠릅니다. 켜는 방법은 전사 모델 화면에 있습니다. 기록 음성이 그 서버로 전송되므로 내 컴퓨터에만 연결하십시오."
           value={cloudAsr.enabled}
           onChange={async (v) => {
             const next = { ...cloudAsr, enabled: v };
@@ -765,7 +819,7 @@ export default function Settings() {
               setCloudAsr(next);
               await setSetting(SETTINGS_KEYS.cloudTranscription, next);
             }}
-            placeholder="https://내서버/transcribe"
+            placeholder="http://192.168.0.10:8000"
             placeholderTextColor={t.textMuted}
             autoCapitalize="none"
             autoCorrect={false}

@@ -28,7 +28,7 @@ import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
 import { createSchedule, resolveAll, toDateString } from "@nsr/core";
 import { getSetting, listDutyEntries, setSetting } from "../db";
-import { searchHospitalsHira } from "./publicdata";
+import { searchHospitalsHira, searchPlacesKakao } from "./publicdata";
 import { currentSession, startManual, stopManual } from "./scheduler";
 
 export const GEOFENCE_TASK = "nsr-workplace-geofence";
@@ -124,44 +124,24 @@ export interface PlaceHit {
 }
 
 /**
- * OpenStreetMap(Nominatim)으로 병원을 찾는다.
- *
- * 왜 구글·카카오·네이버가 아닌가: 셋 다 API 키와 개발자 등록이 필요하고,
- * 키를 앱에 넣으면 추출된다. Nominatim 은 키가 없고 무료다. 대형 병원은
- * 다 등록돼 있다. **검색어만** OSM 서버로 가고 내 위치는 보내지 않는다.
- */
-export async function searchHospitals(query: string): Promise<PlaceHit[]> {
-  const q = query.trim();
-  if (q.length < 2) return [];
-  const url =
-    "https://nominatim.openstreetmap.org/search?format=json&limit=5&countrycodes=kr&q=" +
-    encodeURIComponent(q);
-  const res = await fetch(url, {
-    headers: { "User-Agent": "NSR-nurse-app/0.1 (personal use)" },
-  });
-  if (!res.ok) return [];
-  const data = (await res.json()) as {
-    display_name?: string;
-    lat?: string;
-    lon?: string;
-  }[];
-  return data
-    .filter((d) => d.lat && d.lon)
-    .map((d) => ({
-      // display_name 은 "병원, 동, 구, 시…" 전체 주소다. 앞 두 토막이면 알아본다.
-      name: (d.display_name ?? "").split(",").slice(0, 2).join(",").trim() || q,
-      latitude: Number(d.lat),
-      longitude: Number(d.lon),
-    }));
-}
-
-/**
- * 병원 검색 — 공공데이터 키가 있으면 심평원(전국 병원 전수), 없으면 OSM.
- * 반환에 어느 쪽을 썼는지 실어서 화면이 안내할 수 있게 한다.
+ * 병원 검색 — 카카오(지도 앱과 같은 데이터)가 1순위, 없으면 심평원.
+ * OSM 은 뺐다: 실기기에서 한국 병원 인식률이 낮아 검색이 안 되는 것처럼 보였다.
+ * 키가 하나도 없으면 조용히 빈 결과를 주지 않고 어디서 키를 넣는지 말한다.
  */
 export async function searchWorkplace(
   query: string,
-): Promise<{ hits: PlaceHit[]; source: "hira" | "osm" }> {
+): Promise<{ hits: PlaceHit[]; source: "kakao" | "hira" }> {
+  const kakao = await searchPlacesKakao(query);
+  if (kakao) {
+    return {
+      hits: kakao.map((p) => ({
+        name: p.address ? `${p.name} — ${p.address}` : p.name,
+        latitude: p.latitude,
+        longitude: p.longitude,
+      })),
+      source: "kakao",
+    };
+  }
   const hira = await searchHospitalsHira(query);
   if (hira) {
     return {
@@ -173,7 +153,9 @@ export async function searchWorkplace(
       source: "hira",
     };
   }
-  return { hits: await searchHospitals(query), source: "osm" };
+  throw new Error(
+    "검색 키가 없습니다. 설정 → 검색·데이터 키에서 카카오 REST 키(권장)나 공공데이터 키를 등록하십시오. 무료입니다.",
+  );
 }
 
 /** 검색 결과를 근무지로 저장한다. 반경은 병원 부지를 감안해 넉넉히 250m. */

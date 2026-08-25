@@ -31,7 +31,7 @@ const CATEGORY_LABELS: Record<TermCategory, string> = {
   shift: "근무",
 };
 
-type Tab = "terms" | "sources";
+type Tab = "terms" | "drugs" | "sources";
 
 export default function Glossary() {
   const t = useTheme();
@@ -75,7 +75,13 @@ export default function Glossary() {
       <TextInput
         value={query}
         onChangeText={setQuery}
-        placeholder={tab === "terms" ? "용어 검색 (예: 폴리, 엔피오, 욕창)" : "자료 검색"}
+        placeholder={
+          tab === "terms"
+            ? "용어 검색 (예: 폴리, 엔피오, 욕창)"
+            : tab === "drugs"
+              ? "약 이름 (예: 타이레놀, 라식스)"
+              : "자료 검색"
+        }
         placeholderTextColor={t.textMuted}
         autoCorrect={false}
         style={{
@@ -88,7 +94,7 @@ export default function Glossary() {
       />
 
       <View style={{ flexDirection: "row", gap: space.sm }}>
-        {(["terms", "sources"] as Tab[]).map((key) => {
+        {(["terms", "drugs", "sources"] as Tab[]).map((key) => {
           const on = tab === key;
           return (
             <Pressable
@@ -96,15 +102,16 @@ export default function Glossary() {
               accessibilityRole="tab"
               accessibilityState={{ selected: on }}
               onPress={() => setTab(key)}
-              style={{
+              style={({ pressed }) => ({
                 paddingVertical: space.sm,
                 paddingHorizontal: space.lg,
                 borderRadius: radius.sm,
                 backgroundColor: on ? t.accent : t.surfaceAlt,
-              }}
+                transform: [{ scale: pressed ? 0.95 : 1 }],
+              })}
             >
               <Text style={{ color: on ? "#fff" : t.text, fontWeight: "600", fontSize: 14 }}>
-                {key === "terms" ? "용어·은어" : "공식 자료"}
+                {key === "terms" ? "용어·은어" : key === "drugs" ? "의약품" : "공식 자료"}
               </Text>
             </Pressable>
           );
@@ -200,30 +207,40 @@ export default function Glossary() {
 </Text>
               </Pressable>
               <Divider />
-              <Button
-                label="의약품에서 찾기 (e약은요)"
-                onPress={async () => {
-                  setDrugMsg(null);
-                  setDrugs(null);
-                  try {
-                    const found = await searchDrug(query);
-                    if (found === null) {
-                      setDrugMsg("설정 > 공공데이터 키를 등록하면 식약처 의약품 정보를 검색할 수 있습니다.");
-                    } else if (found.length === 0) {
-                      setDrugMsg("의약품에서도 찾지 못했습니다. 제품명(예: 타이레놀정500밀리그람)으로 시도해 보십시오.");
-                    } else {
-                      setDrugs(found);
-                    }
-                  } catch (e) {
-                    setDrugMsg(e instanceof Error ? e.message : "의약품 검색에 실패했습니다.");
-                  }
-                }}
-              />
-              {drugMsg ? <Small muted={false}>{drugMsg}</Small> : null}
+              <Small>약 이름이라면 위의 &lsquo;의약품&rsquo; 탭에서 식약처 정보를 검색할 수 있습니다.</Small>
             </Card>
           ) : null}
-
-          {/* 식약처 e약은요 결과 */}
+        </>
+      ) : tab === "drugs" ? (
+        <>
+          <Small>
+            식약처 e약은요 — 약 이름으로 효능·용법·주의사항을 찾습니다. 제품명이 정확할수록 잘
+            찾습니다 (예: 타이레놀정500밀리그람).
+          </Small>
+          <Button
+            label="검색"
+            tone="primary"
+            disabled={query.trim().length < 2}
+            onPress={async () => {
+              setDrugMsg(null);
+              setDrugs(null);
+              try {
+                const found = await searchDrug(query);
+                if (found === null) {
+                  setDrugMsg(
+                    "검색 키가 없습니다. 설정 → 검색·데이터 키에서 공공데이터 키를 등록하십시오. 공유 키가 저장소에 채워지면 자동으로 켜집니다.",
+                  );
+                } else if (found.length === 0) {
+                  setDrugMsg("찾지 못했습니다. 제품명(예: 타이레놀정500밀리그람)으로 시도해 보십시오.");
+                } else {
+                  setDrugs(found);
+                }
+              } catch (e) {
+                setDrugMsg(e instanceof Error ? e.message : "의약품 검색에 실패했습니다.");
+              }
+            }}
+          />
+          {drugMsg ? <Small muted={false}>{drugMsg}</Small> : null}
           {drugs?.map((d) => (
             <Card key={d.name}>
               <Heading>{d.name}</Heading>

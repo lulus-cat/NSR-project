@@ -1,6 +1,8 @@
-import type { ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import {
   ActivityIndicator,
+  Animated,
+  Easing,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -130,6 +132,8 @@ export function Button({
       style={({ pressed }) => ({
         backgroundColor: bg,
         opacity: disabled ? 0.5 : pressed ? 0.85 : 1,
+        // 눌리는 순간 살짝 줄어든다 — 화면이 듣고 있다는 촉감.
+        transform: [{ scale: pressed ? 0.97 : 1 }],
         borderRadius: radius.lg,
         minHeight: TOUCH_MIN,
         paddingVertical: space.md,
@@ -270,11 +274,12 @@ export function HeaderScreen({
             style={{
               flexDirection: "row",
               alignItems: "center",
-              justifyContent: "space-between",
               minHeight: TOUCH_MIN,
+              gap: space.md,
             }}
           >
-            <View style={{ gap: 2 }}>
+            {/* 제목이 길면 두 줄로 접힌다. 오른쪽 버튼을 화면 밖으로 밀지 않는다. */}
+            <View style={{ gap: 2, flex: 1 }}>
               <Text style={[type.title, { color: t.headerText }]}>{title}</Text>
               {subtitle ? (
                 <Text style={[type.small, { color: t.headerTextMuted }]}>{subtitle}</Text>
@@ -338,52 +343,75 @@ export function HeaderScreen({
   );
 }
 
+/** 마운트 때 아래에서 살짝 튀어 올라온다. index 순서대로 시간차를 두면 착착 놓이는 느낌. */
+export function Enter({ index = 0, children }: { index?: number; children: ReactNode }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    Animated.spring(v, {
+      toValue: 1,
+      friction: 9,
+      tension: 120,
+      delay: index * 60,
+      useNativeDriver: true,
+    }).start();
+  }, [v, index]);
+  return (
+    <Animated.View
+      style={{
+        opacity: v,
+        transform: [
+          { translateY: v.interpolate({ inputRange: [0, 1], outputRange: [18, 0] }) },
+        ],
+      }}
+    >
+      {children}
+    </Animated.View>
+  );
+}
+
 /**
- * 서류철 카드 — 위에 견출지 탭이 붙은 폴더.
- *
- * 홈을 "브리핑 서류"처럼 읽히게 하는 장치다. 탭이 서류의 제목이고,
- * 안의 행들은 점선으로 구분해 서식지 느낌을 낸다.
+ * 차오르는 게이지 막대. 나타날 때 0에서 목표 폭까지 밀려 들어온다 —
+ * 값이 "채워져 있는 상태"가 아니라 "차오르는 과정"으로 읽힌다.
  */
-export function FolderCard({
-  tab,
-  tone = "default",
-  children,
+export function GaugeBar({
+  ratio,
+  color,
+  height = 6,
 }: {
-  tab: string;
-  tone?: "default" | "accent" | "warn";
-  children: ReactNode;
+  /** 0~1. 4% 미만도 살짝은 보이게 바닥값을 준다. */
+  ratio: number;
+  color: string;
+  height?: number;
 }) {
   const t = useTheme();
-  const tabBg = tone === "accent" ? t.accent : tone === "warn" ? t.warn : t.surfaceAlt;
-  const tabFg = tone === "default" ? t.textMuted : "#FFFFFF";
+  const v = useRef(new Animated.Value(0)).current;
+  const target = Math.min(1, Math.max(0.04, ratio));
+  useEffect(() => {
+    Animated.timing(v, {
+      toValue: target,
+      duration: 600,
+      easing: Easing.out(Easing.cubic),
+      // 폭 애니메이션은 네이티브 드라이버가 못 태운다. 한 번 지나가는 600ms 라 JS 로 충분하다.
+      useNativeDriver: false,
+    }).start();
+  }, [v, target]);
   return (
-    <View>
-      <View
+    <View
+      style={{
+        height,
+        borderRadius: height / 2,
+        backgroundColor: t.surfaceAlt,
+        overflow: "hidden",
+      }}
+    >
+      <Animated.View
         style={{
-          alignSelf: "flex-start",
-          backgroundColor: tabBg,
-          borderTopLeftRadius: radius.md,
-          borderTopRightRadius: radius.md,
-          paddingHorizontal: space.md,
-          paddingVertical: 5,
-          marginLeft: space.sm,
+          width: v.interpolate({ inputRange: [0, 1], outputRange: ["0%", "100%"] }),
+          height,
+          borderRadius: height / 2,
+          backgroundColor: color,
         }}
-      >
-        <Text style={[type.caption, { color: tabFg }]}>{tab}</Text>
-      </View>
-      <View
-        style={{
-          backgroundColor: t.surface,
-          borderRadius: radius.lg,
-          borderTopLeftRadius: 0,
-          padding: space.lg,
-          gap: space.md,
-          borderWidth: StyleSheet.hairlineWidth,
-          borderColor: t.border,
-        }}
-      >
-        {children}
-      </View>
+      />
     </View>
   );
 }

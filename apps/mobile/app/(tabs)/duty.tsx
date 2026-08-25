@@ -163,7 +163,8 @@ export default function Duty() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
-      <ScrollView contentContainerStyle={{ paddingBottom: space.bottom }}>
+      {/* 코드 버튼 시트가 탭바에 잘리지 않게 바닥 여백을 넉넉히 둔다. */}
+      <ScrollView contentContainerStyle={{ paddingBottom: space.bottom + 48 }}>
         {/* 머리 — 삼성 캘린더처럼 월이 곧 제목이다 */}
         <View
           style={{

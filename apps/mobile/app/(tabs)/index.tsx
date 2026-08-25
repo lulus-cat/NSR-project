@@ -1,9 +1,16 @@
-import { useCallback, useEffect, useState } from "react";
-import { Pressable, RefreshControl, ScrollView, View } from "react-native";
+import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  Animated,
+  Easing,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  View,
+} from "react-native";
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
-import type { ComponentProps } from "react";
+import type { ComponentProps, ReactNode } from "react";
 import {
   createSchedule,
   dailyQuote,
@@ -19,7 +26,8 @@ import {
   Body,
   Card,
   DashedDivider,
-  FolderCard,
+  Enter,
+  GaugeBar,
   HeaderScreen,
   Small,
 } from "../../src/components/ui";
@@ -94,7 +102,39 @@ function koreanDate(now: Date): string {
   return `${now.getMonth() + 1}월 ${now.getDate()}일 ${WEEKDAYS_KO[now.getDay()]}요일`;
 }
 
-/** 브리핑 한 줄 — 아이콘·라벨·값·화살표. ShopBack 체크리스트 행. */
+/** 기록 중일 때 마이크 버튼 뒤로 번지는 파동. 상태 표시라서 반복해도 시끄럽지 않다. */
+function RecordPulse({ color }: { color: string }) {
+  const v = useRef(new Animated.Value(0)).current;
+  useEffect(() => {
+    const loop = Animated.loop(
+      Animated.timing(v, {
+        toValue: 1,
+        duration: 1400,
+        easing: Easing.out(Easing.quad),
+        useNativeDriver: true,
+      }),
+    );
+    loop.start();
+    return () => loop.stop();
+  }, [v]);
+  return (
+    <Animated.View
+      pointerEvents="none"
+      style={{
+        position: "absolute",
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        borderWidth: 2,
+        borderColor: color,
+        opacity: v.interpolate({ inputRange: [0, 1], outputRange: [0.8, 0] }),
+        transform: [{ scale: v.interpolate({ inputRange: [0, 1], outputRange: [1, 1.5] }) }],
+      }}
+    />
+  );
+}
+
+/** 브리핑 한 줄 — 아이콘·라벨·값·화살표. */
 function BriefRow({
   icon,
   label,
@@ -114,13 +154,139 @@ function BriefRow({
       accessibilityRole={onPress ? "button" : undefined}
       onPress={onPress}
       disabled={!onPress}
-      style={{ flexDirection: "row", alignItems: "center", gap: space.md, minHeight: 40 }}
+      style={({ pressed }) => ({
+        flexDirection: "row",
+        alignItems: "center",
+        gap: space.md,
+        minHeight: 42,
+        opacity: pressed ? 0.7 : 1,
+      })}
     >
       <Ionicons name={icon} size={18} color={t.textMuted} />
       <Text style={[type.body, { color: t.text, flex: 1 }]}>{label}</Text>
       <Text style={[type.body, TABULAR, { color: valueColor ?? t.textMuted }]}>{value}</Text>
       {onPress ? <Ionicons name="chevron-forward" size={15} color={t.textMuted} /> : null}
     </Pressable>
+  );
+}
+
+interface FolderSection {
+  key: string;
+  label: string;
+  /** 주의가 필요한 폴더의 견출지에 붙는 점. 실제 상태가 있을 때만. */
+  alert?: boolean;
+  body: ReactNode;
+}
+
+/**
+ * 서류철 — 가로로 겹쳐 꽂힌 견출지 탭들, 그 아래 펼쳐진 폴더 한 장.
+ * (ShopBack 홈의 Online/Travel/Play 탭 구조. 세로로 쌓지 않는다.)
+ * 탭을 누르면 그 폴더가 앞으로 뽑혀 나오고 내용이 아래에서 차오른다.
+ */
+function FolderStack({ sections }: { sections: FolderSection[] }) {
+  const t = useTheme();
+  const [active, setActive] = useState(sections[0]?.key ?? "");
+  const anim = useRef(new Animated.Value(1)).current;
+
+  const select = (key: string) => {
+    if (key === active) return;
+    setActive(key);
+    anim.setValue(0);
+    Animated.spring(anim, {
+      toValue: 1,
+      friction: 8,
+      tension: 140,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const current = sections.find((s) => s.key === active) ?? sections[0];
+
+  return (
+    <View>
+      {/* 견출지 줄. 겹침은 음수 마진, 앞뒤는 zIndex. */}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={{
+          paddingLeft: 20,
+          paddingRight: 28,
+          alignItems: "flex-end",
+        }}
+      >
+        {sections.map((s, i) => {
+          const on = s.key === active;
+          return (
+            <Pressable
+              key={s.key}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: on }}
+              onPress={() => select(s.key)}
+              style={({ pressed }) => ({
+                marginLeft: i === 0 ? 0 : -14,
+                zIndex: on ? 30 : sections.length - i,
+                height: on ? 42 : 34,
+                paddingHorizontal: 16,
+                paddingRight: 20,
+                borderTopLeftRadius: 13,
+                borderTopRightRadius: 13,
+                backgroundColor: on ? t.surface : pressed ? t.surfaceRaised : t.surfaceAlt,
+                justifyContent: "center",
+              })}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                <Text
+                  style={[
+                    type.caption,
+                    { color: on ? t.text : t.textMuted, fontSize: on ? 13 : 12 },
+                  ]}
+                >
+                  {s.label}
+                </Text>
+                {s.alert ? (
+                  <View
+                    style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: t.warn }}
+                  />
+                ) : null}
+              </View>
+              {on ? (
+                <View
+                  style={{
+                    height: 3,
+                    width: 16,
+                    borderRadius: 2,
+                    backgroundColor: t.accent,
+                    marginTop: 3,
+                  }}
+                />
+              ) : null}
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {/* 폴더 본문. 활성 탭과 같은 색이라 이음새 없이 붙는다. */}
+      <View
+        style={{
+          backgroundColor: t.surface,
+          borderRadius: 18,
+          padding: space.lg,
+          minHeight: 128,
+        }}
+      >
+        <Animated.View
+          style={{
+            gap: space.md,
+            opacity: anim,
+            transform: [
+              { translateY: anim.interpolate({ inputRange: [0, 1], outputRange: [10, 0] }) },
+            ],
+          }}
+        >
+          {current?.body}
+        </Animated.View>
+      </View>
+    </View>
   );
 }
 
@@ -192,30 +358,181 @@ export default function Home() {
   const codeColor = (code: string): string =>
     code === "D" ? t.ok : code === "E" ? t.warn : code === "N" ? t.night : t.accent;
 
+  const folders: FolderSection[] = [
+    {
+      key: "duty",
+      label: "오늘 근무",
+      body: todayShift ? (
+        <>
+          <BriefRow
+            icon="calendar-clear-outline"
+            label={`${todayShift.label} ${formatClock(todayShift.startAt)}~${formatClock(todayShift.endAt)}`}
+            value={shiftDone ? "기록 열기" : `체류 ${formatClock(todayShift.onSiteStartAt)}~`}
+            onPress={() => router.push(`/shift/${encodeURIComponent(todayShift.id)}`)}
+          />
+          <DashedDivider />
+          <BriefRow
+            icon="time-outline"
+            label="오늘 근무표 밖"
+            value={overtimeToday > 0 ? `+${overtimeToday}시간` : "없음"}
+            valueColor={overtimeToday > 0 ? t.warn : undefined}
+          />
+        </>
+      ) : (
+        <BriefRow
+          icon="calendar-clear-outline"
+          label="오늘 근무 없음"
+          value="듀티표"
+          onPress={() => router.push("/duty")}
+        />
+      ),
+    },
+    {
+      key: "overtime",
+      label: "오버타임",
+      alert: stats.offTheBooksHours + stats.overtimeHours > 0,
+      body: (
+        <>
+          <BriefRow
+            icon="albums-outline"
+            label="이번 주 근무표 밖"
+            value={`${stats.offTheBooksHours}시간`}
+            valueColor={stats.offTheBooksHours > 0 ? t.warn : undefined}
+          />
+          <DashedDivider />
+          <BriefRow
+            icon="alert-circle-outline"
+            label="주 40시간 초과"
+            value={`${stats.overtimeHours}시간`}
+            valueColor={stats.overtimeHours > 0 ? t.warn : undefined}
+          />
+          <DashedDivider />
+          <BriefRow
+            icon="time-outline"
+            label="오늘"
+            value={todayShift ? (overtimeToday > 0 ? `+${overtimeToday}시간` : "없음") : "—"}
+            valueColor={overtimeToday > 0 ? t.warn : undefined}
+          />
+        </>
+      ),
+    },
+    {
+      key: "temp",
+      label: "불타는 지수",
+      alert: latestTemp ? latestTemp.tone === "warn" || latestTemp.tone === "danger" : false,
+      body: (
+        <>
+          <BriefRow
+            icon="thermometer-outline"
+            label={latestTemp ? latestTemp.label : "기록 없음"}
+            value={latestTemp ? `${latestTemp.celsius}°C` : "—"}
+            valueColor={latestTemp ? toneColor[latestTemp.tone] : undefined}
+            onPress={() => router.push("/care")}
+          />
+          {latestTemp ? (
+            <GaugeBar
+              ratio={(latestTemp.celsius - 35.5) / 26.5}
+              color={toneColor[latestTemp.tone]}
+            />
+          ) : (
+            <Small>근무를 기록하고 전사하면 병동의 온도가 여기 올라옵니다.</Small>
+          )}
+        </>
+      ),
+    },
+    {
+      key: "records",
+      label: "기록",
+      alert: pendingCount > 0 || needsModel,
+      body: (
+        <>
+          <BriefRow
+            icon="document-text-outline"
+            label="전사할 기록"
+            value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
+            valueColor={pendingCount > 0 ? t.warn : undefined}
+            onPress={() =>
+              todayShift
+                ? router.push(`/shift/${encodeURIComponent(todayShift.id)}`)
+                : router.push("/study")
+            }
+          />
+          {needsModel ? (
+            <>
+              <DashedDivider />
+              <BriefRow
+                icon="cloud-download-outline"
+                label="전사 모델 설치 필요"
+                value="받기"
+                valueColor={t.warn}
+                onPress={() => router.push("/models")}
+              />
+            </>
+          ) : null}
+          <DashedDivider />
+          <BriefRow
+            icon="folder-open-outline"
+            label="다른 앱의 파일 가져오기"
+            value="선택"
+            onPress={async () => {
+              const r = await importAudioFile();
+              if (r.ok && r.shiftId) {
+                await load();
+                router.push(`/shift/${encodeURIComponent(r.shiftId)}`);
+              }
+            }}
+          />
+        </>
+      ),
+    },
+    {
+      key: "cards",
+      label: "카드",
+      alert: dueCount > 0,
+      body: (
+        <BriefRow
+          icon="school-outline"
+          label="복습할 카드"
+          value={dueCount > 0 ? `${dueCount}장` : "없음"}
+          valueColor={dueCount > 0 ? t.accent : undefined}
+          onPress={() => router.push("/study")}
+        />
+      ),
+    },
+  ];
+
   return (
     <HeaderScreen
       title={greeting(now.getHours(), today, todayShift)}
       subtitle={`${koreanDate(now)}${todayShift ? ` · ${todayShift.label} 근무` : " · 근무 없음"}`}
       right={
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={app.recording ? "기록 정지" : "기록 시작"}
-          onPress={async () => {
-            if (app.recording) await stopManual();
-            else await startManual(`${today}:MANUAL`);
-            await app.refresh();
-          }}
-          style={{
-            width: 44,
-            height: 44,
-            borderRadius: 22,
-            alignItems: "center",
-            justifyContent: "center",
-            backgroundColor: app.recording ? t.recording : "rgba(255,255,255,0.14)",
-          }}
-        >
-          <Ionicons name={app.recording ? "stop" : "mic-outline"} size={20} color={t.headerText} />
-        </Pressable>
+        <View style={{ alignItems: "center", justifyContent: "center" }}>
+          {app.recording ? <RecordPulse color={t.recording} /> : null}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={app.recording ? "기록 정지" : "기록 시작"}
+            onPress={async () => {
+              if (app.recording) await stopManual();
+              else await startManual(`${today}:MANUAL`);
+              await app.refresh();
+            }}
+            style={({ pressed }) => ({
+              width: 44,
+              height: 44,
+              borderRadius: 22,
+              alignItems: "center",
+              justifyContent: "center",
+              transform: [{ scale: pressed ? 0.92 : 1 }],
+              backgroundColor: app.recording ? t.recording : "rgba(255,255,255,0.14)",
+            })}
+          >
+            <Ionicons
+              name={app.recording ? "stop" : "mic-outline"}
+              size={20}
+              color={t.headerText}
+            />
+          </Pressable>
+        </View>
       }
       rows={[
         { label: "이번 주 근무", value: `${stats.onSiteHours}시간` },
@@ -227,188 +544,137 @@ export default function Home() {
       ]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}
     >
-      {/* ── 서류함: 항목마다 견출지 폴더 하나 ── */}
-      <FolderCard tab="오늘 근무" tone="accent">
-        {todayShift ? (
-          <BriefRow
-            icon="calendar-clear-outline"
-            label={`${todayShift.label} ${formatClock(todayShift.startAt)}~${formatClock(todayShift.endAt)}`}
-            value={shiftDone ? "기록 열기" : `체류 ${formatClock(todayShift.onSiteStartAt)}~`}
-            onPress={() => router.push(`/shift/${encodeURIComponent(todayShift.id)}`)}
-          />
-        ) : (
-          <BriefRow icon="calendar-clear-outline" label="오늘 근무 없음" value="듀티표" onPress={() => router.push("/duty")} />
-        )}
-      </FolderCard>
-
-      <FolderCard tab="오버타임" tone={overtimeToday > 0 || stats.overtimeHours > 0 ? "warn" : "default"}>
-        <BriefRow
-          icon="time-outline"
-          label="오늘"
-          value={todayShift ? (overtimeToday > 0 ? `+${overtimeToday}시간` : "없음") : "—"}
-          valueColor={overtimeToday > 0 ? t.warn : undefined}
-        />
-        <DashedDivider />
-        <BriefRow icon="albums-outline" label="이번 주 근무표 밖" value={`${stats.offTheBooksHours}시간`} valueColor={stats.offTheBooksHours > 0 ? t.warn : undefined} />
-        <DashedDivider />
-        <BriefRow icon="alert-circle-outline" label="주 40시간 초과" value={`${stats.overtimeHours}시간`} valueColor={stats.overtimeHours > 0 ? t.warn : undefined} />
-      </FolderCard>
-
-      <FolderCard tab="불타는 지수">
-        <BriefRow
-          icon="flame-outline"
-          label={latestTemp ? latestTemp.label : "기록 없음"}
-          value={latestTemp ? `${latestTemp.celsius}°C` : "—"}
-          valueColor={latestTemp ? toneColor[latestTemp.tone] : undefined}
-          onPress={() => router.push("/care")}
-        />
-        {latestTemp ? (
-          <View style={{ height: 6, borderRadius: 3, backgroundColor: t.surfaceAlt, overflow: "hidden" }}>
-            <View
-              style={{
-                width: `${Math.min(100, Math.max(4, ((latestTemp.celsius - 35.5) / 26.5) * 100))}%`,
-                height: 6,
-                backgroundColor: toneColor[latestTemp.tone],
-              }}
-            />
-          </View>
-        ) : null}
-      </FolderCard>
-
-      <FolderCard tab="기록" tone={pendingCount > 0 ? "warn" : "default"}>
-        <BriefRow
-          icon="document-text-outline"
-          label="전사할 기록"
-          value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
-          valueColor={pendingCount > 0 ? t.warn : undefined}
-          onPress={() =>
-            todayShift ? router.push(`/shift/${encodeURIComponent(todayShift.id)}`) : router.push("/study")
-          }
-        />
-        {needsModel ? (
-          <>
-            <DashedDivider />
-            <BriefRow icon="cloud-download-outline" label="전사 모델 설치 필요" value="받기" valueColor={t.warn} onPress={() => router.push("/models")} />
-          </>
-        ) : null}
-      </FolderCard>
-
-      <FolderCard tab="카드">
-        <BriefRow
-          icon="school-outline"
-          label="복습할 카드"
-          value={dueCount > 0 ? `${dueCount}장` : "없음"}
-          valueColor={dueCount > 0 ? t.accent : undefined}
-          onPress={() => router.push("/study")}
-        />
-      </FolderCard>
+      {/* ── 서류철: 견출지가 겹쳐 꽂힌 한 개의 서랍 ── */}
+      <Enter index={0}>
+        <FolderStack sections={folders} />
+      </Enter>
 
       {update?.show ? (
-        <FolderCard tab="새 판" tone="accent">
-          <BriefRow icon="sparkles-outline" label={update.message} value="받기" valueColor={t.accent} onPress={() => router.push("/settings")} />
-        </FolderCard>
+        <Enter index={1}>
+          <Card tone="accent">
+            <BriefRow
+              icon="sparkles-outline"
+              label={update.message}
+              value="받기"
+              valueColor={t.accent}
+              onPress={() => router.push("/settings")}
+            />
+          </Card>
+        </Enter>
+      ) : null}
+
+      {warnings.length > 0 ? (
+        <Enter index={1}>
+          <Card tone="warn">
+            {warnings.map((w, i) => (
+              <View key={w.kind} style={{ gap: space.xxs }}>
+                {i > 0 ? <DashedDivider /> : null}
+                <Small muted={false}>{w.message}</Small>
+                {w.reference ? <Small>{w.reference}</Small> : null}
+              </View>
+            ))}
+          </Card>
+        </Enter>
       ) : null}
 
       {/* 오늘의 한 줄 */}
-      <Card tone="accent">
-        <Text style={{ fontSize: 26, lineHeight: 26, color: t.accent, fontWeight: "800" }}>&ldquo;</Text>
-        <Body>{quote.text}</Body>
-        {quote.by ? <Small>— {quote.by}</Small> : null}
-      </Card>
-
-      {/* 근로 경고 — 뜨면 그때가 봐야 할 때 */}
-      {warnings.length > 0 ? (
-        <FolderCard tab="근로 경고" tone="warn">
-          {warnings.map((w, i) => (
-            <View key={w.kind} style={{ gap: space.xxs }}>
-              {i > 0 ? <DashedDivider /> : null}
-              <Small muted={false}>{w.message}</Small>
-              {w.reference ? <Small>{w.reference}</Small> : null}
-            </View>
-          ))}
-        </FolderCard>
-      ) : null}
+      <Enter index={2}>
+        <Card tone="accent">
+          <Text style={{ fontSize: 26, lineHeight: 26, color: t.accent, fontWeight: "800" }}>
+            &ldquo;
+          </Text>
+          <Body>{quote.text}</Body>
+          {quote.by ? <Small>— {quote.by}</Small> : null}
+        </Card>
+      </Enter>
 
       {/* 최근 근무 — 가로 타일 */}
       {recent.length > 0 ? (
-        <View style={{ gap: space.sm }}>
-          <Text style={[type.heading, { color: t.text }]}>최근 근무</Text>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: space.sm }}>
-            {recent.map((s) => {
-              const temp = temps.get(s.date);
-              return (
-                <Pressable
-                  key={s.id}
-                  accessibilityRole="button"
-                  onPress={() => router.push(`/shift/${encodeURIComponent(s.id)}`)}
-                  style={{
-                    width: 108,
-                    backgroundColor: t.surface,
-                    borderRadius: radius.lg,
-                    padding: space.md,
-                    gap: space.tight,
-                  }}
-                >
-                  <Text style={[type.caption, TABULAR, { color: t.textMuted }]}>
-                    {Number(s.date.slice(5, 7))}.{s.date.slice(8, 10)}
-                  </Text>
-                  <View
-                    style={{
-                      alignSelf: "flex-start",
-                      backgroundColor: codeColor(s.code),
-                      borderRadius: 4,
-                      paddingHorizontal: 6,
-                      paddingVertical: 2,
-                    }}
+        <Enter index={3}>
+          <View style={{ gap: space.sm }}>
+            <Text style={[type.heading, { color: t.text }]}>최근 근무</Text>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={{ gap: space.sm }}
+            >
+              {recent.map((s) => {
+                const temp = temps.get(s.date);
+                return (
+                  <Pressable
+                    key={s.id}
+                    accessibilityRole="button"
+                    onPress={() => router.push(`/shift/${encodeURIComponent(s.id)}`)}
+                    style={({ pressed }) => ({
+                      width: 108,
+                      backgroundColor: t.surface,
+                      borderRadius: radius.lg,
+                      padding: space.md,
+                      gap: space.tight,
+                      transform: [{ scale: pressed ? 0.96 : 1 }],
+                    })}
                   >
-                    <Text style={{ fontSize: 11, lineHeight: 15, color: "#FFF", fontWeight: "700" }}>
-                      {s.label}
+                    <Text style={[type.caption, TABULAR, { color: t.textMuted }]}>
+                      {Number(s.date.slice(5, 7))}.{s.date.slice(8, 10)}
                     </Text>
-                  </View>
-                  <Text style={[type.small, TABULAR, { color: temp ? toneColor[temp.tone] : t.textMuted }]}>
-                    {temp ? `${temp.celsius}°C` : "기록 없음"}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </ScrollView>
-        </View>
+                    <View
+                      style={{
+                        alignSelf: "flex-start",
+                        backgroundColor: codeColor(s.code),
+                        borderRadius: 4,
+                        paddingHorizontal: 6,
+                        paddingVertical: 2,
+                      }}
+                    >
+                      <Text
+                        style={{ fontSize: 11, lineHeight: 15, color: "#FFF", fontWeight: "700" }}
+                      >
+                        {s.label}
+                      </Text>
+                    </View>
+                    <Text
+                      style={[
+                        type.small,
+                        TABULAR,
+                        { color: temp ? toneColor[temp.tone] : t.textMuted },
+                      ]}
+                    >
+                      {temp ? `${temp.celsius}°C` : "기록 없음"}
+                    </Text>
+                  </Pressable>
+                );
+              })}
+            </ScrollView>
+          </View>
+        </Enter>
       ) : null}
 
       {/* 바로가기 칩 */}
-      <View style={{ flexDirection: "row", gap: space.sm }}>
-        {[
-          { label: "병동 사전", to: "/ward-dict" },
-          { label: "파일 가져오기", to: "" },
-          { label: "전사 모델", to: "/models" },
-        ].map((c) => (
-          <Pressable
-            key={c.label}
-            accessibilityRole="button"
-            onPress={async () => {
-              if (c.to) {
-                router.push(c.to as never);
-                return;
-              }
-              const r = await importAudioFile();
-              if (r.ok && r.shiftId) {
-                await load();
-                router.push(`/shift/${encodeURIComponent(r.shiftId)}`);
-              }
-            }}
-            style={{
-              flex: 1,
-              minHeight: TOUCH_MIN,
-              backgroundColor: t.surface,
-              borderRadius: radius.full,
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <Text style={[type.small, { color: t.text, fontWeight: "600" }]}>{c.label}</Text>
-          </Pressable>
-        ))}
-      </View>
+      <Enter index={4}>
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          {[
+            { label: "병동 사전", to: "/ward-dict" },
+            { label: "전사 모델", to: "/models" },
+          ].map((c) => (
+            <Pressable
+              key={c.label}
+              accessibilityRole="button"
+              onPress={() => router.push(c.to as never)}
+              style={({ pressed }) => ({
+                flex: 1,
+                minHeight: TOUCH_MIN,
+                backgroundColor: t.surface,
+                borderRadius: radius.full,
+                alignItems: "center",
+                justifyContent: "center",
+                transform: [{ scale: pressed ? 0.96 : 1 }],
+              })}
+            >
+              <Text style={[type.small, { color: t.text, fontWeight: "600" }]}>{c.label}</Text>
+            </Pressable>
+          ))}
+        </View>
+      </Enter>
     </HeaderScreen>
   );
 }

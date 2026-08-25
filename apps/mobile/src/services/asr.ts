@@ -176,13 +176,22 @@ export function createOnDeviceProvider(
  * 그래서 이 경로를 켜는 것은 사용자의 명시적 선택이어야 하고,
  * 켤 때 의료법 제19조를 다시 고지한다.
  */
-export function createSelfHostedProvider(endpoint: string, apiKey?: string): AsrProvider {
+export function createSelfHostedProvider(
+  endpoint: string,
+  apiKey?: string,
+  model?: string,
+): AsrProvider {
+  // OpenAI 오디오 전사 표준(/v1/audio/transcriptions, verbose_json)으로 말한다.
+  // 노트북에서 speaches(구 faster-whisper-server)·LocalAI 를 켜면 바로 붙는다.
+  // 주소만 넣으면 경로를 붙여 주고, 전체 경로를 넣으면 그대로 쓴다.
+  const url = /\/audio\/transcriptions\/?$/.test(endpoint)
+    ? endpoint
+    : `${endpoint.replace(/\/+$/, "")}/v1/audio/transcriptions`;
   return {
     id: `self-hosted:${endpoint}`,
     kind: "self-hosted",
-    // WhisperX + pyannote 를 띄운 서버라면 화자를 나눠 준다. 서버가 speaker 를
-    // 안 주면 결과에 안 실릴 뿐이라, 여기서는 가능한 것으로 둔다.
-    capabilities: { diarization: true, wordTimestamps: true },
+    // OpenAI 전사 형식에는 화자 필드가 없다. 있다고 말하지 않는다.
+    capabilities: { diarization: false, wordTimestamps: true },
     async transcribe(fileUri, options) {
       const form = new FormData();
       form.append("file", {
@@ -192,11 +201,11 @@ export function createSelfHostedProvider(endpoint: string, apiKey?: string): Asr
       } as unknown as Blob);
       form.append("language", options.language);
       form.append("temperature", String(options.temperature));
-      form.append("vad_filter", String(options.vad));
-      if (options.initialPrompt) form.append("initial_prompt", options.initialPrompt);
-      if (options.hotwords?.length) form.append("hotwords", options.hotwords.join(" "));
+      form.append("response_format", "verbose_json");
+      if (model) form.append("model", model);
+      if (options.initialPrompt) form.append("prompt", options.initialPrompt);
 
-      const response = await fetch(endpoint, {
+      const response = await fetch(url, {
         method: "POST",
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
         body: form,
@@ -205,18 +214,26 @@ export function createSelfHostedProvider(endpoint: string, apiKey?: string): Asr
         throw new Error(`전사 서버 오류 ${response.status}: ${await response.text()}`);
       }
       const json = (await response.json()) as {
-        segments?: { start: number; end: number; text: string; speaker?: string }[];
+        text?: string;
         duration?: number;
+        segments?: { start: number; end: number; text: string; speaker?: string }[];
       };
-      return {
-        segments: (json.segments ?? []).map((s) => ({
-          startSec: s.start,
-          endSec: s.end,
-          text: s.text.trim(),
-          speakerId: s.speaker,
-        })),
-        durationSec: json.duration ?? 0,
-      };
+      const segments = (json.segments ?? []).map((s) => ({
+        startSec: s.start,
+        endSec: s.end,
+        text: s.text.trim(),
+        speakerId: s.speaker,
+      }));
+      // 서버가 세그먼트 없이 본문만 주면(짧은 파일에서 흔하다) 한 덩어리로 받는다.
+      if (segments.length === 0 && json.text?.trim()) {
+        segments.push({
+          startSec: 0,
+          endSec: json.duration ?? 0,
+          text: json.text.trim(),
+          speakerId: undefined,
+        });
+      }
+      return { segments, durationSec: json.duration ?? 0 };
     },
   };
 }
@@ -366,12 +383,14 @@ export async function finalizeShift(input: {
 
 /** 현재 설정에 맞는 provider를 만든다. */
 export async function resolveProvider(): Promise<AsrProvider> {
-  const cloud = await getSetting<{ enabled: boolean; endpoint: string; apiKey?: string }>(
-    SETTINGS_KEYS.cloudTranscription,
-    { enabled: false, endpoint: "" },
-  );
+  const cloud = await getSetting<{
+    enabled: boolean;
+    endpoint: string;
+    apiKey?: string;
+    model?: string;
+  }>(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" });
   if (cloud.enabled && cloud.endpoint) {
-    return createSelfHostedProvider(cloud.endpoint, cloud.apiKey);
+    return createSelfHostedProvider(cloud.endpoint, cloud.apiKey, cloud.model);
   }
   const { path, model, fellBack } = await resolveModelPath();
   if (!path) {

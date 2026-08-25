@@ -140,7 +140,7 @@ const OPENAI_MODEL = "gpt-5-mini";
  */
 async function callOpenAi(input: {
   system: string;
-  user: string;
+  messages: { role: "user" | "assistant"; content: string }[];
   maxTokens: number;
   schema?: { name: string; schema: unknown };
 }): Promise<string> {
@@ -168,10 +168,7 @@ async function callOpenAi(input: {
     body: JSON.stringify({
       model: custom ? custom.model : OPENAI_MODEL,
       max_completion_tokens: input.maxTokens,
-      messages: [
-        { role: "system", content: input.system },
-        { role: "user", content: input.user },
-      ],
+      messages: [{ role: "system", content: input.system }, ...input.messages],
       ...(input.schema
         ? {
             response_format: {
@@ -225,7 +222,7 @@ export async function postEditTranscript(
   if ((await getProvider()) !== "anthropic") {
     const text = await callOpenAi({
       system: `${POST_EDIT_SYSTEM}\n\n참고 용어집:\n${glossary}`,
-      user: redacted.text,
+      messages: [{ role: "user", content: redacted.text }],
       maxTokens: 16000,
     });
     return { text, redactedCount: redacted.result.redactedCount, cacheHit: false };
@@ -307,7 +304,7 @@ export async function summarizeShift(
   if ((await getProvider()) !== "anthropic") {
     const raw = await callOpenAi({
       system: `${INSIGHT_SYSTEM}\n\n참고 용어집:\n${glossary}`,
-      user: redacted.text,
+      messages: [{ role: "user", content: redacted.text }],
       maxTokens: 8000,
       schema: { name: "shift_insight", schema: INSIGHT_SCHEMA },
     });
@@ -361,11 +358,84 @@ export async function summarizeShift(
   };
 }
 
+/* ── 마음 상담 채팅 ─────────────────────────────────────────────── */
+
+export interface ChatTurn {
+  role: "user" | "assistant";
+  text: string;
+}
+
+const CARE_SYSTEM = `당신은 신규간호사의 마음을 돌보는 선배 간호사입니다. NSR 앱의 '마음' 탭에서 대화합니다.
+
+태도:
+- 짧게, 따뜻하게. 한 번에 2~5문장. 합니다체를 씁니다.
+- 공감이 먼저입니다. 조언은 상대가 원할 때만, 한 번에 하나만.
+- 자책이 심하면 사실과 감정을 분리하도록 돕습니다. "실수"와 "나는 부족한 사람"은 다른 문장입니다.
+- 태움·괴롭힘 이야기가 나오면 그 사람 잘못이 아님을 분명히 하고, 날짜·발언을 기록해 두는 것이 힘이 된다고 알려줍니다. 이 앱이 그 기록을 돕습니다.
+- 자해·죽음을 암시하는 표현이 보이면 부드럽지만 분명하게, 지금 정신건강 위기상담 1577-0199 또는 109에 전화하도록 권합니다.
+- 의학적 판단, 투약·처치 지시는 하지 않습니다. 그건 병동 프로토콜과 선배의 영역입니다.
+- 상대의 말에 없는 사실을 지어내지 않습니다.`;
+
+/**
+ * 마음 탭의 상담 대화. 보내기 전에 사용자 발화의 민감 정보를 가린다 —
+ * 남의 서버로 가는 모든 것은 redactForNetwork 를 거친다는 규칙 그대로다.
+ */
+export async function careChat(
+  history: ChatTurn[],
+  context: { temp?: string },
+): Promise<string> {
+  // 첫 턴은 user 여야 한다 (잘린 히스토리가 assistant 로 시작할 수 있다).
+  const trimmed = history.slice(-12);
+  while (trimmed.length > 0 && trimmed[0].role !== "user") trimmed.shift();
+
+  const messages = await Promise.all(
+    trimmed.map(async (m) => ({
+      role: m.role,
+      content: m.role === "user" ? (await redactForNetwork(m.text)).text : m.text,
+    })),
+  );
+  const system = context.temp
+    ? `${CARE_SYSTEM}\n\n참고 — 최근 근무의 태움 지표(체온 표현): ${context.temp}. 상대가 먼저 꺼내기 전에는 굳이 언급하지 않습니다.`
+    : CARE_SYSTEM;
+
+  if ((await getProvider()) !== "anthropic") {
+    return callOpenAi({ system, messages, maxTokens: 700 });
+  }
+  const response = await callAnthropic({
+    model: MODEL,
+    max_tokens: 700,
+    system: [{ type: "text", text: system }],
+    messages: messages.map((m) => ({ role: m.role, content: m.content })),
+  });
+  return response.content
+    .filter((b) => b.type === "text")
+    .map((b) => b.text ?? "")
+    .join("")
+    .trim();
+}
+
+/** 대화를 시작할 수 있는 상태인가 — 공급자 설정이 되어 있는가. */
+export async function llmReady(): Promise<{ ok: boolean; reason?: string }> {
+  const p = await getProvider();
+  if (p === "custom") {
+    return (await getCustomServer())
+      ? { ok: true }
+      : { ok: false, reason: "내 서버 주소가 없습니다. 설정 → 보조 기능에서 입력하십시오." };
+  }
+  return (await getApiKey(p))
+    ? { ok: true }
+    : { ok: false, reason: "API 키가 없습니다. 설정 → 보조 기능에서 공급자와 키를 넣으십시오." };
+}
+
 /** 키가 유효한지 가볍게 확인한다. 설정 화면의 "연결 테스트" 버튼용. */
 export async function testConnection(): Promise<{ ok: boolean; message: string }> {
   try {
     if ((await getProvider()) !== "anthropic") {
-      await callOpenAi({ system: "ping 에 pong 으로만 답한다.", user: "ping", maxTokens: 16 });
+      await callOpenAi({
+        system: "ping 에 pong 으로만 답한다.",
+        messages: [{ role: "user", content: "ping" }],
+        maxTokens: 16,
+      });
     } else {
       await callAnthropic({
         model: MODEL,
