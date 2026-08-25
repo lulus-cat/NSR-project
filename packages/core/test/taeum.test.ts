@@ -133,12 +133,13 @@ describe("태움 체온", () => {
     expect(taeumTemperature(10)).toMatchObject({ celsius: 37.0, label: "미열", tone: "muted" });
     expect(taeumTemperature(30)).toMatchObject({ celsius: 37.6, label: "발열", tone: "warn" });
     expect(taeumTemperature(60)).toMatchObject({ celsius: 38.6, label: "고열", tone: "danger" });
-    expect(taeumTemperature(100).celsius).toBe(40.0);
+    expect(taeumTemperature(80)).toMatchObject({ celsius: 45.0, label: "위험 고열" });
+    expect(taeumTemperature(100)).toMatchObject({ celsius: 62.0, label: "체온계 파손" });
   });
 
   it("범위 밖과 쓰레기 입력은 안전하게 잘린다", () => {
     expect(taeumTemperature(-5).celsius).toBe(35.8);
-    expect(taeumTemperature(999).celsius).toBe(40.0);
+    expect(taeumTemperature(999).celsius).toBe(62.0);
     expect(taeumTemperature(NaN).celsius).toBe(35.8);
   });
 });

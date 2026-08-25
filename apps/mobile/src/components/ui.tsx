@@ -228,6 +228,7 @@ export function HeaderScreen({
   heroLabel,
   hero,
   rows,
+  banner,
   children,
   refreshControl,
 }: {
@@ -239,6 +240,8 @@ export function HeaderScreen({
   hero?: string;
   /** 색면 안 label/value 행. 값에 색을 주려면 tone 을 넘긴다. */
   rows?: { label: string; value: string; tone?: "default" | "alert" }[];
+  /** 색면 위에 얹는 카드. ShopBack 식 — 체크리스트가 색면 위에 떠 있고 그 아래로 패널이 겹친다. */
+  banner?: ReactNode;
   children: ReactNode;
   refreshControl?: ReactNode;
 }) {
@@ -310,6 +313,8 @@ export function HeaderScreen({
               ))}
             </View>
           ) : null}
+
+          {banner}
         </View>
 
         {/* 패널. 음수 마진으로 색면을 물고 올라온다. */}

@@ -7,6 +7,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   DEFAULT_TEMPLATES,
   createSchedule,
+  dutyPatternStats,
   resolveAll,
   taeumTemperature,
   toDateString,
@@ -151,6 +152,7 @@ export default function Duty() {
     }
   }
   const workDayCount = monthEntries.filter((e) => DEFAULT_TEMPLATES[e.code]?.isWorking).length;
+  const patterns = dutyPatternStats(monthEntries);
 
   const selEntry = byDate.get(selected);
   const selShift = resolved.get(selected);
@@ -451,6 +453,39 @@ export default function Duty() {
               </View>
               {longestRun >= 5 ? (
                 <Small muted={false}>연속 {longestRun}일 근무가 있습니다. 몸이 먼저입니다.</Small>
+              ) : null}
+              <Divider />
+              <Small muted={false}>기피 듀티</Small>
+              <View style={{ flexDirection: "row", gap: space.sm }}>
+                {[
+                  { label: "나오데", value: patterns.naode, hint: "나이트-오프-데이" },
+                  { label: "이브데이", value: patterns.evday, hint: "이브닝 뒤 바로 데이" },
+                  { label: "퐁당퐁당", value: patterns.pongdang, hint: "하루걸러 출근" },
+                ].map((s2) => (
+                  <View
+                    key={s2.label}
+                    style={{
+                      flex: 1,
+                      backgroundColor: s2.value > 0 ? t.accentSoft : t.surfaceAlt,
+                      borderRadius: radius.lg,
+                      paddingVertical: space.md,
+                      alignItems: "center",
+                      gap: 2,
+                    }}
+                  >
+                    <Text style={[type.cardTitle, TABULAR, { color: s2.value > 0 ? t.warn : t.text, fontWeight: "700" }]}>
+                      {s2.value}번
+                    </Text>
+                    <Text style={[type.caption, { color: t.text }]}>{s2.label}</Text>
+                    <Text style={[type.caption, { color: t.textMuted, fontWeight: "400" }]}>{s2.hint}</Text>
+                  </View>
+                ))}
+              </View>
+              {patterns.naode + patterns.evday > 0 ? (
+                <Small>
+                  나오데·이브데이는 휴식이 부족해지는 배치입니다. 반복되면 근무표와 함께
+                  기록해 두십시오.
+                </Small>
               ) : null}
             </Card>
           ) : null}

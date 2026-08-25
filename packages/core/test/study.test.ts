@@ -200,3 +200,14 @@ describe("근무 보고서", () => {
     expect(md).toContain("## 미확인·확인 필요 사항");
   });
 });
+
+describe("오늘의 한 줄", () => {
+  it("같은 날엔 같은 문장, 날이 바뀌면 대체로 다른 문장", async () => {
+    const { dailyQuote } = await import("../src/study/quotes.js");
+    expect(dailyQuote("2026-08-25")).toEqual(dailyQuote("2026-08-25"));
+    const texts = new Set(
+      Array.from({ length: 30 }, (_, i) => dailyQuote(`2026-09-${String(i + 1).padStart(2, "0")}`).text),
+    );
+    expect(texts.size).toBeGreaterThan(10);
+  });
+});

@@ -8,36 +8,34 @@ import { Body, Button, Card, Screen } from "../src/components/ui";
 import { useTheme } from "../src/theme";
 
 /**
- * 실행 로딩 — 아이콘과 이름이 흐릿하게 떠 있다가 또렷해지면 준비가 끝난 것이다.
+ * 실행 로딩 — 흐릿한 마크가 또렷해지는 페이드인.
  *
- * 네이티브 스플래시(정지 이미지)가 사라진 직후를 이 오버레이가 이어받는다.
- * blurRadius 는 스타일이 아니라 prop 이라 JS 드라이버로 애니메이션한다 —
- * 1초짜리 일회성이라 성능 걱정할 자리가 아니다.
+ * blurRadius 를 직접 애니메이션하면 매 프레임 JS→네이티브 다리를 건너 뚝뚝
+ * 끊긴다. 대신 **또렷한 이미지 위에 흐린 사본을 겹쳐 두고, 흐린 쪽의
+ * 불투명도만** 네이티브 드라이버로 내린다 — 시각적으로 같고 60fps 다.
  */
 function LaunchOverlay({ ready }: { ready: boolean }) {
   const [gone, setGone] = useState(false);
-  const blur = useRef(new Animated.Value(16)).current;
-  const textOpacity = useRef(new Animated.Value(0.25)).current;
+  const blurOpacity = useRef(new Animated.Value(1)).current;
+  const scale = useRef(new Animated.Value(1.06)).current;
+  const textOpacity = useRef(new Animated.Value(0)).current;
   const fade = useRef(new Animated.Value(1)).current;
-  const minTimePassed = useRef(false);
-  const [, force] = useState(0);
+  const [minDone, setMinDone] = useState(false);
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(blur, { toValue: 0, duration: 750, useNativeDriver: false }),
-      Animated.timing(textOpacity, { toValue: 1, duration: 750, useNativeDriver: false }),
-    ]).start(() => {
-      minTimePassed.current = true;
-      force((n) => n + 1);
-    });
-  }, [blur, textOpacity]);
+      Animated.timing(blurOpacity, { toValue: 0, duration: 700, useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
+      Animated.timing(textOpacity, { toValue: 1, duration: 700, delay: 120, useNativeDriver: true }),
+    ]).start(() => setMinDone(true));
+  }, [blurOpacity, scale, textOpacity]);
 
   useEffect(() => {
-    if (!ready || !minTimePassed.current) return;
-    Animated.timing(fade, { toValue: 0, duration: 220, useNativeDriver: false }).start(() =>
+    if (!ready || !minDone) return;
+    Animated.timing(fade, { toValue: 0, duration: 200, useNativeDriver: true }).start(() =>
       setGone(true),
     );
-  });
+  }, [ready, minDone, fade]);
 
   if (gone) return null;
   return (
@@ -54,11 +52,17 @@ function LaunchOverlay({ ready }: { ready: boolean }) {
         zIndex: 100,
       }}
     >
-      <Animated.Image
-        source={require("../assets/splash-icon.png")}
-        blurRadius={blur as unknown as number}
-        style={{ width: 128, height: 128 }}
-      />
+      <Animated.View style={{ width: 128, height: 128, transform: [{ scale }] }}>
+        <Animated.Image
+          source={require("../assets/splash-icon.png")}
+          style={{ position: "absolute", width: 128, height: 128 }}
+        />
+        <Animated.Image
+          source={require("../assets/splash-icon.png")}
+          blurRadius={18}
+          style={{ position: "absolute", width: 128, height: 128, opacity: blurOpacity }}
+        />
+      </Animated.View>
       <Animated.View style={{ opacity: textOpacity }}>
         <Text style={{ color: "#EAE7E1", fontSize: 28, fontWeight: "800", letterSpacing: 6 }}>
           NSR

@@ -83,6 +83,61 @@ export function resolveAll(schedule: DutySchedule): ResolvedShift[] {
 }
 
 // ──────────────────────────────────────────────────────────
+//  기피 듀티 패턴
+// ──────────────────────────────────────────────────────────
+
+export interface DutyPatternStats {
+  /** 나이트 → 오프 → 데이. 밤샘 뒤 하루 쉬고 바로 아침 출근 — 가장 기피되는 배치. */
+  naode: number;
+  /** 이브닝 다음 날 바로 데이. 23시 퇴근 후 6시대 출근이라 휴식이 8시간이 안 된다. */
+  evday: number;
+  /** 근무-오프-근무-오프가 4일 이상 이어지는 구간 수. 리듬이 못 잡힌다. */
+  pongdang: number;
+}
+
+/**
+ * 번표에서 기피 배치를 센다. 날짜가 하루씩 연속일 때만 패턴으로 본다 —
+ * 사이가 비어 있으면(입력 안 된 날) 패턴이라 단정할 수 없다.
+ */
+export function dutyPatternStats(entries: DutyEntry[]): DutyPatternStats {
+  const sorted = [...entries].sort((a, b) => (a.date < b.date ? -1 : 1));
+  const nextDay = (date: string): string => {
+    const [y, m, d] = date.split("-").map(Number);
+    return toDateString(new Date(y, m - 1, d + 1).getTime());
+  };
+  const byDate = new Map(sorted.map((e) => [e.date, e.code]));
+
+  let naode = 0;
+  let evday = 0;
+  for (const e of sorted) {
+    const d1 = nextDay(e.date);
+    const d2 = nextDay(d1);
+    if (e.code === "N" && byDate.get(d1) === "OFF" && byDate.get(d2) === "D") naode++;
+    if (e.code === "E" && byDate.get(d1) === "D") evday++;
+  }
+
+  // 퐁당퐁당: 일-오프가 번갈아 4일 이상 이어지는 구간.
+  let pongdang = 0;
+  let run = 1;
+  for (let i = 1; i < sorted.length; i++) {
+    const prev = sorted[i - 1];
+    const cur = sorted[i];
+    const consecutive = nextDay(prev.date) === cur.date;
+    const prevWork = (DEFAULT_TEMPLATES[prev.code] ?? DEFAULT_TEMPLATES.OTHER).isWorking;
+    const curWork = (DEFAULT_TEMPLATES[cur.code] ?? DEFAULT_TEMPLATES.OTHER).isWorking;
+    if (consecutive && prevWork !== curWork) {
+      run++;
+    } else {
+      if (run >= 4) pongdang++;
+      run = 1;
+    }
+  }
+  if (run >= 4) pongdang++;
+
+  return { naode, evday, pongdang };
+}
+
+// ──────────────────────────────────────────────────────────
 //  자동 녹음
 // ──────────────────────────────────────────────────────────
 

@@ -193,3 +193,29 @@ describe("날짜 변환", () => {
     expect(toDateString(toEpoch("2026-08-24", "13:00"))).toBe("2026-08-24");
   });
 });
+
+describe("기피 듀티 패턴", () => {
+  it("나오데·이브데이·퐁당퐁당을 센다", async () => {
+    const { dutyPatternStats } = await import("../src/duty/schedule.js");
+    const e = (date: string, code: string) => ({ date, code }) as never;
+    const stats = dutyPatternStats([
+      e("2026-08-01", "N"), e("2026-08-02", "OFF"), e("2026-08-03", "D"), // 나오데
+      e("2026-08-04", "E"), e("2026-08-05", "D"),                         // 이브데이
+      e("2026-08-06", "D"), e("2026-08-07", "OFF"),
+      e("2026-08-08", "D"), e("2026-08-09", "OFF"),                       // 퐁당 (05부터 일-오프 교대)
+    ]);
+    expect(stats.naode).toBe(1);
+    expect(stats.evday).toBe(1);
+    expect(stats.pongdang).toBe(1);
+  });
+
+  it("날짜가 이어지지 않으면 패턴으로 세지 않는다", async () => {
+    const { dutyPatternStats } = await import("../src/duty/schedule.js");
+    const e = (date: string, code: string) => ({ date, code }) as never;
+    const stats = dutyPatternStats([
+      e("2026-08-01", "N"), e("2026-08-03", "D"), // 사이가 빔
+    ]);
+    expect(stats.naode).toBe(0);
+    expect(stats.evday).toBe(0);
+  });
+});

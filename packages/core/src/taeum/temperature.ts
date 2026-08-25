@@ -22,12 +22,16 @@ export interface TaeumTemperature {
   description: string;
 }
 
+// 60점(severe 진입)까지는 임상 눈금을 지키고, 그 위로는 일부러 과장한다.
+// 40도에서 멈추면 "심각"과 "재난"이 같은 숫자로 보인다 — 60도가 주는
+// 직관(사람이 버틸 온도가 아니다)이 이 지표의 존재 이유에 맞는다.
 const ANCHORS: [number, number][] = [
   [0, 35.8],
   [10, 37.0],
   [30, 37.6],
   [60, 38.6],
-  [100, 40.0],
+  [80, 45.0],
+  [100, 62.0],
 ];
 
 export function taeumTemperature(score: number): TaeumTemperature {
@@ -76,11 +80,26 @@ export function taeumTemperature(score: number): TaeumTemperature {
       description: "지속 발생 시 날짜·상황·인용문 기록을 보관하십시오.",
     };
   }
+  if (celsius <= 42.0) {
+    return {
+      celsius,
+      label: "고열",
+      tone: "danger",
+      description: "전문적인 도움이 필요한 상태입니다. 기록을 취합하여 상담을 진행하십시오.",
+    };
+  }
+  if (celsius <= 50.0) {
+    return {
+      celsius,
+      label: "위험 고열",
+      tone: "danger",
+      description: "사람이 견딜 온도가 아닙니다. 이 병동의 문제이지 당신의 문제가 아닙니다.",
+    };
+  }
   return {
     celsius,
-    label: "고열",
+    label: "체온계 파손",
     tone: "danger",
-    description:
-      "전문적인 도움이 필요한 상태입니다. 기록을 취합하여 상담을 진행하십시오.",
+    description: "측정 한계를 넘었습니다. 기록을 모아 두십시오 — 이 숫자 자체가 증거입니다.",
   };
 }
