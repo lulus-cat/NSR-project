@@ -14,6 +14,7 @@
     "@expo/vector-icons": "^15.1.1",
     "@nsr/core": "file:../../packages/core",
     "@react-navigation/bottom-tabs": "^7.18.17",
+    "buffer": "6.0.3",
     "expo": "^57.0.15",
     "expo-audio": "^57.0.4",
     "expo-background-task": "^57.0.12",
