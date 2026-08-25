@@ -51,6 +51,7 @@ function PresetRow({
   unit,
   options,
   onSelect,
+  format,
 }: {
   label: string;
   hint?: string;
@@ -58,12 +59,15 @@ function PresetRow({
   unit: string;
   options: number[];
   onSelect: (v: number) => void;
+  /** 값 표시를 바꿔야 할 때 (예: 음수를 "후 30분"으로). 없으면 `${v}${unit}`. */
+  format?: (v: number) => string;
 }) {
   const t = useTheme();
   const [open, setOpen] = useState(false);
+  const show = (v: number) => (format ? format(v) : `${v}${unit}`);
   return (
     <View>
-      <Row label={label} value={`${value}${unit} ›`} onPress={() => setOpen((o) => !o)} />
+      <Row label={label} value={`${show(value)} ›`} onPress={() => setOpen((o) => !o)} />
       {open ? (
         <View
           style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingBottom: space.sm }}
@@ -87,8 +91,7 @@ function PresetRow({
               <Text
                 style={[type.small, { color: o === value ? "#FFFFFF" : t.text, fontWeight: "600" }]}
               >
-                {o}
-                {unit}
+                {show(o)}
               </Text>
             </Pressable>
           ))}
@@ -173,6 +176,8 @@ export default function Settings() {
   const [workplace, setWorkplace] = useState<Workplace | null>(null);
   const [geoOn, setGeoOn] = useState(false);
   const [geoMsg, setGeoMsg] = useState<string | null>(null);
+  // 근무지가 아직 없는 사람이 '근무지'를 눌렀을 때 — 지정 UI 를 먼저 보여줘야 한다.
+  const [geoSetup, setGeoSetup] = useState(false);
   const [hospitalQuery, setHospitalQuery] = useState("");
   const [hospitalHits, setHospitalHits] = useState<PlaceHit[]>([]);
   const [discardWithoutSelf, setDiscardWithoutSelf] = useState(true);
@@ -236,6 +241,8 @@ export default function Settings() {
   const router = useRouter();
   const policy = app.policy;
   const capability = platformCapability(iosContinuous);
+  // 3택과 같은 판정 — 어느 방식의 세부 설정을 펼칠지 정한다.
+  const mode = policy.enabled ? "duty" : geoOn ? "geo" : "off";
 
   const updatePrivacy = useCallback(async (next: PrivacySettings) => {
     setPrivacy(next);
@@ -409,20 +416,30 @@ export default function Settings() {
                   onPress={async () => {
                     setGeoMsg(null);
                     if (mode === "duty") {
+                      setGeoSetup(false);
                       if (geoOn) {
                         await setGeofence(false);
                         setGeoOn(false);
                       }
                       await app.updatePolicy({ ...policy, enabled: true });
                     } else if (mode === "geo") {
+                      if (!workplace) {
+                        // 근무지가 없으면 켤 수 없다 — 지정 UI 를 아래에 펼친다.
+                        setGeoSetup(true);
+                        setGeoMsg("아래에서 근무지를 먼저 지정하십시오.");
+                        return;
+                      }
                       const r = await setGeofence(true);
                       if (!r.ok) {
+                        setGeoSetup(true);
                         setGeoMsg(r.message ?? "근무지 감지를 켜지 못했습니다.");
                         return;
                       }
                       setGeoOn(true);
+                      setGeoSetup(false);
                       await app.updatePolicy({ ...policy, enabled: false });
                     } else {
+                      setGeoSetup(false);
                       if (geoOn) {
                         await setGeofence(false);
                         setGeoOn(false);
@@ -435,37 +452,179 @@ export default function Settings() {
             );
           })}
         </View>
-        <Small>
-          듀티표: 근무표 시각에 맞춰 켜고 끕니다. 근무지: 병원 반경에 들어오면 켜고 나가면
-          끕니다 — 아래 카드에서 근무지를 먼저 지정하고 위치를 &lsquo;항상 허용&rsquo;해야
-          합니다.
-        </Small>
+        <Small>고른 방식의 세부 설정이 아래에 나타납니다.</Small>
         <Small>{capability.explanation}</Small>
         {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
-        <Divider />
-        <Small muted={false}>기록할 근무</Small>
-        <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
-          {(["D", "E", "N", "EDU"] as ShiftCode[]).map((code) => {
-            const on = policy.codes.includes(code);
-            return (
-              <Button
-                key={code}
-                label={code}
-                tone={on ? "primary" : "default"}
-                onPress={() => toggleCode(code)}
-              />
-            );
-          })}
-        </View>
-        <Divider />
-        <PresetRow
-          label="근무 시작 전 기록 시작"
-          value={policy.leadMinutes}
-          unit="분"
-          options={[10, 20, 30, 45, 60]}
-          onSelect={(v) => void app.updatePolicy({ ...policy, leadMinutes: v })}
-          hint="인계는 근무표 시각보다 일찍 시작합니다. 설정 시간이 인계보다 짧으면 주요 내용을 놓칠 수 있습니다."
-        />
+
+        {mode === "duty" ? (
+          <>
+            <Divider />
+            <Small muted={false}>기록할 근무</Small>
+            <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
+              {(
+                [
+                  ["D", "데이"],
+                  ["E", "이브닝"],
+                  ["N", "나이트"],
+                  ["ADM", "상근"],
+                  ["SPC", "스페셜"],
+                  ["EDU", "교육"],
+                ] as [ShiftCode, string][]
+              ).map(([code, label]) => (
+                <Button
+                  key={code}
+                  label={label}
+                  tone={policy.codes.includes(code) ? "primary" : "default"}
+                  onPress={() => toggleCode(code)}
+                />
+              ))}
+            </View>
+            <Small>듀티표에 이 코드가 적힌 날만 자동으로 기록합니다.</Small>
+            <Divider />
+            <PresetRow
+              label="기록 시작 시점"
+              value={policy.leadMinutes}
+              unit="분"
+              options={[120, 90, 60, 45, 30, 20, 10, -10, -20, -30, -60, -90, -120]}
+              format={(v) => (v > 0 ? `전 ${v}분` : v < 0 ? `후 ${-v}분` : "정각")}
+              onSelect={(v) => void app.updatePolicy({ ...policy, leadMinutes: v })}
+              hint="근무 시작 전으로 두면 인계를 덮고, 시작 후로 두면 필요한 구간부터 남깁니다. 앞뒤 최대 2시간."
+            />
+          </>
+        ) : null}
+
+        {mode === "geo" || geoSetup ? (
+          <>
+            <Divider />
+            <Small muted={false}>근무지</Small>
+            <Small>
+              병원 반경에 들어오면 기록을 시작하고 벗어나면 끝냅니다. 출퇴근 전후
+              오버타임까지 실제 체류 시간이 남습니다. 근무일에만 작동하며 위치 정보는
+              기기 밖으로 나가지 않습니다.
+            </Small>
+            {workplace ? (
+              <>
+                <Row
+                  label={workplace.label || "근무지"}
+                  value={`반경 ${workplace.radius}m · 해제`}
+                  onPress={async () => {
+                    await clearWorkplace();
+                    setWorkplace(null);
+                    setGeoOn(false);
+                  }}
+                />
+                <Small>누르면 해제됩니다.</Small>
+                <Button
+                  label="지도에서 위치 확인 (카카오맵)"
+                  onPress={() =>
+                    void Linking.openURL(
+                      `https://map.kakao.com/link/map/${encodeURIComponent(workplace.label || "근무지")},${workplace.latitude},${workplace.longitude}`,
+                    )
+                  }
+                />
+              </>
+            ) : (
+              <>
+                <Small muted={false}>병원 이름으로 찾기</Small>
+                <View style={{ flexDirection: "row", gap: space.sm }}>
+                  <TextInput
+                    value={hospitalQuery}
+                    onChangeText={setHospitalQuery}
+                    placeholder="예: 서울아산병원"
+                    placeholderTextColor={t.textMuted}
+                    style={{
+                      flex: 1,
+                      color: t.text,
+                      backgroundColor: t.surfaceAlt,
+                      borderRadius: radius.md,
+                      paddingHorizontal: space.md,
+                      minHeight: 48,
+                      fontSize: 15,
+                    }}
+                  />
+                  <Button
+                    label="검색"
+                    tone="primary"
+                    onPress={async () => {
+                      try {
+                        const r = await searchWorkplace(hospitalQuery);
+                        setHospitalHits(r.hits);
+                        setGeoMsg(
+                          r.hits.length === 0
+                            ? r.source === "kakao"
+                              ? "찾지 못했습니다. 지점명을 빼거나 철자를 바꿔 보십시오."
+                              : "찾지 못했습니다. 정식 명칭(요양기관명)으로 다시 시도해 보십시오."
+                            : r.source === "kakao"
+                              ? "카카오 지도에서 찾았습니다."
+                              : "심평원 병원 목록에서 찾았습니다.",
+                        );
+                      } catch (e) {
+                        setGeoMsg(e instanceof Error ? e.message : "검색에 실패했습니다.");
+                      }
+                    }}
+                  />
+                </View>
+                {hospitalHits.map((h) => (
+                  <Row
+                    key={`${h.latitude},${h.longitude}`}
+                    label={h.name}
+                    value="이곳으로"
+                    onPress={async () => {
+                      const wp = await setWorkplacePlace(h);
+                      setWorkplace(wp);
+                      setHospitalHits([]);
+                      setHospitalQuery("");
+                      // 근무지 방식을 고르다 여기 온 것이면 지정 즉시 켠다.
+                      if (geoSetup) {
+                        const r = await setGeofence(true);
+                        if (r.ok) {
+                          setGeoOn(true);
+                          setGeoSetup(false);
+                          setGeoMsg("근무지 자동 기록을 켰습니다.");
+                          await app.updatePolicy({ ...policy, enabled: false });
+                        } else {
+                          setGeoMsg(r.message ?? "근무지 감지를 켜지 못했습니다.");
+                        }
+                      } else {
+                        setGeoMsg(null);
+                      }
+                    }}
+                  />
+                ))}
+                <Button
+                  label="지금 있는 곳을 근무지로"
+                  onPress={async () => {
+                    const wp = await setWorkplaceHere();
+                    if (!wp) {
+                      setGeoMsg("위치 권한이 없어 지정하지 못했습니다.");
+                      return;
+                    }
+                    setWorkplace(wp);
+                    if (geoSetup) {
+                      const r = await setGeofence(true);
+                      if (r.ok) {
+                        setGeoOn(true);
+                        setGeoSetup(false);
+                        setGeoMsg("근무지 자동 기록을 켰습니다.");
+                        await app.updatePolicy({ ...policy, enabled: false });
+                      } else {
+                        setGeoMsg(r.message ?? "근무지 감지를 켜지 못했습니다.");
+                      }
+                    } else {
+                      setGeoMsg(null);
+                    }
+                  }}
+                />
+              </>
+            )}
+            <Small>
+              {Platform.OS === "android"
+                ? "위치 권한을 '항상 허용'으로 설정해야 합니다. Android 14 이상에서는 백그라운드 제한으로 앱 실행 시 시작될 수 있습니다."
+                : "위치 권한을 '항상 허용'으로 변경해야 합니다."}
+            </Small>
+          </>
+        ) : null}
+
         <Divider />
         <PresetRow
           label="파일 분할"
@@ -473,7 +632,7 @@ export default function Settings() {
           unit="분"
           options={[10, 15, 20, 30]}
           onSelect={(v) => void app.updatePolicy({ ...policy, segmentMinutes: v })}
-          hint="8시간을 한 파일로 저장하지 않습니다. 파일 손실을 막고 근무 중 전사를 가능하게 합니다."
+          hint="긴 근무를 조각으로 나눠 저장합니다. 중간에 끊겨도 그 조각만 잃고, 근무 중에도 완성된 조각부터 전사할 수 있습니다."
         />
         <Divider />
         <PresetRow
@@ -486,117 +645,6 @@ export default function Settings() {
         />
         <Divider />
         <Row label="현재 사용 중" value={`${storageMb} MB / ${policy.maxStorageMb} MB`} />
-      </Card>
-
-      {/* 근무지 지오펜스 */}
-      <Card>
-        <GroupHead icon="location-outline" color="#2E9AA8" title="근무지에서 자동 기록" />
-        <Small>
-          
-  병원 반경 진입 시 기록을 시작하고 벗어나면 종료합니다. 출퇴근 전후 오버타임까지 실제 체류 시간을 기록합니다. 근무일에만 작동하여 오프에는 기록되지 않으며 위치 정보는 외부로 유출되지 않습니다.
-</Small>
-        <Divider />
-        {workplace ? (
-          <>
-            <Row
-              label={workplace.label || "근무지"}
-              value={`반경 ${workplace.radius}m · 해제`}
-              onPress={async () => {
-                await clearWorkplace();
-                setWorkplace(null);
-                setGeoOn(false);
-              }}
-            />
-            <Small>누르면 해제됩니다.</Small>
-            <Button
-              label="지도에서 위치 확인 (카카오맵)"
-              onPress={() =>
-                void Linking.openURL(
-                  `https://map.kakao.com/link/map/${encodeURIComponent(workplace.label || "근무지")},${workplace.latitude},${workplace.longitude}`,
-                )
-              }
-            />
-          </>
-        ) : (
-          <>
-            <Small muted={false}>병원 이름으로 찾기</Small>
-            <View style={{ flexDirection: "row", gap: space.sm }}>
-              <TextInput
-                value={hospitalQuery}
-                onChangeText={setHospitalQuery}
-                placeholder="예: 서울아산병원"
-                placeholderTextColor={t.textMuted}
-                style={{
-                  flex: 1,
-                  color: t.text,
-                  backgroundColor: t.surfaceAlt,
-                  borderRadius: radius.md,
-                  paddingHorizontal: space.md,
-                  minHeight: 48,
-                  fontSize: 15,
-                }}
-              />
-              <Button
-                label="검색"
-                tone="primary"
-                onPress={async () => {
-                  try {
-                    const r = await searchWorkplace(hospitalQuery);
-                    setHospitalHits(r.hits);
-                    setGeoMsg(
-                      r.hits.length === 0
-                        ? r.source === "kakao"
-                          ? "찾지 못했습니다. 지점명을 빼거나 철자를 바꿔 보십시오."
-                          : "찾지 못했습니다. 정식 명칭(요양기관명)으로 다시 시도해 보십시오."
-                        : r.source === "kakao"
-                          ? "카카오 지도에서 찾았습니다."
-                          : "심평원 병원 목록에서 찾았습니다.",
-                    );
-                  } catch (e) {
-                    setGeoMsg(e instanceof Error ? e.message : "검색에 실패했습니다.");
-                  }
-                }}
-              />
-            </View>
-            {hospitalHits.map((h) => (
-              <Row
-                key={`${h.latitude},${h.longitude}`}
-                label={h.name}
-                value="이곳으로"
-                onPress={async () => {
-                  const wp = await setWorkplacePlace(h);
-                  setWorkplace(wp);
-                  setHospitalHits([]);
-                  setHospitalQuery("");
-                  setGeoMsg(null);
-                }}
-              />
-            ))}
-            <Small>
-              카카오 지도와 심평원 병원 목록에서 찾습니다. 검색 키는 앱에 내장되어 있어
-              따로 넣을 것이 없습니다. 검색어만 나가고 내 위치는 보내지 않습니다.
-            </Small>
-            <Button
-              label="지금 있는 곳을 근무지로"
-              onPress={async () => {
-                const wp = await setWorkplaceHere();
-                if (wp) {
-                  setWorkplace(wp);
-                  setGeoMsg(null);
-                } else {
-                  setGeoMsg("위치 권한이 없어 지정하지 못했습니다.");
-                }
-              }}
-            />
-          </>
-        )}
-        <Divider />
-        <Small>
-          {Platform.OS === "android"
-            ? "근무지 감지를 쓰려면 위 '자동 기록' 카드에서 '근무지'를 고르고, 위치 권한을 '항상 허용'으로 설정하십시오. Android 14 이상에서는 백그라운드 기록 제한으로 앱 실행 시 시작될 수 있습니다."
-            : "근무지 감지를 쓰려면 위 '자동 기록' 카드에서 '근무지'를 고르고, 위치 권한을 '항상 허용'으로 변경하십시오."}
-        </Small>
-        {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
       </Card>
 
       {/* 조용함 */}

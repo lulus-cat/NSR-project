@@ -120,24 +120,36 @@ export function createOnDeviceProvider(
     async transcribe(fileUri, options) {
       const startedAt = Date.now();
       if (!context) {
-        // 선택적 네이티브 의존성이다. 모듈 이름을 변수로 두어 번들러와 타입체커가
-        // 정적으로 해석하지 않게 한다 (설치되지 않은 환경에서도 빌드되어야 한다).
-        const moduleName = "whisper.rn";
-        let mod: { initWhisper?: (o: { filePath: string }) => Promise<typeof context> };
-        try {
-          mod = (await import(moduleName)) as never;
-        } catch {
-          throw new Error(
-            "온디바이스 전사에는 whisper.rn 네이티브 모듈이 필요합니다. " +
-              "`npx expo install whisper.rn` 실행 후 개발 빌드를 생성하십시오." +
-              "설정에서 자체 서버 전사로 전환할 수도 있습니다.",
-          );
-        }
-        if (!mod.initWhisper) throw new Error("whisper.rn 초기화 함수를 찾을 수 없습니다.");
-        context = await mod.initWhisper({ filePath: modelPath });
+        // 경로가 /index 인 이유: whisper.rn 0.7.3 의 exports 맵에 "." 항목이 없어
+        // 맨이름("whisper.rn")은 해석에 실패한다. "./*" 패턴에는 걸린다.
+        const mod = await import("whisper.rn/index");
+        context = (await mod.initWhisper({
+          filePath: modelPath.replace(/^file:\/\//, ""),
+        })) as unknown as typeof context;
       }
 
-      const { promise } = context!.transcribe(fileUri, {
+      // whisper.cpp 는 WAV(PCM16)만 읽는다. 녹음은 m4a 로 나오므로
+      // 전사 직전에 OS 코덱으로 16kHz WAV 를 만들고, 끝나면 지운다.
+      let inputUri = fileUri;
+      let tempWav: InstanceType<typeof import("expo-file-system").File> | null = null;
+      if (!/\.wav$/i.test(fileUri.split("?")[0])) {
+        const { audioDecodeAvailable, decodeToWav16k } = await import(
+          "../../modules/nsr-audio-decode"
+        );
+        if (!audioDecodeAvailable()) {
+          throw new Error(
+            "이 기기에서는 기록 파일을 기기 내에서 변환할 수 없습니다. " +
+              "설정 → 전사에서 노트북·서버 전사를 사용하십시오.",
+          );
+        }
+        const { File, Paths } = await import("expo-file-system");
+        tempWav = new File(Paths.cache, `nsr-asr-${Date.now()}.wav`);
+        await decodeToWav16k(fileUri, tempWav.uri);
+        inputUri = tempWav.uri;
+      }
+
+      try {
+      const { promise } = context!.transcribe(inputUri, {
         language: options.language,
         // 디코더 앞 문맥. 도메인 용어의 사전확률을 올린다 (224토큰 상한).
         prompt: options.initialPrompt,
@@ -165,6 +177,14 @@ export function createOnDeviceProvider(
       });
 
       return { segments, durationSec };
+      } finally {
+        // 변환한 WAV 는 원본의 4배 부피다. 남겨 두지 않는다.
+        try {
+          tempWav?.delete();
+        } catch {
+          // 못 지워도 전사 결과는 유효하다. 다음 정리 때 캐시가 비워진다.
+        }
+      }
     },
   };
 }

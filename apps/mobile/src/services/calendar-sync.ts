@@ -9,7 +9,10 @@
  * 그 캘린더의 해당 월 일정을 지우고 새로 쓴다 — 수정보다 단순하고,
  * 남의 일정을 건드릴 일이 없다.
  */
-import * as Calendar from "expo-calendar";
+// SDK 57 부터 expo-calendar 의 기본 export 는 새 객체지향 API 다. 옛 함수 API
+// (requestCalendarPermissionsAsync 등)는 기본 경로에서 부르면 **거부**된다 —
+// 실기기에서 '불러오기'가 deprecated 오류로 죽던 원인. legacy 경로가 옛 API 다.
+import * as Calendar from "expo-calendar/legacy";
 import { createSchedule, parseDutyString, resolveAll, toDateString, type DutyEntry } from "@nsr/core";
 
 const CAL_NAME = "NSR 듀티";

@@ -4,7 +4,7 @@ import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { AppProvider, useApp } from "../src/state/AppContext";
-import { Body, Button, Card, Screen } from "../src/components/ui";
+import { Button } from "../src/components/ui";
 import { useTheme } from "../src/theme";
 
 /**
@@ -23,16 +23,17 @@ function LaunchOverlay({ ready }: { ready: boolean }) {
   const [minDone, setMinDone] = useState(false);
 
   useEffect(() => {
+    // 1.2초 — 로딩 가림막이 아니라 인사다. 너무 짧으면 흐림→명료가 안 읽힌다.
     Animated.parallel([
-      Animated.timing(blurOpacity, { toValue: 0, duration: 700, useNativeDriver: true }),
-      Animated.timing(scale, { toValue: 1, duration: 700, useNativeDriver: true }),
-      Animated.timing(textOpacity, { toValue: 1, duration: 700, delay: 120, useNativeDriver: true }),
+      Animated.timing(blurOpacity, { toValue: 0, duration: 1200, useNativeDriver: true }),
+      Animated.timing(scale, { toValue: 1, duration: 1200, useNativeDriver: true }),
+      Animated.timing(textOpacity, { toValue: 1, duration: 1100, delay: 250, useNativeDriver: true }),
     ]).start(() => setMinDone(true));
   }, [blurOpacity, scale, textOpacity]);
 
   useEffect(() => {
     if (!ready || !minDone) return;
-    Animated.timing(fade, { toValue: 0, duration: 200, useNativeDriver: true }).start(() =>
+    Animated.timing(fade, { toValue: 0, duration: 280, useNativeDriver: true }).start(() =>
       setGone(true),
     );
   }, [ready, minDone, fade]);
@@ -95,16 +96,29 @@ function Gate() {
   }
 
   if (app.locked) {
+    // 잠금화면은 실행 로딩과 같은 얼굴이다 — 가운데 로고, 아래 단추 하나.
+    // "잠겨 있습니다" 같은 상태 설명 문장은 두지 않는다.
     return (
-      <Screen title="잠겨 있습니다">
-        <Card>
-          <Body muted>
-            
-  본인 확인 후 사용할 수 있습니다.
-</Body>
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: "#131312",
+          alignItems: "center",
+          justifyContent: "center",
+          gap: 16,
+        }}
+      >
+        <Animated.Image
+          source={require("../assets/splash-icon.png")}
+          style={{ width: 128, height: 128 }}
+        />
+        <Text style={{ color: "#EAE7E1", fontSize: 28, fontWeight: "800", letterSpacing: 6 }}>
+          NSR
+        </Text>
+        <View style={{ width: 200, marginTop: 24 }}>
           <Button label="잠금 해제" tone="primary" onPress={() => void app.unlock()} />
-        </Card>
-      </Screen>
+        </View>
+      </View>
     );
   }
 

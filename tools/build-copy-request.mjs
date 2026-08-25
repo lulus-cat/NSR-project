@@ -6,7 +6,9 @@ const items = JSON.parse(fs.readFileSync(`${P}/ui-strings.json`, "utf8"));
 const SCREENS = {
   "apps/mobile/app/(tabs)/index.tsx": "홈 (출근 전 브리핑)",
   "apps/mobile/app/(tabs)/duty.tsx": "듀티표 (월 달력)",
-  "apps/mobile/app/(tabs)/care.tsx": "마음 (근무 환경을 체온으로)",
+  "apps/mobile/app/(tabs)/care.tsx": "채팅 (마음 돌봄 + 학습 대화)",
+  "apps/mobile/app/notes.tsx": "노트 목록",
+  "apps/mobile/app/note/[id].tsx": "노트 편집기",
   "apps/mobile/app/(tabs)/study.tsx": "학습 (암기카드 복습)",
   "apps/mobile/app/(tabs)/glossary.tsx": "용어 (간호 용어·은어 사전)",
   "apps/mobile/app/(tabs)/settings.tsx": "설정",

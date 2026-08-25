@@ -23,14 +23,15 @@ import {
   type ResolvedShift,
 } from "@nsr/core";
 import {
+  Badge,
   Body,
   Card,
   DashedDivider,
   Enter,
-  GaugeBar,
   HeaderScreen,
   Small,
 } from "../../src/components/ui";
+import { Thermometer } from "../../src/components/thermometer";
 import { useApp } from "../../src/state/AppContext";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
@@ -300,6 +301,7 @@ export default function Home() {
   const [recent, setRecent] = useState<ResolvedShift[]>([]);
   const [dueCount, setDueCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
+  const [pendingShiftId, setPendingShiftId] = useState<string | null>(null);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [needsModel, setNeedsModel] = useState(false);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
@@ -332,7 +334,10 @@ export default function Home() {
     );
 
     setDueCount(dueStates(await listReviewStates(), Date.now(), 9999).length);
-    setPendingCount((await pendingTranscriptions()).length);
+    const pending = await pendingTranscriptions();
+    setPendingCount(pending.length);
+    // 전사 실행 화면으로 가는 문 — 미전사 기록이 실제로 있는 근무를 가리킨다.
+    setPendingShiftId(pending[0]?.shift_id ?? null);
     const scores = await listTaeumScores(30);
     const map = new Map<string, ReturnType<typeof taeumTemperature>>();
     for (const sc of scores) {
@@ -362,6 +367,12 @@ export default function Home() {
   const today = toDateString(Date.now());
   const quote = dailyQuote(today);
   const latestTemp = recent.map((s) => temps.get(s.date)).find(Boolean) ?? null;
+  const tempAvg =
+    temps.size > 0
+      ? Math.round(
+          ([...temps.values()].reduce((a, v) => a + v.celsius, 0) / temps.size) * 10,
+        ) / 10
+      : null;
   const shiftDone = todayShift ? Date.now() > todayShift.endAt : false;
   const overtimeToday = todayShift
     ? Math.round(
@@ -434,26 +445,39 @@ export default function Home() {
     },
     {
       key: "temp",
-      label: "불타는 지수",
+      label: "근무 체온",
       alert: latestTemp ? latestTemp.tone === "warn" || latestTemp.tone === "danger" : false,
       body: (
-        <>
-          <BriefRow
-            icon="thermometer-outline"
-            label={latestTemp ? latestTemp.label : "기록 없음"}
-            value={latestTemp ? `${latestTemp.celsius}°C` : "—"}
-            valueColor={latestTemp ? toneColor[latestTemp.tone] : undefined}
-            onPress={() => router.push("/care")}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.lg }}>
+          <Thermometer
+            celsius={latestTemp?.celsius ?? null}
+            color={latestTemp ? toneColor[latestTemp.tone] : t.textMuted}
           />
-          {latestTemp ? (
-            <GaugeBar
-              ratio={(latestTemp.celsius - 35.5) / 26.5}
-              color={toneColor[latestTemp.tone]}
-            />
-          ) : (
-            <Small>근무를 기록하고 전사하면 병동의 온도가 여기 올라옵니다.</Small>
-          )}
-        </>
+          <View style={{ flex: 1, gap: space.xs }}>
+            <Small>최근 근무 체온</Small>
+            <Text
+              style={[
+                TABULAR,
+                {
+                  fontSize: 40,
+                  lineHeight: 46,
+                  fontWeight: "800",
+                  color: latestTemp ? toneColor[latestTemp.tone] : t.textMuted,
+                },
+              ]}
+            >
+              {latestTemp ? `${latestTemp.celsius.toFixed(1)}°` : "—"}
+            </Text>
+            {latestTemp ? (
+              <Badge text={latestTemp.label} tone={latestTemp.tone} />
+            ) : (
+              <Small>근무를 기록하고 전사하면 병동의 온도가 여기 올라옵니다.</Small>
+            )}
+            {tempAvg !== null ? (
+              <Small>최근 {temps.size}근무 평균 {tempAvg}°</Small>
+            ) : null}
+          </View>
+        </View>
       ),
     },
     {
@@ -465,13 +489,14 @@ export default function Home() {
           <BriefRow
             icon="document-text-outline"
             label="전사할 기록"
-            value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
+            value={pendingCount > 0 ? `${pendingCount}건 · 전사하기` : "없음"}
             valueColor={pendingCount > 0 ? t.warn : undefined}
-            onPress={() =>
-              todayShift
-                ? router.push(`/shift/${encodeURIComponent(todayShift.id)}`)
-                : router.push("/study")
-            }
+            onPress={() => {
+              // 미전사 기록이 있는 근무로 바로 간다 — 거기 '전사하기' 버튼이 있다.
+              const target = pendingShiftId ?? todayShift?.id ?? recent[0]?.id;
+              if (target) router.push(`/shift/${encodeURIComponent(target)}`);
+              else router.push("/duty");
+            }}
           />
           {needsModel ? (
             <>

@@ -219,11 +219,15 @@ export async function downloadModel(
     if (controller.signal.aborted) {
       return { ok: false, sizeMb: 0, canceled: true };
     }
-    return {
-      ok: false,
-      sizeMb: 0,
-      error: error instanceof Error ? error.message : "다운로드에 실패했습니다.",
-    };
+    const raw = error instanceof Error ? error.message : "다운로드에 실패했습니다.";
+    // 원시 오류("FileSystem.downloadFileAsync has been rejected ... 404")는
+    // 사람이 읽을 문장이 아니다. 흔한 경우만 우리말로 옮긴다.
+    const friendly = /\b404\b/.test(raw)
+      ? "서버에 파일이 없습니다 (404). 모델이 아직 준비 중일 수 있으니 잠시 후 다시 시도해 보십시오."
+      : /Network|ENOTFOUND|ECONN|timeout/i.test(raw)
+        ? "네트워크 연결에 실패했습니다. Wi-Fi 상태를 확인하고 다시 시도해 보십시오."
+        : raw;
+    return { ok: false, sizeMb: 0, error: friendly };
   } finally {
     inFlight.delete(model.id);
   }

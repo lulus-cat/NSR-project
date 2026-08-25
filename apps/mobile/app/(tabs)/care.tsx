@@ -3,7 +3,6 @@ import {
   Alert,
   Animated,
   Easing,
-  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -16,8 +15,8 @@ import { useRouter } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { taeumTemperature } from "@nsr/core";
-import { Badge, Body, Button, Card, Enter, GaugeBar, Heading, Small } from "../../src/components/ui";
-import { CONTENT_MAX, TABULAR, radius, space, type, useTheme } from "../../src/theme";
+import { Body, Button, Card, Enter, Heading, Small } from "../../src/components/ui";
+import { CONTENT_MAX, radius, space, type, useTheme } from "../../src/theme";
 import {
   getSetting,
   getShiftReportMarkdown,
@@ -29,96 +28,17 @@ import {
 import { careChat, llmReady, type ChatTurn } from "../../src/services/llm";
 
 /**
- * 마음 — 왼쪽엔 커다란 체온계, 그 아래는 상담 대화.
+ * 채팅 — 학습과 마음 돌봄을 한 대화에서.
  *
- * 숫자 점수는 감각이 없다. 체온은 간호사의 직업 감각 그 자체다.
- * 그래서 태움 지수를 여기서는 처음부터 끝까지 체온으로만 말하고,
- * 수은주가 실제로 차오르는 걸 보여준다.
+ * 근무 체온(태움 지표)은 홈 서류철로 옮겼다. 이 화면은 대화가 전부다.
+ * 최근 체온과 학습 자료는 화면에 그리지 않아도 대화 맥락에는 실린다.
  */
-
-interface TempRecord {
-  shiftId: string;
-  date: string;
-  temp: ReturnType<typeof taeumTemperature>;
-}
 
 interface Msg extends ChatTurn {
   at: number;
 }
 
 const CHAT_SETTING = "care.chat";
-
-/** 표시 눈금 범위. 35.5°가 바닥, 42°가 꼭대기 — 그 위는 가득 찬 채로 라벨이 말한다. */
-const SCALE_MIN = 35.5;
-const SCALE_MAX = 42;
-
-/**
- * 수은 체온계 — 유리관·눈금·광택·그림자는 미리 그린 PNG 오버레이이고,
- * 앱은 그 아래에서 수은 기둥과 전구만 그려 색·높이를 움직인다.
- * View 로 유리를 흉내내던 이전 판보다 훨씬 실물답다.
- *
- * 좌표 계약 (생성기: scratchpad/gen-thermo.mjs 와 짝):
- *   기둥 left 40, width 20, bottom 45, height 16→145 (f=0→1)
- *   전구 중심 (50, 180), 지름 44
- *   눈금은 같은 식 h(f) = 16 + 129f 로 이미지에 박혀 있어 수은 꼭대기와 정확히 만난다.
- */
-function Thermometer({
-  celsius,
-  color,
-}: {
-  celsius: number | null;
-  color: string;
-}) {
-  const f =
-    celsius === null
-      ? 0
-      : Math.min(1, Math.max(0, (celsius - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)));
-  const v = useRef(new Animated.Value(0)).current;
-  useEffect(() => {
-    Animated.spring(v, {
-      toValue: f,
-      friction: 10,
-      tension: 26,
-      // height 애니메이션이라 JS 드라이버. 화면당 한 번 차오르는 것이 전부다.
-      useNativeDriver: false,
-    }).start();
-  }, [v, f]);
-
-  return (
-    <View style={{ width: 110, height: 210 }}>
-      {/* 수은 기둥 */}
-      <Animated.View
-        style={{
-          position: "absolute",
-          left: 40,
-          width: 20,
-          bottom: 45,
-          height: v.interpolate({ inputRange: [0, 1], outputRange: [16, 145] }),
-          borderTopLeftRadius: 10,
-          borderTopRightRadius: 10,
-          backgroundColor: color,
-        }}
-      />
-      {/* 수은 저장고 */}
-      <View
-        style={{
-          position: "absolute",
-          left: 28,
-          top: 158,
-          width: 44,
-          height: 44,
-          borderRadius: 22,
-          backgroundColor: color,
-        }}
-      />
-      {/* 유리 오버레이 */}
-      <Image
-        source={require("../../assets/thermometer-glass.png")}
-        style={{ position: "absolute", width: 110, height: 210 }}
-      />
-    </View>
-  );
-}
 
 /** 답을 기다리는 동안 숨 쉬는 점 세 개. */
 function TypingDots() {
@@ -206,8 +126,7 @@ const QUIZ_PROMPT = "내 암기카드와 최근 근무 보고서로 퀴즈를 �
 export default function Care() {
   const t = useTheme();
   const router = useRouter();
-  const [records, setRecords] = useState<TempRecord[]>([]);
-  const [showRecords, setShowRecords] = useState(false);
+  const [latestTemp, setLatestTemp] = useState<ReturnType<typeof taeumTemperature> | null>(null);
   const [msgs, setMsgs] = useState<Msg[]>([]);
   const [input, setInput] = useState("");
   const [busy, setBusy] = useState(false);
@@ -217,14 +136,9 @@ export default function Care() {
   const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
-    const scores = await listTaeumScores(30);
-    setRecords(
-      scores.map((s) => ({
-        shiftId: s.shiftId,
-        date: s.shiftId.split(":")[0],
-        temp: taeumTemperature(s.score),
-      })),
-    );
+    // 체온 게이지는 홈에 있다. 여기서는 대화 맥락에 실을 최근 값만 본다.
+    const scores = await listTaeumScores(1);
+    setLatestTemp(scores[0] ? taeumTemperature(scores[0].score) : null);
     setMsgs(await getSetting<Msg[]>(CHAT_SETTING, []));
     setReady(await llmReady());
 
@@ -247,16 +161,6 @@ export default function Care() {
     void load();
   }, [load]);
 
-  const latest = records[0] ?? null;
-  const feverish = records.filter((r) => r.temp.tone === "danger" || r.temp.tone === "warn");
-  const avg =
-    records.length > 0
-      ? Math.round((records.reduce((a, r) => a + r.temp.celsius, 0) / records.length) * 10) / 10
-      : null;
-
-  const toneColor = { ok: t.ok, muted: t.textMuted, warn: t.warn, danger: t.danger } as const;
-  const mercury = latest ? toneColor[latest.temp.tone] : t.textMuted;
-
   const send = useCallback(
     async (raw?: string) => {
       const text = (raw ?? input).trim();
@@ -270,7 +174,7 @@ export default function Care() {
         const reply = await careChat(
           next.map((m) => ({ role: m.role, text: m.text })),
           {
-            temp: latest ? `${latest.temp.celsius}°C (${latest.temp.label})` : undefined,
+            temp: latestTemp ? `${latestTemp.celsius}°C (${latestTemp.label})` : undefined,
             study: studyCtx ?? undefined,
           },
         );
@@ -284,7 +188,7 @@ export default function Care() {
         setBusy(false);
       }
     },
-    [busy, input, latest, msgs],
+    [busy, input, latestTemp, msgs],
   );
 
   const canSend = input.trim().length > 0 && !busy && (ready?.ok ?? false);
@@ -306,7 +210,7 @@ export default function Care() {
           }}
         >
           <Text style={{ fontSize: 28, lineHeight: 36, fontWeight: "700", color: t.text }}>
-            마음 채팅
+            채팅
           </Text>
           <View style={{ flex: 1 }} />
           {ready?.ok && studyCtx ? (
@@ -342,97 +246,6 @@ export default function Care() {
           ) : null}
         </View>
 
-        {/* 체온계 패널 */}
-        <View style={{ paddingHorizontal: space.lg }}>
-          <Enter index={0}>
-            <Card>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: space.md }}>
-                <Thermometer celsius={latest ? latest.temp.celsius : null} color={mercury} />
-                <View style={{ flex: 1, gap: space.xs }}>
-                  <Small>최근 근무 체온</Small>
-                  <Text
-                    style={[
-                      TABULAR,
-                      {
-                        fontSize: 44,
-                        lineHeight: 50,
-                        fontWeight: "800",
-                        color: latest ? mercury : t.textMuted,
-                      },
-                    ]}
-                  >
-                    {latest ? `${latest.temp.celsius.toFixed(1)}°` : "—"}
-                  </Text>
-                  {latest ? (
-                    <Badge text={latest.temp.label} tone={latest.temp.tone} />
-                  ) : (
-                    <Small>근무를 기록하고 전사하면 온도가 올라옵니다.</Small>
-                  )}
-                  <Small>
-                    {avg !== null ? `최근 30근무 평균 ${avg}°` : "아직 평균이 없습니다"}
-                  </Small>
-                  {feverish.length > 0 ? (
-                    <Small muted={false}>열이 있었던 근무 {feverish.length}번</Small>
-                  ) : null}
-                  {records.length > 0 ? (
-                    <Pressable
-                      accessibilityRole="button"
-                      onPress={() => setShowRecords((s) => !s)}
-                      style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1 })}
-                    >
-                      <Text style={[type.small, { color: t.accent, fontWeight: "700" }]}>
-                        {showRecords ? "기록 접기" : `기록 ${records.length}개 보기`}
-                      </Text>
-                    </Pressable>
-                  ) : null}
-                </View>
-              </View>
-            </Card>
-          </Enter>
-
-          {showRecords ? (
-            <Enter index={0}>
-              <Card style={{ marginTop: space.sm }}>
-                {latest ? <Small muted={false}>{latest.temp.description}</Small> : null}
-                {records.slice(0, 8).map((r) => (
-                  <Pressable
-                    key={r.shiftId}
-                    accessibilityRole="button"
-                    onPress={() => router.push(`/shift/${encodeURIComponent(r.shiftId)}`)}
-                    style={({ pressed }) => ({
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: space.md,
-                      minHeight: 36,
-                      opacity: pressed ? 0.7 : 1,
-                    })}
-                  >
-                    <Text style={[type.small, TABULAR, { color: t.text, width: 74 }]}>
-                      {r.date.replace(/-/g, ".")}
-                    </Text>
-                    <View style={{ flex: 1 }}>
-                      <GaugeBar
-                        ratio={(r.temp.celsius - SCALE_MIN) / (SCALE_MAX - SCALE_MIN)}
-                        color={toneColor[r.temp.tone]}
-                      />
-                    </View>
-                    <Text
-                      style={[
-                        type.small,
-                        TABULAR,
-                        { color: toneColor[r.temp.tone], fontWeight: "700", width: 44, textAlign: "right" },
-                      ]}
-                    >
-                      {r.temp.celsius.toFixed(1)}°
-                    </Text>
-                  </Pressable>
-                ))}
-                <Small>36.5° 정상 · 37.6° 발열 · 38.6° 고열 · 42°를 넘으면 측정 한계</Small>
-              </Card>
-            </Enter>
-          ) : null}
-        </View>
-
         {/* 대화 */}
         <ScrollView
           ref={scrollRef}
@@ -459,8 +272,9 @@ export default function Care() {
                 <Card>
                   <Heading>오늘 어땠습니까</Heading>
                   <Body muted>
-                    병동에서 있었던 일, 서운했던 말, 무엇이든 좋습니다. 대화는 이 화면에만
-                    남습니다.
+                    병동에서 있었던 일도, 오늘 배운 것도 좋습니다. 힘든 이야기는 들어주고,
+                    공부 질문에는 선배처럼 답하고, 암기카드로 퀴즈도 냅니다. 대화는 이
+                    화면에만 남습니다.
                   </Body>
                   <Small>
                     메시지는 설정한 AI 공급자로 전송되며, 이름 같은 민감 정보는 자동으로 가리고

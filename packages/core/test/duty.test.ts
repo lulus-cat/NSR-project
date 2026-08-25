@@ -106,6 +106,11 @@ describe("자동 녹음 구간", () => {
     expect(w.endAt).toBe(toEpoch("2026-08-24", "15:00") + 40 * 60000);
   });
 
+  it("음수 lead 는 근무 시작 뒤에 기록을 시작한다", () => {
+    const w = recordingWindows(schedule, { ...policy, leadMinutes: -30 })[0];
+    expect(w.startAt).toBe(toEpoch("2026-08-24", "07:00") + 30 * 60000);
+  });
+
   it("지금이 녹음 시간인지 판정한다", () => {
     const windows = recordingWindows(schedule, policy);
     expect(activeWindowAt(windows, toEpoch("2026-08-24", "09:00"))?.code).toBe("D");
