@@ -1,19 +1,20 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, TextInput, View } from "react-native";
+import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   DEFAULT_TEMPLATES,
   createSchedule,
-  parseDutyString,
   resolveAll,
   taeumTemperature,
   toDateString,
   type DutyEntry,
   type ShiftCode,
 } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, Heading, Row, Small, HeaderScreen } from "../../src/components/ui";
-import { radius, space, type, useTheme, TOUCH_MIN } from "../../src/theme";
+import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   deleteDutyEntry,
   listDutyEntries,
@@ -21,16 +22,16 @@ import {
   upsertDutyEntries,
 } from "../../src/db";
 import { useApp } from "../../src/state/AppContext";
+import { exportMonthToCalendar } from "../../src/services/calendar-sync";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
 
-/** 달력 셀에 들어가는 한 글자. 두 글자는 셀에서 넘친다. */
-const SHORT: Record<ShiftCode, string> = {
-  D: "데", E: "이", N: "나", OFF: "오",
-  ADM: "상", SPC: "스", EDU: "교", ANNUAL: "연", SICK: "병", OTHER: "·",
+/** 달력 칩에 쓰는 짧은 이름. 셀 폭 안에서 읽혀야 한다. */
+const CHIP: Record<ShiftCode, string> = {
+  D: "데이", E: "이브닝", N: "나이트", OFF: "오프",
+  ADM: "상근", SPC: "스페셜", EDU: "교육", ANNUAL: "연차", SICK: "병가", OTHER: "기타",
 };
 
-/** 달력에서 바로 찍을 코드. 첫 줄이 3교대, 둘째 줄이 나머지. */
 const CODE_ROWS: ShiftCode[][] = [
   ["D", "E", "N", "OFF"],
   ["ADM", "SPC", "ANNUAL", "EDU", "SICK"],
@@ -41,7 +42,6 @@ function formatClock(epochMs: number): string {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
-/** "2026-08-24" 에 일수를 더한다. 자동으로 다음날로 넘어가는 데 쓴다. */
 function addDays(date: string, days: number): string {
   const [y, m, d] = date.split("-").map(Number);
   return toDateString(new Date(y, m - 1, d + days).getTime());
@@ -58,14 +58,10 @@ export default function Duty() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth(), 1);
   });
-  const [pasteOpen, setPasteOpen] = useState(false);
-  const [pasteText, setPasteText] = useState("");
-  const [startDate, setStartDate] = useState(toDateString(Date.now()));
-  const [error, setError] = useState<string | null>(null);
+  const [syncMsg, setSyncMsg] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setEntries(await listDutyEntries());
-    // 근무 기록의 태움 점수를 체온으로 바꿔 날짜에 얹는다.
     const scores = await listTaeumScores(120);
     const map = new Map<string, ReturnType<typeof taeumTemperature>>();
     for (const s of scores) {
@@ -89,8 +85,7 @@ export default function Duty() {
   const setCode = useCallback(
     async (date: string, code: ShiftCode) => {
       await upsertDutyEntries([{ date, code }]);
-      // 듀티표는 한 달을 연달아 찍는다. 찍자마자 다음날로 넘어가야
-      // 달력을 다시 누를 필요 없이 쭉 입력할 수 있다.
+      // 듀티표는 한 달을 연달아 찍는다. 찍자마자 다음날로.
       setSelected(addDays(date, 1));
       await load();
       await app.refresh();
@@ -106,20 +101,6 @@ export default function Duty() {
     },
     [app, load],
   );
-
-  const applyPaste = useCallback(async () => {
-    setError(null);
-    try {
-      const parsed = parseDutyString(startDate, pasteText);
-      if (parsed.length === 0) return;
-      await upsertDutyEntries(parsed);
-      setPasteText("");
-      await load();
-      await app.refresh();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "붙여넣기를 읽지 못했습니다.");
-    }
-  }, [app, load, pasteText, startDate]);
 
   // ── 달력 그리드 ──
   const year = monthAnchor.getFullYear();
@@ -146,47 +127,102 @@ export default function Duty() {
 
   const toneColor = { ok: t.ok, muted: t.textMuted, warn: t.warn, danger: t.danger } as const;
 
+  // ── 이번 달 통계 ──
+  const monthPrefix = `${year}-${String(month + 1).padStart(2, "0")}`;
+  const monthEntries = entries.filter((e) => e.date.startsWith(monthPrefix));
+  const counts = new Map<ShiftCode, number>();
+  for (const e of monthEntries) counts.set(e.code, (counts.get(e.code) ?? 0) + 1);
+  const monthShifts = [...resolved.values()].filter((s) => s.date.startsWith(monthPrefix));
+  const monthHours = Math.round(monthShifts.reduce((a, s) => a + (s.endAt - s.startAt), 0) / 360000) / 10;
+  const nightCount = counts.get("N") ?? 0;
+  const weekendWork = monthShifts.filter((s) => {
+    const dow = new Date(s.startAt).getDay();
+    return dow === 0 || dow === 6;
+  }).length;
+  // 최장 연속 근무
+  let longestRun = 0;
+  {
+    const workDates = new Set(monthEntries.filter((e) => DEFAULT_TEMPLATES[e.code]?.isWorking).map((e) => e.date));
+    let run = 0;
+    for (let d = 1; d <= daysInMonth; d++) {
+      const ds = toDateString(new Date(year, month, d).getTime());
+      run = workDates.has(ds) ? run + 1 : 0;
+      longestRun = Math.max(longestRun, run);
+    }
+  }
+  const workDayCount = monthEntries.filter((e) => DEFAULT_TEMPLATES[e.code]?.isWorking).length;
+
   const selEntry = byDate.get(selected);
   const selShift = resolved.get(selected);
   const selTemp = temps.get(selected);
-  const workDays = entries.filter((e) => DEFAULT_TEMPLATES[e.code]?.isWorking).length;
+
+  const statOrder: ShiftCode[] = ["D", "E", "N", "ADM", "SPC", "EDU", "ANNUAL", "SICK", "OFF"];
+  const statTotal = monthEntries.length || 1;
 
   return (
-    <HeaderScreen
-      title="듀티표"
-      heroLabel="등록된 근무"
-      hero={`${workDays}일`}
-      rows={[
-        { label: "오프·연차", value: `${entries.length - workDays}일` },
-        { label: "전체 입력", value: `${entries.length}일` },
-      ]}
-    >
-      <Card>
-        {/* 월 이동 */}
-        <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+    <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
+      <ScrollView contentContainerStyle={{ paddingBottom: space.bottom }}>
+        {/* 머리 — 삼성 캘린더처럼 월이 곧 제목이다 */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: space.lg,
+            paddingTop: space.md,
+            paddingBottom: space.sm,
+            gap: space.sm,
+          }}
+        >
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="지난달"
             onPress={() => setMonthAnchor(new Date(year, month - 1, 1))}
-            style={{ minWidth: TOUCH_MIN, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
+            style={{ minWidth: 40, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
           >
-            <Text style={[type.heading, { color: t.textMuted }]}>‹</Text>
+            <Ionicons name="chevron-back" size={20} color={t.textMuted} />
           </Pressable>
-          <Text style={[type.heading, { color: t.text }]}>
-            {year}년 {month + 1}월
+          <Text style={{ fontSize: 28, lineHeight: 36, fontWeight: "700", color: t.text }}>
+            {month + 1}월
           </Text>
+          {year !== new Date().getFullYear() ? (
+            <Text style={[type.small, { color: t.textMuted }]}>{year}</Text>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="다음달"
             onPress={() => setMonthAnchor(new Date(year, month + 1, 1))}
-            style={{ minWidth: TOUCH_MIN, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
+            style={{ minWidth: 40, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
           >
-            <Text style={[type.heading, { color: t.textMuted }]}>›</Text>
+            <Ionicons name="chevron-forward" size={20} color={t.textMuted} />
+          </Pressable>
+          <View style={{ flex: 1 }} />
+          {/* 오늘로 — 삼성처럼 날짜 숫자가 버튼이다 */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="오늘로 이동"
+            onPress={() => {
+              const now = new Date();
+              setMonthAnchor(new Date(now.getFullYear(), now.getMonth(), 1));
+              setSelected(toDateString(Date.now()));
+            }}
+            style={{
+              width: 36,
+              height: 36,
+              borderRadius: 10,
+              borderWidth: 1.5,
+              borderColor: t.textMuted,
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Text style={[type.small, TABULAR, { color: t.text, fontWeight: "700" }]}>
+              {new Date().getDate()}
+            </Text>
           </Pressable>
         </View>
 
         {/* 요일 */}
-        <View style={{ flexDirection: "row" }}>
+        <View style={{ flexDirection: "row", paddingHorizontal: space.xs }}>
           {WEEKDAYS.map((w, i) => (
             <Text
               key={w}
@@ -195,7 +231,7 @@ export default function Duty() {
                 {
                   flex: 1,
                   textAlign: "center",
-                  color: i === 0 ? t.danger : i === 6 ? t.accent : t.textMuted,
+                  color: i === 0 ? t.danger : i === 6 ? t.night : t.textMuted,
                 },
               ]}
             >
@@ -204,212 +240,260 @@ export default function Duty() {
           ))}
         </View>
 
-        {/* 날짜 */}
-        {Array.from({ length: cells.length / 7 }, (_, row) => (
-          <View key={row} style={{ flexDirection: "row" }}>
-            {cells.slice(row * 7, row * 7 + 7).map((date, col) => {
-              if (!date) return <View key={col} style={{ flex: 1, height: 54 }} />;
-              const entry = byDate.get(date);
-              const temp = temps.get(date);
-              const isSelected = date === selected;
-              const isToday = date === today;
-              return (
-                <Pressable
-                  key={col}
-                  accessibilityRole="button"
-                  onPress={() => setSelected(date)}
-                  style={{
-                    flex: 1,
-                    height: 54,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 2,
-                    borderRadius: radius.md,
-                    borderWidth: isSelected ? 2 : 0,
-                    borderColor: t.accent,
-                    backgroundColor: isToday ? t.surfaceAlt : "transparent",
-                  }}
-                >
-                  <Text
-                    style={[
-                      type.caption,
-                      { color: col === 0 ? t.danger : t.text, fontWeight: isToday ? "700" : "600" },
-                    ]}
+        {/* 날짜 그리드 — 셀이 커야 달력답다 */}
+        <View style={{ paddingHorizontal: space.xs, paddingTop: space.xs }}>
+          {Array.from({ length: cells.length / 7 }, (_, row) => (
+            <View key={row} style={{ flexDirection: "row" }}>
+              {cells.slice(row * 7, row * 7 + 7).map((date, col) => {
+                if (!date) return <View key={col} style={{ flex: 1, height: 84 }} />;
+                const entry = byDate.get(date);
+                const temp = temps.get(date);
+                const isSelected = date === selected;
+                const isToday = date === today;
+                return (
+                  <Pressable
+                    key={col}
+                    accessibilityRole="button"
+                    onPress={() => setSelected(date)}
+                    style={{
+                      flex: 1,
+                      height: 84,
+                      borderRadius: radius.md,
+                      borderWidth: isToday ? 1.5 : 0,
+                      borderColor: t.text,
+                      backgroundColor: isSelected ? t.surfaceAlt : "transparent",
+                      paddingTop: 5,
+                      gap: 3,
+                    }}
                   >
-                    {Number(date.slice(-2))}
-                  </Text>
-                  {entry ? (
-                    <View
+                    <Text
+                      style={[
+                        type.caption,
+                        TABULAR,
+                        {
+                          textAlign: "center",
+                          color: col === 0 ? t.danger : col === 6 ? t.night : t.text,
+                        },
+                      ]}
+                    >
+                      {Number(date.slice(-2))}
+                    </Text>
+                    {entry ? (
+                      <View
+                        style={{
+                          marginHorizontal: 2,
+                          borderRadius: 4,
+                          backgroundColor: codeColor(entry.code),
+                          paddingVertical: 1.5,
+                        }}
+                      >
+                        <Text
+                          numberOfLines={1}
+                          style={{ fontSize: 10, lineHeight: 14, color: "#FFFFFF", fontWeight: "700", textAlign: "center" }}
+                        >
+                          {CHIP[entry.code]}
+                        </Text>
+                      </View>
+                    ) : null}
+                    {temp ? (
+                      <View
+                        style={{
+                          alignSelf: "center",
+                          width: 5,
+                          height: 5,
+                          borderRadius: 3,
+                          backgroundColor: toneColor[temp.tone],
+                        }}
+                      />
+                    ) : null}
+                  </Pressable>
+                );
+              })}
+            </View>
+          ))}
+        </View>
+
+        {/* 선택한 날 + 코드 찍기 */}
+        <View style={{ paddingHorizontal: space.lg, paddingTop: space.md, gap: space.md }}>
+          <Card>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Heading>
+                {Number(selected.slice(5, 7))}월 {Number(selected.slice(-2))}일 (
+                {WEEKDAYS[new Date(`${selected}T00:00:00`).getDay()]})
+              </Heading>
+              {selTemp ? <Badge text={`${selTemp.celsius}°C`} tone={selTemp.tone} /> : null}
+            </View>
+            {selShift ? (
+              <Small>
+                {selShift.label} {formatClock(selShift.startAt)}~{formatClock(selShift.endAt)} ·
+                실제 체류 예상 {formatClock(selShift.onSiteStartAt)}~{formatClock(selShift.onSiteEndAt)}
+              </Small>
+            ) : (
+              <Small>누르면 다음 날로 넘어갑니다. 한 달을 쭉 찍으세요.</Small>
+            )}
+            {CODE_ROWS.map((rowCodes, i) => (
+              <View key={i} style={{ flexDirection: "row", gap: space.sm }}>
+                {rowCodes.map((code) => {
+                  const on = selEntry?.code === code;
+                  return (
+                    <Pressable
+                      key={code}
+                      accessibilityRole="button"
+                      onPress={() => void setCode(selected, code)}
                       style={{
-                        minWidth: 20,
-                        paddingHorizontal: 3,
-                        borderRadius: radius.sm,
-                        backgroundColor: codeColor(entry.code),
+                        flex: 1,
+                        minHeight: TOUCH_MIN,
                         alignItems: "center",
+                        justifyContent: "center",
+                        borderRadius: radius.md,
+                        backgroundColor: on ? codeColor(code) : t.surfaceAlt,
                       }}
                     >
-                      <Text style={{ fontSize: 11, lineHeight: 15, color: "#FFFFFF", fontWeight: "700" }}>
-                        {SHORT[entry.code]}
+                      <Text style={{ color: on ? "#FFFFFF" : t.text, fontWeight: "700", fontSize: 13 }}>
+                        {DEFAULT_TEMPLATES[code].label}
                       </Text>
-                    </View>
-                  ) : (
-                    <View style={{ height: 15 }} />
-                  )}
-                  {/* 그 근무의 태움 체온. 점 하나가 한 근무의 기록이다. */}
-                  <View
-                    style={{
-                      width: 5,
-                      height: 5,
-                      borderRadius: 3,
-                      backgroundColor: temp ? toneColor[temp.tone] : "transparent",
-                    }}
+                    </Pressable>
+                  );
+                })}
+              </View>
+            ))}
+            <View style={{ flexDirection: "row", gap: space.sm }}>
+              {selShift ? (
+                <View style={{ flex: 1 }}>
+                  <Button
+                    label="근무 기록"
+                    onPress={() => router.push(`/shift/${encodeURIComponent(selShift.id)}`)}
                   />
-                </Pressable>
-              );
-            })}
-          </View>
-        ))}
+                </View>
+              ) : null}
+              {selEntry ? (
+                <View style={{ flex: 1 }}>
+                  <Button label="지우기" onPress={() => void clearDay(selected)} />
+                </View>
+              ) : null}
+            </View>
+          </Card>
 
-        <Divider />
+          {/* ── 이번 달 근무 통계 ── */}
+          <Card>
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+              <Heading>{month + 1}월 근무 통계</Heading>
+              <Text style={[type.small, TABULAR, { color: t.textMuted }]}>
+                {workDayCount}일 근무 · {monthHours}시간
+              </Text>
+            </View>
+            {monthEntries.length === 0 ? (
+              <Body muted>이번 달 듀티가 아직 없습니다. 위 달력에서 찍어 주세요.</Body>
+            ) : (
+              <>
+                {/* 한 줄 누적 막대 — 이번 달이 어떤 색인지 한눈에 */}
+                <View style={{ flexDirection: "row", height: 14, borderRadius: 7, overflow: "hidden" }}>
+                  {statOrder.map((code) => {
+                    const n = counts.get(code) ?? 0;
+                    if (n === 0) return null;
+                    return (
+                      <View
+                        key={code}
+                        style={{ flex: n / statTotal, backgroundColor: code === "OFF" ? t.surfaceAlt : codeColor(code) }}
+                      />
+                    );
+                  })}
+                </View>
+                <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
+                  {statOrder.map((code) => {
+                    const n = counts.get(code) ?? 0;
+                    if (n === 0) return null;
+                    return (
+                      <View key={code} style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                        <View
+                          style={{
+                            width: 8, height: 8, borderRadius: 4,
+                            backgroundColor: code === "OFF" ? t.textMuted : codeColor(code),
+                          }}
+                        />
+                        <Text style={[type.small, { color: t.text }]}>
+                          {DEFAULT_TEMPLATES[code].label} {n}
+                        </Text>
+                      </View>
+                    );
+                  })}
+                </View>
+              </>
+            )}
+          </Card>
 
-        {/* 선택한 날에 코드 찍기. 찍으면 다음날로 넘어간다. */}
-        <Small muted={false}>
-          {selected.replace(/-/g, ".")} ({WEEKDAYS[new Date(`${selected}T00:00:00`).getDay()]}
-  ) — 누르면 다음 날로 넘어갑니다
-</Small>
-        {CODE_ROWS.map((rowCodes, i) => (
-          <View key={i} style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
-            {rowCodes.map((code) => {
-              const on = selEntry?.code === code;
-              return (
-                <Pressable
-                  key={code}
-                  accessibilityRole="button"
-                  onPress={() => void setCode(selected, code)}
-                  style={{
-                    flex: 1,
-                    minHeight: TOUCH_MIN,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    borderRadius: radius.md,
-                    backgroundColor: on ? codeColor(code) : t.surfaceAlt,
-                  }}
-                >
-                  <Text style={{ color: on ? "#FFFFFF" : t.text, fontWeight: "700", fontSize: 14 }}>
-                    {DEFAULT_TEMPLATES[code].label}
-                  </Text>
-                </Pressable>
-              );
-            })}
-          </View>
-        ))}
-        {selEntry ? (
-          <Button label="이 날 지우기" onPress={() => void clearDay(selected)} />
-        ) : null}
-      </Card>
+          {/* ── 근무량 분석 ── */}
+          {monthEntries.length > 0 ? (
+            <Card>
+              <Heading>근무량 분석</Heading>
+              <View style={{ flexDirection: "row", gap: space.sm }}>
+                {[
+                  { icon: "moon-outline" as const, label: "나이트", value: `${nightCount}번` },
+                  { icon: "sunny-outline" as const, label: "주말 근무", value: `${weekendWork}번` },
+                  { icon: "flame-outline" as const, label: "최장 연속", value: `${longestRun}일` },
+                ].map((s) => (
+                  <View
+                    key={s.label}
+                    style={{
+                      flex: 1,
+                      backgroundColor: t.surfaceAlt,
+                      borderRadius: radius.lg,
+                      paddingVertical: space.md,
+                      alignItems: "center",
+                      gap: 4,
+                    }}
+                  >
+                    <Ionicons name={s.icon} size={18} color={t.textMuted} />
+                    <Text style={[type.cardTitle, TABULAR, { color: t.text, fontWeight: "700" }]}>{s.value}</Text>
+                    <Text style={[type.caption, { color: t.textMuted }]}>{s.label}</Text>
+                  </View>
+                ))}
+              </View>
+              {longestRun >= 5 ? (
+                <Small muted={false}>연속 {longestRun}일 근무가 있습니다. 몸이 먼저입니다.</Small>
+              ) : null}
+            </Card>
+          ) : null}
 
-      {/* 선택한 날의 내용 */}
-      <Card>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <Heading>
-            {selShift
-              ? `${selShift.label} ${formatClock(selShift.startAt)}~${formatClock(selShift.endAt)}`
-              : selEntry
-                ? DEFAULT_TEMPLATES[selEntry.code].label
-                : "근무 없음"}
-          </Heading>
-          {selTemp ? <Badge text={`${selTemp.celsius}°C ${selTemp.label}`} tone={selTemp.tone} /> : null}
-        </View>
-        {selShift ? (
-          <>
+          {/* ── 폰 캘린더 연동 ── */}
+          <Card>
+            <Heading>폰 캘린더에 넣기</Heading>
             <Small>
-              인계 포함 실제 체류 예상 {formatClock(selShift.onSiteStartAt)}~
-              {formatClock(selShift.onSiteEndAt)}
+              이번 달 듀티를 폰의 캘린더에 &lsquo;NSR 듀티&rsquo;로 씁니다. 구글 계정
+              캘린더를 쓰는 폰이면 구글 캘린더에서도 보입니다. 다시 내보내면 해당
+              월을 새로 씁니다.
             </Small>
             <Button
-              label="이 근무 기록 보기"
-              onPress={() => router.push(`/shift/${encodeURIComponent(selShift.id)}`)}
-            />
-          </>
-        ) : null}
-        {selTemp ? <Small>{selTemp.description}</Small> : null}
-      </Card>
-
-      {/* 붙여넣기 — 종이 듀티표를 통째로 넣을 때만 펼친다 */}
-      <Card>
-        <Row
-          onPress={() => setPasteOpen((v) => !v)}
-          label="듀티표 통째로 붙여넣기"
-          value={pasteOpen ? "접기" : "펼치기"}
-        />
-        {pasteOpen ? (
-          <View style={{ gap: space.sm }}>
-            <Small>
-              
-  `DDEENNOO`, `데데이이나나오오`, `상상상상상오오` 형식을 모두 인식합니다. 첫 글자가 시작 날짜가 됩니다.
-</Small>
-            <Text style={[type.small, { color: t.textMuted }]}>시작 날짜</Text>
-            <TextInput
-              value={startDate}
-              onChangeText={setStartDate}
-              placeholder="2026-08-01"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              style={{
-                color: t.text,
-                backgroundColor: t.surfaceAlt,
-                borderRadius: radius.md,
-                padding: space.md,
-                fontSize: 15,
+              label={`${month + 1}월 듀티 내보내기`}
+              tone="primary"
+              onPress={async () => {
+                const r = await exportMonthToCalendar(entries, year, month);
+                setSyncMsg(r.message);
               }}
             />
-            <TextInput
-              value={pasteText}
-              onChangeText={setPasteText}
-              placeholder="DDEENNOO..."
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="characters"
-              autoCorrect={false}
-              multiline
-              style={{
-                color: t.text,
-                backgroundColor: t.surfaceAlt,
-                borderRadius: radius.md,
-                padding: space.md,
-                fontSize: 15,
-                minHeight: 80,
-              }}
-            />
-            {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
-            <Button label="적용" tone="primary" onPress={() => void applyPaste()} />
-          </View>
-        ) : null}
-      </Card>
+            {syncMsg ? <Small muted={false}>{syncMsg}</Small> : null}
+          </Card>
 
-      <Card>
-        <Heading>근무 시간 설정</Heading>
-        <Small>
-          
-  병원마다 근무 시간이 다릅니다. 아래는 현재 적용 중인 기본값이며, 스페셜은 임시 설정값입니다.
-</Small>
-        {(["D", "E", "N", "ADM", "SPC"] as ShiftCode[]).map((code) => {
-          const tpl = DEFAULT_TEMPLATES[code];
-          return (
-            <View key={code}>
-              <View
-                style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: space.sm }}
-              >
-                <Body>{tpl.label}</Body>
-                <Small>
-                  {tpl.startTime}~{tpl.endTime} · 인계 앞 {tpl.preHandoverMin}분 / 뒤{" "}
-                  {tpl.postHandoverMin}분
-                </Small>
-              </View>
-              <Divider />
-            </View>
-          );
-        })}
-      </Card>
-    </HeaderScreen>
+          {/* 근무 시간 기본값 */}
+          <Card>
+            <Heading>근무 시간 설정</Heading>
+            {(["D", "E", "N", "ADM", "SPC"] as ShiftCode[]).map((code) => {
+              const tpl = DEFAULT_TEMPLATES[code];
+              return (
+                <View key={code}>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: space.sm }}>
+                    <Body>{tpl.label}</Body>
+                    <Small>
+                      {tpl.startTime}~{tpl.endTime} · 인계 앞 {tpl.preHandoverMin}분 / 뒤 {tpl.postHandoverMin}분
+                    </Small>
+                  </View>
+                  <Divider />
+                </View>
+              );
+            })}
+          </Card>
+        </View>
+      </ScrollView>
+    </SafeAreaView>
   );
 }

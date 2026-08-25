@@ -333,6 +333,70 @@ export function HeaderScreen({
   );
 }
 
+/**
+ * 서류철 카드 — 위에 견출지 탭이 붙은 폴더.
+ *
+ * 홈을 "브리핑 서류"처럼 읽히게 하는 장치다. 탭이 서류의 제목이고,
+ * 안의 행들은 점선으로 구분해 서식지 느낌을 낸다.
+ */
+export function FolderCard({
+  tab,
+  tone = "default",
+  children,
+}: {
+  tab: string;
+  tone?: "default" | "accent" | "warn";
+  children: ReactNode;
+}) {
+  const t = useTheme();
+  const tabBg = tone === "accent" ? t.accent : tone === "warn" ? t.warn : t.surfaceAlt;
+  const tabFg = tone === "default" ? t.textMuted : "#FFFFFF";
+  return (
+    <View>
+      <View
+        style={{
+          alignSelf: "flex-start",
+          backgroundColor: tabBg,
+          borderTopLeftRadius: radius.md,
+          borderTopRightRadius: radius.md,
+          paddingHorizontal: space.md,
+          paddingVertical: 5,
+          marginLeft: space.sm,
+        }}
+      >
+        <Text style={[type.caption, { color: tabFg }]}>{tab}</Text>
+      </View>
+      <View
+        style={{
+          backgroundColor: t.surface,
+          borderRadius: radius.lg,
+          borderTopLeftRadius: 0,
+          padding: space.lg,
+          gap: space.md,
+          borderWidth: StyleSheet.hairlineWidth,
+          borderColor: t.border,
+        }}
+      >
+        {children}
+      </View>
+    </View>
+  );
+}
+
+/** 서류철 안의 점선 구분선. */
+export function DashedDivider() {
+  const t = useTheme();
+  return (
+    <View
+      style={{
+        borderBottomWidth: 1,
+        borderStyle: "dashed",
+        borderColor: t.border,
+      }}
+    />
+  );
+}
+
 /** 목록 위에 얹는 필터 칩 한 줄. */
 export function ChipRow({
   items,
