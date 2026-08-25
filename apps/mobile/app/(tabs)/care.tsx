@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Easing,
+  Image,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -15,8 +17,15 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { taeumTemperature } from "@nsr/core";
 import { Badge, Body, Button, Card, Enter, GaugeBar, Heading, Small } from "../../src/components/ui";
-import { TABULAR, radius, space, type, useTheme } from "../../src/theme";
-import { getSetting, listTaeumScores, setSetting } from "../../src/db";
+import { CONTENT_MAX, TABULAR, radius, space, type, useTheme } from "../../src/theme";
+import {
+  getSetting,
+  getShiftReportMarkdown,
+  listCards,
+  listShiftReports,
+  listTaeumScores,
+  setSetting,
+} from "../../src/db";
 import { careChat, llmReady, type ChatTurn } from "../../src/services/llm";
 
 /**
@@ -44,11 +53,14 @@ const SCALE_MIN = 35.5;
 const SCALE_MAX = 42;
 
 /**
- * 수은 체온계. 수은주가 스프링으로 차오른다.
+ * 수은 체온계 — 유리관·눈금·광택·그림자는 미리 그린 PNG 오버레이이고,
+ * 앱은 그 아래에서 수은 기둥과 전구만 그려 색·높이를 움직인다.
+ * View 로 유리를 흉내내던 이전 판보다 훨씬 실물답다.
  *
- * 전부 한 좌표계(래퍼 바닥 기준 절대 위치)로 그린다 — 이전 판은 눈금이
- * 관과 다른 기준으로 놓여 36이 전구 위에 겹쳤다. 눈금 위치와 수은 높이가
- * 같은 함수 h(f)를 쓰므로, 체온이 38이면 수은 꼭대기가 정확히 38 눈금에 선다.
+ * 좌표 계약 (생성기: scratchpad/gen-thermo.mjs 와 짝):
+ *   기둥 left 40, width 20, bottom 45, height 16→145 (f=0→1)
+ *   전구 중심 (50, 180), 지름 44
+ *   눈금은 같은 식 h(f) = 16 + 129f 로 이미지에 박혀 있어 수은 꼭대기와 정확히 만난다.
  */
 function Thermometer({
   celsius,
@@ -57,19 +69,6 @@ function Thermometer({
   celsius: number | null;
   color: string;
 }) {
-  const t = useTheme();
-  const W = 96;
-  const H = 188;
-  const TUBE_W = 26;
-  const BULB = 48;
-  const OVERLAP = 14; // 관이 전구 속으로 잠기는 깊이
-  const tubeBottom = BULB - OVERLAP; // 래퍼 바닥에서 관 바닥까지
-  const tubeH = H - tubeBottom;
-  const tubeX = (W - TUBE_W) / 2 - 12; // 눈금 자리를 오른쪽에 남긴다
-  const baseH = OVERLAP + 6; // 수은 최소 높이(전구에 잠긴 몫 + 살짝)
-  const maxH = tubeH - 18; // 관 꼭대기 둥근 부분은 남겨 둔다
-  const h = (f: number) => baseH + f * (maxH - baseH);
-
   const f =
     celsius === null
       ? 0
@@ -86,94 +85,37 @@ function Thermometer({
   }, [v, f]);
 
   return (
-    <View style={{ width: W, height: H }}>
-      {/* 유리관 */}
-      <View
+    <View style={{ width: 110, height: 210 }}>
+      {/* 수은 기둥 */}
+      <Animated.View
         style={{
           position: "absolute",
-          left: tubeX,
-          bottom: tubeBottom,
-          width: TUBE_W,
-          height: tubeH,
-          borderRadius: TUBE_W / 2,
-          backgroundColor: t.surfaceAlt,
-          overflow: "hidden",
-        }}
-      >
-        <Animated.View
-          style={{
-            position: "absolute",
-            left: 4,
-            right: 4,
-            bottom: 0,
-            height: v.interpolate({ inputRange: [0, 1], outputRange: [h(0), h(1)] }),
-            borderTopLeftRadius: 9,
-            borderTopRightRadius: 9,
-            backgroundColor: color,
-          }}
-        />
-        {/* 유리 반사광 */}
-        <View
-          style={{
-            position: "absolute",
-            top: 8,
-            bottom: 8,
-            left: 4,
-            width: 3,
-            borderRadius: 2,
-            backgroundColor: "rgba(255,255,255,0.18)",
-          }}
-        />
-      </View>
-
-      {/* 눈금 — 수은과 같은 h(f) 로 놓는다 */}
-      {[36, 38, 40, 42].map((deg) => {
-        const df = (deg - SCALE_MIN) / (SCALE_MAX - SCALE_MIN);
-        return (
-          <View
-            key={deg}
-            pointerEvents="none"
-            style={{
-              position: "absolute",
-              left: tubeX + TUBE_W + 5,
-              bottom: tubeBottom + h(df) - 6,
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 4,
-            }}
-          >
-            <View style={{ width: 8, height: 1.5, backgroundColor: t.border }} />
-            <Text style={{ fontSize: 10, lineHeight: 12, color: t.textMuted, fontWeight: "600" }}>
-              {deg}
-            </Text>
-          </View>
-        );
-      })}
-
-      {/* 수은 저장고 — 관 중심선에 맞춘다 */}
-      <View
-        style={{
-          position: "absolute",
-          left: tubeX + TUBE_W / 2 - BULB / 2,
-          bottom: 0,
-          width: BULB,
-          height: BULB,
-          borderRadius: BULB / 2,
+          left: 40,
+          width: 20,
+          bottom: 45,
+          height: v.interpolate({ inputRange: [0, 1], outputRange: [16, 145] }),
+          borderTopLeftRadius: 10,
+          borderTopRightRadius: 10,
           backgroundColor: color,
         }}
-      >
-        <View
-          style={{
-            position: "absolute",
-            top: 9,
-            left: 10,
-            width: 10,
-            height: 10,
-            borderRadius: 5,
-            backgroundColor: "rgba(255,255,255,0.3)",
-          }}
-        />
-      </View>
+      />
+      {/* 수은 저장고 */}
+      <View
+        style={{
+          position: "absolute",
+          left: 28,
+          top: 158,
+          width: 44,
+          height: 44,
+          borderRadius: 22,
+          backgroundColor: color,
+        }}
+      />
+      {/* 유리 오버레이 */}
+      <Image
+        source={require("../../assets/thermometer-glass.png")}
+        style={{ position: "absolute", width: 110, height: 210 }}
+      />
     </View>
   );
 }
@@ -251,7 +193,15 @@ function Bubble({ msg }: { msg: Msg }) {
   );
 }
 
-const STARTERS = ["오늘 태움 당했어요", "실수해서 자책 중이에요", "그냥 지쳤어요"];
+const STARTERS = [
+  "오늘 태움 당했어요",
+  "실수해서 자책 중이에요",
+  "그냥 지쳤어요",
+  "오늘 근무 내용으로 퀴즈 내줘",
+  "최근 보고서 요약해줘",
+];
+
+const QUIZ_PROMPT = "내 암기카드와 최근 근무 보고서로 퀴즈를 하나씩 내줘. 내가 답하면 맞았는지 확인해줘.";
 
 export default function Care() {
   const t = useTheme();
@@ -263,6 +213,7 @@ export default function Care() {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState<{ ok: boolean; reason?: string } | null>(null);
+  const [studyCtx, setStudyCtx] = useState<string | null>(null);
   const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
@@ -276,6 +227,20 @@ export default function Care() {
     );
     setMsgs(await getSetting<Msg[]>(CHAT_SETTING, []));
     setReady(await llmReady());
+
+    // 학습 컨텍스트 — 최근 보고서 하나 + 암기카드 몇 장을 대화에 실어 둔다.
+    // '퀴즈 내줘'가 자료 없이 헛돌지 않게 하는 밑재료다.
+    let ctx = "";
+    const reports = await listShiftReports(1);
+    if (reports[0]) {
+      const md = await getShiftReportMarkdown(reports[0].shiftId);
+      if (md) ctx += `## 최근 근무 보고서 (${reports[0].shiftId.split(":")[0]})\n${md.slice(0, 2000)}\n`;
+    }
+    const cards = await listCards(12);
+    if (cards.length > 0) {
+      ctx += `\n## 암기카드\n${cards.map((c) => `- 앞: ${c.front} / 뒤: ${c.back}`).join("\n")}`;
+    }
+    setStudyCtx(ctx.trim() || null);
   }, []);
 
   useEffect(() => {
@@ -304,7 +269,10 @@ export default function Care() {
       try {
         const reply = await careChat(
           next.map((m) => ({ role: m.role, text: m.text })),
-          { temp: latest ? `${latest.temp.celsius}°C (${latest.temp.label})` : undefined },
+          {
+            temp: latest ? `${latest.temp.celsius}°C (${latest.temp.label})` : undefined,
+            study: studyCtx ?? undefined,
+          },
         );
         const done: Msg[] = [...next, { role: "assistant", text: reply, at: Date.now() }];
         setMsgs(done);
@@ -324,7 +292,7 @@ export default function Care() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{ flex: 1, width: "100%", maxWidth: CONTENT_MAX, alignSelf: "center" }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         {/* 제목 줄 */}
@@ -338,19 +306,38 @@ export default function Care() {
           }}
         >
           <Text style={{ fontSize: 28, lineHeight: 36, fontWeight: "700", color: t.text }}>
-            마음
+            마음 채팅
           </Text>
           <View style={{ flex: 1 }} />
+          {ready?.ok && studyCtx ? (
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => void send(QUIZ_PROMPT)}
+              style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: space.sm })}
+            >
+              <Text style={[type.small, { color: t.accent, fontWeight: "700" }]}>카드 퀴즈</Text>
+            </Pressable>
+          ) : null}
           {msgs.length > 0 ? (
             <Pressable
               accessibilityRole="button"
-              onPress={async () => {
-                setMsgs([]);
-                await setSetting(CHAT_SETTING, []);
+              onPress={() => {
+                Alert.alert("새 세션", "지금 대화를 지우고 새로 시작합니다.", [
+                  { text: "취소", style: "cancel" },
+                  {
+                    text: "새로 시작",
+                    style: "destructive",
+                    onPress: async () => {
+                      setMsgs([]);
+                      setErr(null);
+                      await setSetting(CHAT_SETTING, []);
+                    },
+                  },
+                ]);
               }}
               style={({ pressed }) => ({ opacity: pressed ? 0.6 : 1, padding: space.sm })}
             >
-              <Text style={[type.small, { color: t.textMuted }]}>대화 비우기</Text>
+              <Text style={[type.small, { color: t.textMuted }]}>새 세션</Text>
             </Pressable>
           ) : null}
         </View>

@@ -11,7 +11,7 @@ import {
   type ViewStyle,
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
-import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../theme";
+import { CONTENT_MAX, TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../theme";
 
 export function Screen({
   title,
@@ -26,7 +26,17 @@ export function Screen({
 }) {
   const t = useTheme();
   const body = (
-    <View style={{ padding: space.lg, gap: space.md, paddingBottom: space.bottom }}>
+    <View
+      style={{
+        padding: space.lg,
+        gap: space.md,
+        paddingBottom: space.bottom,
+        // 태블릿에서 본문이 무한정 넓어지지 않게 가운데로 모은다.
+        width: "100%",
+        maxWidth: CONTENT_MAX,
+        alignSelf: "center",
+      }}
+    >
       {title ? (
         <View style={{ gap: space.tight, marginBottom: space.sm }}>
           <Text style={[type.title, { color: t.text }]}>{title}</Text>
@@ -261,7 +271,7 @@ export function HeaderScreen({
         contentContainerStyle={{ backgroundColor: t.bg, flexGrow: 1 }}
         refreshControl={refreshControl as never}
       >
-        {/* 색면. 상태바 아래까지 꽉 채운다. */}
+        {/* 색면. 상태바 아래까지 꽉 채운다. 내용은 태블릿에서 가운데로 모은다. */}
         <View
           style={{
             backgroundColor: t.headerBg,
@@ -269,9 +279,9 @@ export function HeaderScreen({
             paddingHorizontal: space.lg,
             // 패널이 위로 24 올라오므로 그만큼 더 준다.
             paddingBottom: space.xxl + 24,
-            gap: space.md,
           }}
         >
+        <View style={{ gap: space.md, width: "100%", maxWidth: CONTENT_MAX, alignSelf: "center" }}>
           <View
             style={{
               flexDirection: "row",
@@ -323,6 +333,7 @@ export function HeaderScreen({
 
           {banner}
         </View>
+        </View>
 
         {/* 패널. 음수 마진으로 색면을 물고 올라온다. */}
         <View
@@ -335,11 +346,12 @@ export function HeaderScreen({
             paddingHorizontal: space.lg,
             paddingTop: space.xxl,
             paddingBottom: space.bottom,
-            gap: space.md,
             minHeight: 400,
           }}
         >
-          {children}
+          <View style={{ gap: space.md, width: "100%", maxWidth: CONTENT_MAX, alignSelf: "center" }}>
+            {children}
+          </View>
         </View>
       </ScrollView>
     </View>

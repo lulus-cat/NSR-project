@@ -18,7 +18,8 @@ import {
   type ShiftReport,
 } from "@nsr/core";
 import { Badge, Body, Button, Card, ChipRow, Divider, Small } from "../../src/components/ui";
-import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
+import { CONTENT_MAX, TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
+import { getNoteByTitle, getShiftReportMarkdown, saveNote } from "../../src/db";
 import {
   listCards,
   listDutyEntries,
@@ -144,7 +145,14 @@ export default function Study() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
       <ScrollView
-        contentContainerStyle={{ padding: space.lg, paddingBottom: space.bottom, gap: space.md }}
+        contentContainerStyle={{
+          padding: space.lg,
+          paddingBottom: space.bottom,
+          gap: space.md,
+          width: "100%",
+          maxWidth: CONTENT_MAX,
+          alignSelf: "center",
+        }}
         keyboardShouldPersistTaps="handled"
       >
         {/* 머리 — 퀴즐렛처럼 제목이 크고 그 아래 칩이 있다 */}
@@ -154,9 +162,17 @@ export default function Study() {
             { key: "review", label: queue.length > 0 ? `복습 ${queue.length}` : "복습" },
             { key: "sets", label: "카드 세트" },
             { key: "reports", label: "근무 보고서" },
+            { key: "notes", label: "노트" },
           ]}
           active={mode}
-          onSelect={(k) => setMode(k as Mode)}
+          onSelect={(k) => {
+            // 노트는 자기 화면이 따로 있다 — 칩은 입구만 한다.
+            if (k === "notes") {
+              router.push("/notes");
+              return;
+            }
+            setMode(k as Mode);
+          }}
         />
 
         {/* ── 복습 ── */}
@@ -385,6 +401,28 @@ export default function Study() {
                         실수 언급 {p.mistakes?.length ?? 0}
                       </Text>
                     </View>
+                    <Pressable
+                      accessibilityRole="button"
+                      onPress={async () => {
+                        // 보고서를 편집 가능한 노트로 승격 — 같은 제목이 있으면 그 노트를 연다.
+                        const md = await getShiftReportMarkdown(r.shiftId);
+                        const title = `근무 보고서 ${r.shiftId.split(":")[0].replace(/-/g, ".")}`;
+                        const existing = await getNoteByTitle(title);
+                        const id = existing
+                          ? existing.id
+                          : await saveNote({ title, body: `#근무보고서\n\n${md ?? ""}` });
+                        router.push(`/note/${id}`);
+                      }}
+                      style={({ pressed }) => ({
+                        paddingHorizontal: space.md,
+                        paddingVertical: space.sm,
+                        borderRadius: radius.full,
+                        backgroundColor: t.surfaceAlt,
+                        transform: [{ scale: pressed ? 0.95 : 1 }],
+                      })}
+                    >
+                      <Text style={[type.small, { color: t.accent, fontWeight: "700" }]}>노트로</Text>
+                    </Pressable>
                     <Ionicons name="chevron-forward" size={18} color={t.textMuted} />
                   </View>
                 </Pressable>

@@ -9,7 +9,7 @@ import {
   type SpeedSample,
 } from "@nsr/core";
 import { Badge, Body, Button, Card, Divider, Heading, Small } from "../src/components/ui";
-import { radius, space, type, useTheme } from "../src/theme";
+import { CONTENT_MAX, radius, space, type, useTheme } from "../src/theme";
 import {
   addCustomModel,
   cancelDownload,
@@ -297,7 +297,15 @@ export default function Models() {
   const installedCount = statuses.filter((s) => s.installed).length;
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: space.lg,
+        gap: space.md,
+        width: "100%",
+        maxWidth: CONTENT_MAX,
+        alignSelf: "center",
+      }}
+    >
       <Card>
         <Heading>전사 모델</Heading>
         <Body muted>

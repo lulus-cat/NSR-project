@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Linking, Platform, ScrollView, Switch, TextInput, View } from "react-native";
+import { Alert, Linking, Platform, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import type { ComponentProps, ReactNode } from "react";
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
@@ -7,17 +7,11 @@ import { DEFAULT_RECORDING_POLICY, type ShiftCode } from "@nsr/core";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Badge, Body, Button, Card, Divider, Heading, Row, Small } from "../../src/components/ui";
-import { radius, space, type, useTheme } from "../../src/theme";
+import { CONTENT_MAX, radius, space, type, useTheme } from "../../src/theme";
 import { useApp } from "../../src/state/AppContext";
 import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../../src/db";
 import { SETTINGS_KEYS, platformCapability } from "../../src/services/scheduler";
 import { deleteAllRecordings } from "../../src/services/files";
-import {
-  hasKakaoKey,
-  hasPublicDataKey,
-  setKakaoKey,
-  setPublicDataKey,
-} from "../../src/services/publicdata";
 import {
   clearWorkplace,
   geofenceEnabled,
@@ -48,6 +42,62 @@ import {
   type UpdateCheck,
 } from "../../src/services/update";
 import type { PiiKind } from "@nsr/core";
+
+/** 값을 누르면 프리셋 칩이 펼쳐지는 행. 숫자 설정을 손으로 고르는 자리다. */
+function PresetRow({
+  label,
+  hint,
+  value,
+  unit,
+  options,
+  onSelect,
+}: {
+  label: string;
+  hint?: string;
+  value: number;
+  unit: string;
+  options: number[];
+  onSelect: (v: number) => void;
+}) {
+  const t = useTheme();
+  const [open, setOpen] = useState(false);
+  return (
+    <View>
+      <Row label={label} value={`${value}${unit} ›`} onPress={() => setOpen((o) => !o)} />
+      {open ? (
+        <View
+          style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm, paddingBottom: space.sm }}
+        >
+          {options.map((o) => (
+            <Pressable
+              key={o}
+              accessibilityRole="button"
+              onPress={() => {
+                onSelect(o);
+                setOpen(false);
+              }}
+              style={({ pressed }) => ({
+                paddingHorizontal: space.lg,
+                paddingVertical: space.sm,
+                borderRadius: radius.full,
+                backgroundColor: o === value ? t.accent : t.surfaceAlt,
+                transform: [{ scale: pressed ? 0.95 : 1 }],
+              })}
+            >
+              <Text
+                style={[type.small, { color: o === value ? "#FFFFFF" : t.text, fontWeight: "600" }]}
+              >
+                {o}
+                {unit}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
+      {hint ? <Small>{hint}</Small> : null}
+    </View>
+  );
+}
 
 function Toggle({
   label,
@@ -125,10 +175,6 @@ export default function Settings() {
   const [geoMsg, setGeoMsg] = useState<string | null>(null);
   const [hospitalQuery, setHospitalQuery] = useState("");
   const [hospitalHits, setHospitalHits] = useState<PlaceHit[]>([]);
-  const [publicKeyInput, setPublicKeyInput] = useState("");
-  const [hasPublicKey, setHasPublicKey] = useState(false);
-  const [kakaoInput, setKakaoInput] = useState("");
-  const [hasKakao, setHasKakao] = useState(false);
   const [discardWithoutSelf, setDiscardWithoutSelf] = useState(true);
   const [llmEnabled, setLlmEnabled] = useState(false);
   const [apiKeyInput, setApiKeyInput] = useState("");
@@ -157,8 +203,6 @@ export default function Settings() {
     setAppLock(await getSetting<boolean>(SETTINGS_KEYS.appLock, false));
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
     setWorkplace(await getWorkplace());
-    setHasPublicKey(await hasPublicDataKey());
-    setHasKakao(await hasKakaoKey());
     setGeoOn(await geofenceEnabled());
     setDiscardWithoutSelf(await getSetting<boolean>(SETTINGS_KEYS.discardWithoutSelf, true));
     setLlmEnabled(await getSetting<boolean>(SETTINGS_KEYS.llmPostEdit, false));
@@ -245,7 +289,16 @@ export default function Settings() {
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
-    <ScrollView contentContainerStyle={{ padding: space.lg, paddingBottom: space.bottom, gap: space.md }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: space.lg,
+        paddingBottom: space.bottom,
+        gap: space.md,
+        width: "100%",
+        maxWidth: CONTENT_MAX,
+        alignSelf: "center",
+      }}
+    >
       <Text style={{ fontSize: 28, lineHeight: 36, fontWeight: "700", color: t.text }}>설정</Text>
 
       {/* 프로필 — 근무지·저장 요약이 이 앱의 신원이다 */}
@@ -335,12 +388,60 @@ export default function Settings() {
       {/* 기록 */}
       <Card>
         <GroupHead icon="mic-outline" color="#3E9B6F" title="자동 기록" />
-        <Toggle
-          label="듀티표에 따라 자동 기록"
-          description={capability.explanation}
-          value={policy.enabled}
-          onChange={(v) => void app.updatePolicy({ ...policy, enabled: v })}
-        />
+        {/* 듀티표와 근무지 감지는 동시에 켜지 않는다 — 서로 켜고 끄는 시점이
+            어긋나면 어느 쪽이 기록을 물고 있는지 알 수 없게 된다. */}
+        <Small muted={false}>자동 기록 방식 — 하나만 켭니다</Small>
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          {(
+            [
+              ["duty", "듀티표"],
+              ["geo", "근무지"],
+              ["off", "끄기"],
+            ] as const
+          ).map(([mode, label]) => {
+            const active =
+              mode === "duty" ? policy.enabled : mode === "geo" ? geoOn && !policy.enabled : !policy.enabled && !geoOn;
+            return (
+              <View key={mode} style={{ flex: 1 }}>
+                <Button
+                  label={label}
+                  tone={active ? "primary" : "default"}
+                  onPress={async () => {
+                    setGeoMsg(null);
+                    if (mode === "duty") {
+                      if (geoOn) {
+                        await setGeofence(false);
+                        setGeoOn(false);
+                      }
+                      await app.updatePolicy({ ...policy, enabled: true });
+                    } else if (mode === "geo") {
+                      const r = await setGeofence(true);
+                      if (!r.ok) {
+                        setGeoMsg(r.message ?? "근무지 감지를 켜지 못했습니다.");
+                        return;
+                      }
+                      setGeoOn(true);
+                      await app.updatePolicy({ ...policy, enabled: false });
+                    } else {
+                      if (geoOn) {
+                        await setGeofence(false);
+                        setGeoOn(false);
+                      }
+                      await app.updatePolicy({ ...policy, enabled: false });
+                    }
+                  }}
+                />
+              </View>
+            );
+          })}
+        </View>
+        <Small>
+          듀티표: 근무표 시각에 맞춰 켜고 끕니다. 근무지: 병원 반경에 들어오면 켜고 나가면
+          끕니다 — 아래 카드에서 근무지를 먼저 지정하고 위치를 &lsquo;항상 허용&rsquo;해야
+          합니다.
+        </Small>
+        <Small>{capability.explanation}</Small>
+        {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
         <Divider />
         <Small muted={false}>기록할 근무</Small>
         <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
@@ -357,26 +458,32 @@ export default function Settings() {
           })}
         </View>
         <Divider />
-        <Row
+        <PresetRow
           label="근무 시작 전 기록 시작"
-          value={`${policy.leadMinutes}분 전`}
+          value={policy.leadMinutes}
+          unit="분"
+          options={[10, 20, 30, 45, 60]}
+          onSelect={(v) => void app.updatePolicy({ ...policy, leadMinutes: v })}
+          hint="인계는 근무표 시각보다 일찍 시작합니다. 설정 시간이 인계보다 짧으면 주요 내용을 놓칠 수 있습니다."
         />
-        <Small>
-          
-  인계는 근무표 시각보다 일찍 시작합니다. 설정 시간이 인계보다 짧으면 주요 내용을 놓칠 수 있습니다.
-</Small>
         <Divider />
-        <Row label="파일 분할" value={`${policy.segmentMinutes}분`} />
-        <Small>
-          
-  8시간을 한 파일로 저장하지 않습니다. 파일 손실을 막고 근무 중 전사를 가능하게 합니다.
-</Small>
+        <PresetRow
+          label="파일 분할"
+          value={policy.segmentMinutes}
+          unit="분"
+          options={[10, 15, 20, 30]}
+          onSelect={(v) => void app.updatePolicy({ ...policy, segmentMinutes: v })}
+          hint="8시간을 한 파일로 저장하지 않습니다. 파일 손실을 막고 근무 중 전사를 가능하게 합니다."
+        />
         <Divider />
-        <Row label="보관 기간" value={`${policy.retentionDays}일`} />
-        <Small>
-          
-  보관 기간이 지난 기록은 자동 삭제됩니다. 오래된 기록 보관은 보안상 위험합니다.
-</Small>
+        <PresetRow
+          label="보관 기간"
+          value={policy.retentionDays}
+          unit="일"
+          options={[7, 14, 30, 60, 90]}
+          onSelect={(v) => void app.updatePolicy({ ...policy, retentionDays: v })}
+          hint="보관 기간이 지난 기록은 자동 삭제됩니다. 오래된 기록 보관은 보안상 위험합니다."
+        />
         <Divider />
         <Row label="현재 사용 중" value={`${storageMb} MB / ${policy.maxStorageMb} MB`} />
       </Card>
@@ -466,8 +573,8 @@ export default function Settings() {
               />
             ))}
             <Small>
-              카카오 지도(키가 있으면)나 심평원 병원 목록에서 찾습니다. 검색어만 나가고 내
-              위치는 보내지 않습니다. 키는 아래 &lsquo;검색·데이터 키&rsquo; 카드에서 넣습니다.
+              카카오 지도와 심평원 병원 목록에서 찾습니다. 검색 키는 앱에 내장되어 있어
+              따로 넣을 것이 없습니다. 검색어만 나가고 내 위치는 보내지 않습니다.
             </Small>
             <Button
               label="지금 있는 곳을 근무지로"
@@ -483,20 +590,12 @@ export default function Settings() {
             />
           </>
         )}
-        <Toggle
-          label="지오펜스 자동 기록"
-          description={
-            Platform.OS === "android"
-              ? "위치 권한을 '항상 허용'으로 설정해야 합니다. Android 14 이상에서는 백그라운드 기록 제한으로 앱 실행 시 시작될 수 있습니다."
-              : "위치 권한을 '항상 허용'으로 변경해야 합니다."
-          }
-          value={geoOn}
-          onChange={async (v) => {
-            const r = await setGeofence(v);
-            setGeoOn(v && r.ok);
-            setGeoMsg(r.ok ? null : (r.message ?? null));
-          }}
-        />
+        <Divider />
+        <Small>
+          {Platform.OS === "android"
+            ? "근무지 감지를 쓰려면 위 '자동 기록' 카드에서 '근무지'를 고르고, 위치 권한을 '항상 허용'으로 설정하십시오. Android 14 이상에서는 백그라운드 기록 제한으로 앱 실행 시 시작될 수 있습니다."
+            : "근무지 감지를 쓰려면 위 '자동 기록' 카드에서 '근무지'를 고르고, 위치 권한을 '항상 허용'으로 변경하십시오."}
+        </Small>
         {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
       </Card>
 
@@ -684,106 +783,6 @@ export default function Settings() {
 </Small>
       </Card>
 
-      {/* 검색·데이터 키 */}
-      <Card>
-        <GroupHead icon="key-outline" color="#3E7BB6" title="검색·데이터 키 (무료)" />
-        <Small>
-          키는 앱에 내장되어 배포되므로 보통 아무것도 입력할 필요가 없습니다. 여기는 내장
-          키의 트래픽이 소진됐거나 내 키를 따로 쓰고 싶을 때를 위한 칸입니다 — 내 키가 항상
-          우선합니다. 모두 무료이고 이 기기의 보안 저장소에만 저장됩니다.
-        </Small>
-        <Divider />
-        <Small muted={false}>카카오 REST 키 — 근무지 지도 검색</Small>
-        <Small>
-          developers.kakao.com → 내 애플리케이션 만들기 → 앱 키의 &lsquo;REST API 키&rsquo;를
-          붙여넣으십시오. 카드 등록 없이 발급됩니다.
-        </Small>
-        <TextInput
-          value={kakaoInput}
-          onChangeText={setKakaoInput}
-          placeholder={hasKakao ? "키가 있습니다 (공유 키 포함)" : "카카오 REST API 키 입력"}
-          placeholderTextColor={t.textMuted}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={{
-            color: t.text,
-            backgroundColor: t.surfaceAlt,
-            borderRadius: radius.md,
-            padding: space.md,
-            fontSize: 14,
-          }}
-        />
-        <View style={{ flexDirection: "row", gap: space.sm }}>
-          <View style={{ flex: 1 }}>
-            <Button
-              label="저장"
-              tone="primary"
-              onPress={async () => {
-                if (!kakaoInput.trim()) return;
-                await setKakaoKey(kakaoInput.trim());
-                setKakaoInput("");
-                setHasKakao(true);
-              }}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              label="삭제"
-              onPress={async () => {
-                await setKakaoKey(null);
-                setHasKakao(await hasKakaoKey());
-              }}
-            />
-          </View>
-        </View>
-        <Divider />
-        <Small muted={false}>공공데이터포털 키 — 심평원 병원 목록 · e약은요 의약품</Small>
-        <Small>
-          data.go.kr 가입 → 각 서비스 활용신청 → 마이페이지의 일반 인증키(Decoding)를
-          붙여넣으십시오.
-        </Small>
-        <TextInput
-          value={publicKeyInput}
-          onChangeText={setPublicKeyInput}
-          placeholder={hasPublicKey ? "키가 있습니다 (공유 키 포함)" : "공공데이터포털 인증키 입력"}
-          placeholderTextColor={t.textMuted}
-          secureTextEntry
-          autoCapitalize="none"
-          autoCorrect={false}
-          style={{
-            color: t.text,
-            backgroundColor: t.surfaceAlt,
-            borderRadius: radius.md,
-            padding: space.md,
-            fontSize: 14,
-          }}
-        />
-        <View style={{ flexDirection: "row", gap: space.sm }}>
-          <View style={{ flex: 1 }}>
-            <Button
-              label="저장"
-              tone="primary"
-              onPress={async () => {
-                if (!publicKeyInput.trim()) return;
-                await setPublicDataKey(publicKeyInput.trim());
-                setPublicKeyInput("");
-                setHasPublicKey(true);
-              }}
-            />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              label="삭제"
-              onPress={async () => {
-                await setPublicDataKey(null);
-                setHasPublicKey(await hasPublicDataKey());
-              }}
-            />
-          </View>
-        </View>
-      </Card>
-
       {/* 전사 */}
       <Card>
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
@@ -802,37 +801,15 @@ export default function Settings() {
   기기 성능에 맞춰 선택하십시오. 모델 크기보다 한국어 학습 모델을 사용하는 것이 정확도 향상에 훨씬 효과적입니다.
 </Small>
         <Divider />
-        <Toggle
+        <Row
           label="노트북·서버로 전사"
-          description="같은 Wi-Fi의 노트북에 whisper 서버를 켜 두면 폰보다 몇 배 빠릅니다. 켜는 방법은 전사 모델 화면에 있습니다. 기록 음성이 그 서버로 전송되므로 내 컴퓨터에만 연결하십시오."
-          value={cloudAsr.enabled}
-          onChange={async (v) => {
-            const next = { ...cloudAsr, enabled: v };
-            setCloudAsr(next);
-            await setSetting(SETTINGS_KEYS.cloudTranscription, next);
-          }}
+          value={cloudAsr.enabled ? "사용 중 ›" : "꺼짐 ›"}
+          onPress={() => router.push("/models")}
         />
-        {cloudAsr.enabled ? (
-          <TextInput
-            value={cloudAsr.endpoint}
-            onChangeText={async (endpoint) => {
-              const next = { ...cloudAsr, endpoint };
-              setCloudAsr(next);
-              await setSetting(SETTINGS_KEYS.cloudTranscription, next);
-            }}
-            placeholder="http://192.168.0.10:8000"
-            placeholderTextColor={t.textMuted}
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={{
-              color: t.text,
-              backgroundColor: t.surfaceAlt,
-              borderRadius: radius.md,
-              padding: space.md,
-              fontSize: 14,
-            }}
-          />
-        ) : null}
+        <Small>
+          같은 Wi-Fi의 노트북이 전사를 대신하는 기능입니다. 켜는 방법과 설정은 전사 모델
+          화면에 있습니다.
+        </Small>
       </Card>
 
       {/* 보조 기능 */}
@@ -858,6 +835,7 @@ export default function Settings() {
                 [
                   ["anthropic", "Claude"],
                   ["openai", "GPT"],
+                  ["kimi", "Kimi"],
                   ["custom", "내 서버"],
                 ] as [LlmProvider, string][]
               ).map(([p, label]) => (
@@ -876,7 +854,8 @@ export default function Settings() {
               ))}
             </View>
             <Small>
-              Claude·GPT 는 API 키 방식입니다. &lsquo;내 서버&rsquo;는 VPS 나 집
+              Claude·GPT·Kimi 는 API 키 방식입니다 — Kimi 키는 platform.moonshot.ai
+              에서 발급하며 가장 저렴한 축입니다. &lsquo;내 서버&rsquo;는 VPS 나 집
               컴퓨터의 Ollama·vLLM 같은 OpenAI 호환 서버로 보냅니다 — 유료 API 없이
               보조 기능을 쓸 수 있고, 전사본이 내 서버 밖으로 나가지 않습니다.
             </Small>

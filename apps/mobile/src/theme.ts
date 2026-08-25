@@ -124,6 +124,12 @@ export const radius = { sm: 6, md: 8, lg: 12, xl: 16, full: 9999 } as const;
 export const TOUCH_MIN = 48;
 
 /**
+ * 콘텐츠 최대 폭. 태블릿에서 본문이 화면 전체로 늘어나면 줄이 너무 길어
+ * 읽을 수 없다. 폰에서는 화면이 이보다 좁으므로 아무 효과가 없다.
+ */
+export const CONTENT_MAX = 760;
+
+/**
  * 글자.
  *
  * `lineHeight` 는 배수가 아니라 **절대 px** 이다. 웹 감각으로 1.4 를 넣으면

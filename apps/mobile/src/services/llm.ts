@@ -30,7 +30,7 @@ import { redactForNetwork } from "./export";
  * 베타이고, Anthropic 은 서드파티 앱용 OAuth 자체가 없다. 그래서 양쪽 다
  * API 키 방식이다. 키는 기기 보안 저장소에만 있다.
  */
-export type LlmProvider = "anthropic" | "openai" | "custom";
+export type LlmProvider = "anthropic" | "openai" | "kimi" | "custom";
 
 /** 내 서버(VPS 의 Ollama·vLLM·LM Studio 등 OpenAI 호환 API) 설정. */
 export interface CustomServer {
@@ -54,6 +54,7 @@ const PROVIDER_SETTING = "llm.provider";
 const SECURE_KEYS: Record<LlmProvider, string> = {
   anthropic: "anthropic.apiKey",
   openai: "openai.apiKey",
+  kimi: "kimi.apiKey",
   custom: "custom.apiKey",
 };
 
@@ -133,6 +134,10 @@ async function callAnthropic(body: unknown): Promise<{
 
 const MODEL = "claude-opus-5";
 const OPENAI_MODEL = "gpt-5-mini";
+// Kimi(Moonshot)는 OpenAI 호환이라 callOpenAi 를 그대로 탄다.
+// k2.6 은 response_format json_schema 까지 지원한다 (2026-08 조사).
+const KIMI_BASE = "https://api.moonshot.ai/v1";
+const KIMI_MODEL = "kimi-k2.6";
 
 /**
  * OpenAI 호출. Anthropic 과 같은 이유로 SDK 없이 fetch 다.
@@ -151,14 +156,18 @@ async function callOpenAi(input: {
   if (provider === "custom" && !custom) {
     throw new Error("내 서버 주소가 없습니다. 설정 > 보조 기능에서 서버 주소와 모델을 입력해 주세요.");
   }
-  const apiKey = await getApiKey(provider === "custom" ? "custom" : "openai");
+  const apiKey = await getApiKey(provider === "anthropic" ? "openai" : provider);
   if (!custom && !apiKey) {
     throw new Error(
-      "OpenAI API 키가 설정되어 있지 않습니다. 설정 > 보조 기능에서 입력해 주세요.",
+      "API 키가 설정되어 있지 않습니다. 설정 > 보조 기능에서 입력해 주세요.",
     );
   }
 
-  const base = custom ? custom.baseUrl.replace(/\/+$/, "") : "https://api.openai.com/v1";
+  const base = custom
+    ? custom.baseUrl.replace(/\/+$/, "")
+    : provider === "kimi"
+      ? KIMI_BASE
+      : "https://api.openai.com/v1";
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
@@ -166,7 +175,7 @@ async function callOpenAi(input: {
       ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     },
     body: JSON.stringify({
-      model: custom ? custom.model : OPENAI_MODEL,
+      model: custom ? custom.model : provider === "kimi" ? KIMI_MODEL : OPENAI_MODEL,
       max_completion_tokens: input.maxTokens,
       messages: [{ role: "system", content: input.system }, ...input.messages],
       ...(input.schema
@@ -182,11 +191,11 @@ async function callOpenAi(input: {
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    if (res.status === 401) throw new Error("OpenAI API 키가 올바르지 않습니다.");
+    if (res.status === 401) throw new Error("API 키가 올바르지 않습니다.");
     if (res.status === 429) {
       throw new Error("요청이 너무 많거나 크레딧이 부족합니다. 잠시 후 다시 시도해 주세요.");
     }
-    throw new Error(`OpenAI API 오류 ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`API 오류 ${res.status}: ${detail.slice(0, 200)}`);
   }
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
@@ -382,7 +391,7 @@ const CARE_SYSTEM = `당신은 신규간호사의 마음을 돌보는 선배 간
  */
 export async function careChat(
   history: ChatTurn[],
-  context: { temp?: string },
+  context: { temp?: string; study?: string },
 ): Promise<string> {
   // 첫 턴은 user 여야 한다 (잘린 히스토리가 assistant 로 시작할 수 있다).
   const trimmed = history.slice(-12);
@@ -394,9 +403,17 @@ export async function careChat(
       content: m.role === "user" ? (await redactForNetwork(m.text)).text : m.text,
     })),
   );
-  const system = context.temp
-    ? `${CARE_SYSTEM}\n\n참고 — 최근 근무의 태움 지표(체온 표현): ${context.temp}. 상대가 먼저 꺼내기 전에는 굳이 언급하지 않습니다.`
-    : CARE_SYSTEM;
+  let system = CARE_SYSTEM;
+  if (context.temp) {
+    system += `\n\n참고 — 최근 근무의 태움 지표(체온 표현): ${context.temp}. 상대가 먼저 꺼내기 전에는 굳이 언급하지 않습니다.`;
+  }
+  if (context.study) {
+    // 학습 자료도 남의 서버로 가는 것이므로 같은 비식별화를 거친다.
+    const red = await redactForNetwork(context.study);
+    system +=
+      `\n\n[학습 자료 — 사용자의 최근 근무 기록·암기카드 발췌]\n` +
+      `복습이나 퀴즈를 요청하면 이 자료를 근거로 문제를 내고, 답을 확인해 주고, 틀린 것은 짧게 설명합니다. 자료에 없는 내용은 지어내지 않습니다.\n${red.text}`;
+  }
 
   if ((await getProvider()) !== "anthropic") {
     return callOpenAi({ system, messages, maxTokens: 700 });

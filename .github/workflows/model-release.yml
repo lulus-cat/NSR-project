@@ -38,10 +38,10 @@ jobs:
         run: |
           git clone --depth 1 https://github.com/ggml-org/whisper.cpp
           cmake -S whisper.cpp -B whisper.cpp/build -DCMAKE_BUILD_TYPE=Release
-          cmake --build whisper.cpp/build -j --target quantize \
-            || cmake --build whisper.cpp/build -j
+          # 최신 whisper.cpp 는 바이너리 이름이 whisper-quantize 다 (구판은 quantize).
+          cmake --build whisper.cpp/build -j --target whisper-quantize
           mv "${{ inputs.name }}" input-f16.bin
-          ./whisper.cpp/build/bin/quantize input-f16.bin "${{ inputs.name }}" "${{ inputs.quantize }}"
+          ./whisper.cpp/build/bin/whisper-quantize input-f16.bin "${{ inputs.name }}" "${{ inputs.quantize }}"
           rm input-f16.bin
           ls -lh "${{ inputs.name }}"
       - name: 릴리스에 붙이기

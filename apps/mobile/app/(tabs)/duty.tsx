@@ -15,7 +15,7 @@ import {
   type ShiftCode,
 } from "@nsr/core";
 import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
-import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
+import { CONTENT_MAX, TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   deleteDutyEntry,
   listDutyEntries,
@@ -164,7 +164,14 @@ export default function Duty() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
       {/* 코드 버튼 시트가 탭바에 잘리지 않게 바닥 여백을 넉넉히 둔다. */}
-      <ScrollView contentContainerStyle={{ paddingBottom: space.bottom + 48 }}>
+      <ScrollView
+        contentContainerStyle={{
+          paddingBottom: space.bottom + 48,
+          width: "100%",
+          maxWidth: CONTENT_MAX,
+          alignSelf: "center",
+        }}
+      >
         {/* 머리 — 삼성 캘린더처럼 월이 곧 제목이다 */}
         <View
           style={{
@@ -516,17 +523,22 @@ export default function Duty() {
                   label="캘린더에서 불러오기"
                   tone="primary"
                   onPress={async () => {
-                    const r = (await importMonthFromCalendar(year, month)) as {
-                      ok: boolean;
-                      message: string;
-                      entries?: { date: string; code: ShiftCode }[];
-                    };
-                    if (r.entries?.length) {
-                      await upsertDutyEntries(r.entries);
-                      await load();
-                      await app.refresh();
+                    try {
+                      const r = (await importMonthFromCalendar(year, month)) as {
+                        ok: boolean;
+                        message: string;
+                        entries?: { date: string; code: ShiftCode }[];
+                      };
+                      if (r.entries?.length) {
+                        await upsertDutyEntries(r.entries);
+                        await load();
+                        await app.refresh();
+                      }
+                      setSyncMsg(r.message);
+                    } catch (e) {
+                      // 실패가 조용히 사라지면 '버튼이 안 먹는다'로 보인다.
+                      setSyncMsg(e instanceof Error ? e.message : "가져오기에 실패했습니다.");
                     }
-                    setSyncMsg(r.message);
                   }}
                 />
               </View>

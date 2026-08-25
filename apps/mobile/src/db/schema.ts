@@ -183,6 +183,18 @@ CREATE TABLE IF NOT EXISTS shift_reports (
   created_at  INTEGER NOT NULL
 );
 
+-- 노트 — 옵시디언식 학습 노트. 링크·태그는 본문을 그때그때 훑어서 얻는다.
+-- 개인 앱 규모(수백 장)에서는 링크 테이블보다 LIKE 스캔이 단순하고 충분하다.
+CREATE TABLE IF NOT EXISTS notes (
+  id          TEXT PRIMARY KEY,
+  title       TEXT NOT NULL,
+  body        TEXT NOT NULL DEFAULT '',
+  pinned      INTEGER NOT NULL DEFAULT 0,
+  created_at  INTEGER NOT NULL,
+  updated_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
+
 -- 키-값 설정
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,

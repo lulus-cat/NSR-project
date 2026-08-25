@@ -666,6 +666,104 @@ export interface ShiftReportRow {
   payload: unknown;
 }
 
+/* ── 노트 ─────────────────────────────────────────────────────── */
+
+export interface NoteRow {
+  id: string;
+  title: string;
+  body: string;
+  pinned: boolean;
+  createdAt: number;
+  updatedAt: number;
+}
+
+function toNote(r: {
+  id: string;
+  title: string;
+  body: string;
+  pinned: number;
+  created_at: number;
+  updated_at: number;
+}): NoteRow {
+  return {
+    id: r.id,
+    title: r.title,
+    body: r.body,
+    pinned: r.pinned === 1,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at,
+  };
+}
+
+export async function listNotes(query?: string): Promise<NoteRow[]> {
+  const db = await getDb();
+  const q = (query ?? "").trim();
+  const rows = q
+    ? await db.getAllAsync<Parameters<typeof toNote>[0]>(
+        "SELECT * FROM notes WHERE title LIKE ? OR body LIKE ? ORDER BY pinned DESC, updated_at DESC",
+        [`%${q}%`, `%${q}%`],
+      )
+    : await db.getAllAsync<Parameters<typeof toNote>[0]>(
+        "SELECT * FROM notes ORDER BY pinned DESC, updated_at DESC",
+      );
+  return rows.map(toNote);
+}
+
+export async function getNote(id: string): Promise<NoteRow | null> {
+  const db = await getDb();
+  const r = await db.getFirstAsync<Parameters<typeof toNote>[0]>(
+    "SELECT * FROM notes WHERE id = ?",
+    [id],
+  );
+  return r ? toNote(r) : null;
+}
+
+export async function getNoteByTitle(title: string): Promise<NoteRow | null> {
+  const db = await getDb();
+  const r = await db.getFirstAsync<Parameters<typeof toNote>[0]>(
+    "SELECT * FROM notes WHERE title = ? COLLATE NOCASE",
+    [title.trim()],
+  );
+  return r ? toNote(r) : null;
+}
+
+export async function saveNote(input: {
+  id?: string;
+  title: string;
+  body: string;
+  pinned?: boolean;
+}): Promise<string> {
+  const db = await getDb();
+  const now = Date.now();
+  const id = input.id ?? `note_${now}_${Math.random().toString(36).slice(2, 8)}`;
+  await db.runAsync(
+    `INSERT INTO notes (id, title, body, pinned, created_at, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?)
+     ON CONFLICT(id) DO UPDATE SET
+       title = excluded.title, body = excluded.body,
+       pinned = excluded.pinned, updated_at = excluded.updated_at`,
+    [id, input.title.trim() || "제목 없음", input.body, input.pinned ? 1 : 0, now, now],
+  );
+  return id;
+}
+
+export async function deleteNote(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM notes WHERE id = ?", [id]);
+}
+
+/** 이 제목을 [[위키링크]]로 참조하는 노트들 — 백링크. */
+export async function notesLinkingTo(title: string, excludeId?: string): Promise<NoteRow[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<Parameters<typeof toNote>[0]>(
+    "SELECT * FROM notes WHERE body LIKE ? AND id != ? ORDER BY updated_at DESC",
+    [`%[[${title.trim()}%`, excludeId ?? ""],
+  );
+  // LIKE 는 "[[제목..." 접두까지만 거른다. 별칭([[제목|별칭]])과 정확 일치를 여기서 판정한다.
+  const re = new RegExp(`\\[\\[${title.trim().replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}(\\|[^\\]]*)?\\]\\]`);
+  return rows.map(toNote).filter((n) => re.test(n.body));
+}
+
 export async function listShiftReports(limit = 60): Promise<ShiftReportRow[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ shift_id: string; created_at: number; payload: string }>(

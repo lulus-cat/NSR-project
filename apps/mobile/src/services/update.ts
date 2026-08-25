@@ -107,11 +107,21 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
   const decision = decideUpdate({
     current: currentVersion(),
     latest: release,
-    skipped: skipped || undefined,
+    // '지금 확인'은 건너뛴 판도 다시 보여준다 — 손으로 눌렀다는 것이
+    // 다시 보고 싶다는 뜻이다.
+    skipped: force ? undefined : skipped || undefined,
   });
+
+  // 수동 확인에서 '새 판 없음'이면 근거 숫자를 같이 보여준다.
+  // 숫자 없이 '없습니다'만 보이면 버그로 읽힌다.
+  const message =
+    force && !decision.show && release
+      ? `지금 ${currentVersion() ?? "?"} · 최신 릴리스 ${release.version} — 새 판이 없습니다.`
+      : decision.message;
 
   return {
     ...decision,
+    message,
     release,
     highlights: release ? releaseHighlights(release.notes) : [],
     failed: false,

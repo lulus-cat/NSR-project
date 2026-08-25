@@ -101,7 +101,14 @@ export async function importMonthFromCalendar(
   for (const ev of events) {
     const title = (ev.title ?? "").trim();
     if (!title || title.length > 6) continue; // 근무 코드는 짧다. 긴 제목은 일정이다.
-    const parsed = parseDutyString("2026-01-01", title);
+    // parseDutyString 은 모르는 글자에서 예외를 던진다. "회의" 같은 짧은
+    // 일반 일정 하나가 전체 가져오기를 죽이면 안 되므로 개별로 삼킨다.
+    let parsed;
+    try {
+      parsed = parseDutyString("2026-01-01", title);
+    } catch {
+      continue; // 근무 코드가 아닌 제목이다. 건너뛴다.
+    }
     if (parsed.length !== 1) continue; // 정확히 코드 하나로 읽힐 때만
     const date = toDateString(new Date(ev.startDate as string | number | Date).getTime());
     if (!date.startsWith(`${year}-${String(month0 + 1).padStart(2, "0")}`)) continue;
