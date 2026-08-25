@@ -1,0 +1,25 @@
+# HuggingFace 저장소의 실제 파일 목록을 러너가 대신 조회한다.
+#
+# 왜 필요한가: 개발 환경에서는 huggingface.co 로 나가는 길이 막혀 있어
+# 파일 이름을 확인할 수 없다. 러너는 나갈 수 있으므로, 미러링(model-release)
+# 전에 여기로 정확한 파일 이름과 크기를 알아낸다.
+name: 모델 조사
+
+on:
+  workflow_dispatch:
+    inputs:
+      paths:
+        description: "HF API 경로들 (공백 구분, https://huggingface.co/api/ 뒤부터)"
+        required: true
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 조회
+        run: |
+          for p in ${{ inputs.paths }}; do
+            echo "===== $p ====="
+            curl -sL --max-time 30 "https://huggingface.co/api/$p" | head -c 8000
+            echo
+          done
