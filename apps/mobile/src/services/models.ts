@@ -188,8 +188,13 @@ export async function downloadModel(
   const round = (n: number) => Math.round(n * 10) / 10;
 
   try {
+    // 허깅페이스에서 받을 때 내장 토큰이 있으면 붙인다 — 익명 다운로드가
+    // 429/401 로 막히는 경우의 우회로다. 다른 호스트에는 토큰을 보내지 않는다.
+    const { BUILT_IN } = await import("../config");
+    const hf = BUILT_IN.huggingFaceToken && /https:\/\/(.+\.)?huggingface\.co\//.test(model.url);
     await File.downloadFileAsync(model.url, target, {
       idempotent: true,
+      headers: hf ? { Authorization: `Bearer ${BUILT_IN.huggingFaceToken}` } : undefined,
       signal: controller.signal,
       onProgress: ({ bytesWritten, totalBytes }) => {
         onProgress?.({

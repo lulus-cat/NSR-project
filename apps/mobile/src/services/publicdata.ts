@@ -13,6 +13,7 @@
 export const PUBLIC_DATA_KEY_SETTING = "publicdata.serviceKey";
 
 import { getSetting, setSetting } from "../db";
+import { BUILT_IN } from "../config";
 
 /**
  * 저장소의 app-config.json 에서 공유 키를 받아온다.
@@ -52,10 +53,11 @@ async function getSharedConfig(): Promise<SharedConfig> {
 }
 
 async function getKey(): Promise<string | null> {
-  // 내 키가 있으면 그것이 먼저다. 없으면 저장소의 공유 키.
+  // 내 키 > 빌드 내장 키 > 저장소 공유 키. 보통 사용자는 아무것도 안 넣는다.
   const SecureStore = await import("expo-secure-store");
   const own = await SecureStore.getItemAsync("publicdata.serviceKey");
   if (own) return own;
+  if (BUILT_IN.publicDataKey) return BUILT_IN.publicDataKey;
   return (await getSharedConfig()).publicDataKey ?? null;
 }
 
@@ -96,6 +98,7 @@ async function getKakaoKey(): Promise<string | null> {
   const SecureStore = await import("expo-secure-store");
   const own = await SecureStore.getItemAsync(KAKAO_KEY_SECURE);
   if (own) return own;
+  if (BUILT_IN.kakaoKey) return BUILT_IN.kakaoKey;
   return (await getSharedConfig()).kakaoKey ?? null;
 }
 
@@ -110,12 +113,15 @@ export interface KakaoPlace {
   longitude: number;
 }
 
-/** 카카오 키워드 장소 검색. 키가 없으면 null (호출 쪽이 심평원으로 넘어간다). */
+/**
+ * 카카오 키워드 장소 검색. 키가 없으면 null (호출 쪽이 심평원으로 넘어간다).
+ * category_group_code=HP8 로 **병원만** 나온다 — 근무지 검색에 카페가 섞이면 안 된다.
+ */
 export async function searchPlacesKakao(query: string): Promise<KakaoPlace[] | null> {
   const key = await getKakaoKey();
   if (!key) return null;
   const res = await fetch(
-    `https://dapi.kakao.com/v2/local/search/keyword.json?size=8&query=${encodeURIComponent(query.trim())}`,
+    `https://dapi.kakao.com/v2/local/search/keyword.json?size=8&category_group_code=HP8&query=${encodeURIComponent(query.trim())}`,
     { headers: { Authorization: `KakaoAK ${key}` } },
   );
   if (res.status === 401) throw new Error("카카오 REST 키가 올바르지 않습니다. 설정에서 다시 확인하십시오.");

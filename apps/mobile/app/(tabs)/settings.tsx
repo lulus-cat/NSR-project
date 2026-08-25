@@ -688,8 +688,9 @@ export default function Settings() {
       <Card>
         <GroupHead icon="key-outline" color="#3E7BB6" title="검색·데이터 키 (무료)" />
         <Small>
-          기본으로는 저장소의 공유 키를 함께 쓰므로 아무것도 안 해도 됩니다. 내 키를 넣으면
-          항상 내 키가 우선합니다. 두 키 모두 무료이고 이 기기의 보안 저장소에만 저장됩니다.
+          키는 앱에 내장되어 배포되므로 보통 아무것도 입력할 필요가 없습니다. 여기는 내장
+          키의 트래픽이 소진됐거나 내 키를 따로 쓰고 싶을 때를 위한 칸입니다 — 내 키가 항상
+          우선합니다. 모두 무료이고 이 기기의 보안 저장소에만 저장됩니다.
         </Small>
         <Divider />
         <Small muted={false}>카카오 REST 키 — 근무지 지도 검색</Small>
