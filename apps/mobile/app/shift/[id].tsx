@@ -27,7 +27,13 @@ import {
   updateSegmentText,
   type RecordingRow,
 } from "../../src/db";
-import { finalizeShift, processRecording, resolveProvider } from "../../src/services/asr";
+import { finalizeShift } from "../../src/services/asr";
+import {
+  runnerState,
+  startTranscription,
+  subscribeRunner,
+  type RunnerState,
+} from "../../src/services/transcribe-runner";
 import { redactForExport, shareText, type RedactedText } from "../../src/services/export";
 
 const ROLE_OPTIONS: { role: SpeakerRole; label: string }[] = [
@@ -181,22 +187,29 @@ export default function ShiftDetail() {
   const durationSec = recordings.reduce((sum, r) => sum + r.duration_sec, 0);
   const dutyLabel = DEFAULT_TEMPLATES[(code as ShiftCode) ?? "OTHER"]?.label ?? "근무";
 
-  const runTranscription = useCallback(async () => {
-    setError(null);
-    setBusy("전사 중");
-    try {
-      const provider = await resolveProvider();
-      for (const rec of pending) {
-        setBusy(`전사 중 (${rec.seq + 1}/${pending.length})`);
-        await processRecording(rec, provider);
+  // 전사는 러너(서비스)가 돌린다 — 이 화면을 벗어나도 계속되고,
+  // 돌아오면 구독이 진행률을 다시 이어서 보여준다.
+  useEffect(() => {
+    const apply = (s: RunnerState) => {
+      if (s.shiftId !== shiftId) return;
+      if (s.running) {
+        setBusy(`전사 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})`);
+      } else {
+        setBusy(null);
+        if (s.error) setError(s.error);
+        if (s.completedAt) void load();
       }
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "전사에 실패했습니다.");
-    } finally {
-      setBusy(null);
+    };
+    apply(runnerState());
+    return subscribeRunner(apply);
+  }, [shiftId, load]);
+
+  const runTranscription = useCallback(() => {
+    setError(null);
+    if (!startTranscription(shiftId, pending)) {
+      setError("이미 전사가 진행 중이거나 전사할 기록이 없습니다.");
     }
-  }, [load, pending]);
+  }, [shiftId, pending]);
 
   const runFinalize = useCallback(async () => {
     setError(null);

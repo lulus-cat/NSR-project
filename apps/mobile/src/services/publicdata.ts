@@ -13,7 +13,7 @@
 export const PUBLIC_DATA_KEY_SETTING = "publicdata.serviceKey";
 
 import { getSetting, setSetting } from "../db";
-import { BUILT_IN } from "../config";
+import { BUILT_IN, decodeKey } from "../config";
 
 /**
  * 저장소의 app-config.json 에서 공유 키를 받아온다.
@@ -41,9 +41,10 @@ async function getSharedConfig(): Promise<SharedConfig> {
     const res = await fetch(SHARED_CONFIG_URL);
     if (!res.ok) return cached?.cfg ?? {};
     const cfg = (await res.json()) as SharedConfig;
+    // 파일의 값은 난독화(뒤집은 base64) 형태다. decodeKey 는 옛 평문도 소화한다.
     const clean: SharedConfig = {
-      publicDataKey: (cfg.publicDataKey ?? "").trim() || undefined,
-      kakaoKey: (cfg.kakaoKey ?? "").trim() || undefined,
+      publicDataKey: decodeKey((cfg.publicDataKey ?? "").trim()) || undefined,
+      kakaoKey: decodeKey((cfg.kakaoKey ?? "").trim()) || undefined,
     };
     await setSetting("publicdata.sharedCfg", { cfg: clean, at: Date.now() });
     return clean;

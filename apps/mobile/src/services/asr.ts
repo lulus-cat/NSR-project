@@ -85,7 +85,12 @@ export interface AsrProvider {
   readonly modelId?: string;
   /** 고른 모델이 없어 다른 것으로 대신 돌리는 중인가. 화면에서 알려야 한다. */
   readonly fellBack?: boolean;
-  transcribe(fileUri: string, options: AsrOptions): Promise<AsrResult>;
+  /** onProgress 는 0~100. 온디바이스만 지원하고, 서버 전사는 파일 단위로만 안다. */
+  transcribe(
+    fileUri: string,
+    options: AsrOptions,
+    onProgress?: (pct: number) => void,
+  ): Promise<AsrResult>;
 }
 
 /**
@@ -117,7 +122,7 @@ export function createOnDeviceProvider(
     capabilities: { diarization: false, wordTimestamps: true },
     modelId,
     fellBack,
-    async transcribe(fileUri, options) {
+    async transcribe(fileUri, options, onProgress) {
       const startedAt = Date.now();
       if (!context) {
         // 경로가 /index 인 이유: whisper.rn 0.7.3 의 exports 맵에 "." 항목이 없어
@@ -158,6 +163,9 @@ export function createOnDeviceProvider(
         // 무음 구간에서의 반복 환각을 막는다.
         maxLen: 0,
         tokenTimestamps: true,
+        onProgress: onProgress
+          ? (p: number) => onProgress(Math.max(0, Math.min(100, p)))
+          : undefined,
       });
       const result = await promise;
       const segments = (result.segments ?? []).map((s) => ({
@@ -288,6 +296,7 @@ export async function buildAsrOptions(lexicon: Lexicon): Promise<AsrOptions> {
 export async function processRecording(
   recording: RecordingRow,
   provider: AsrProvider,
+  onProgress?: (pct: number) => void,
 ): Promise<number> {
   if (!recording.file_uri) return 0;
 
@@ -295,7 +304,7 @@ export async function processRecording(
   try {
     const lexicon = await loadLexicon();
     const options = await buildAsrOptions(lexicon);
-    const asr = await provider.transcribe(recording.file_uri, options);
+    const asr = await provider.transcribe(recording.file_uri, options, onProgress);
     const memory = await loadCorrectionMemory();
 
     // 1) ASR 덩어리를 문장으로 편다.
