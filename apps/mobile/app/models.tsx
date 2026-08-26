@@ -12,7 +12,9 @@ import { Badge, Body, Button, Card, Divider, Heading, Small } from "../src/compo
 import { CONTENT_MAX, radius, space, type, useTheme } from "../src/theme";
 import {
   addCustomModel,
+  activeDownloads,
   cancelDownload,
+  subscribeDownloads,
   deleteModelFile,
   downloadModel,
   listModels,
@@ -201,17 +203,22 @@ export default function Models() {
     void load();
   }, [load]);
 
-  const start = useCallback(
-    async (model: AsrModel) => {
-      setProgress((p) => ({ ...p, [model.id]: { receivedMb: 0, totalMb: 0, ratio: 0 } }));
-      const outcome = await downloadModel(model, (p) =>
-        setProgress((prev) => ({ ...prev, [model.id]: p })),
-      );
+  // 진행은 서비스가 브로드캐스트한다 — 화면을 나갔다 와도 받던 자리부터 보인다.
+  useEffect(() => {
+    setProgress(activeDownloads());
+    return subscribeDownloads((id, p) => {
       setProgress((prev) => {
         const next = { ...prev };
-        delete next[model.id];
+        if (p) next[id] = p;
+        else delete next[id];
         return next;
       });
+    });
+  }, []);
+
+  const start = useCallback(
+    async (model: AsrModel) => {
+      const outcome = await downloadModel(model);
       await load();
 
       if (outcome.canceled) return;

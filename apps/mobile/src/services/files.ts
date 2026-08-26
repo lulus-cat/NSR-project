@@ -33,15 +33,29 @@ export function recordingFileUri(fileName: string): string {
  * @returns 옮긴 뒤의 URI. 실패하면 원래 URI(적어도 이번 세션에는 남아 있다).
  */
 export function moveIntoRecordings(sourceUri: string, fileName: string): string {
+  const source = new File(sourceUri);
   try {
-    const source = new File(sourceUri);
     if (!source.exists) return sourceUri;
     const destination = new File(recordingsDirectory(), fileName);
     if (destination.exists) destination.delete();
-    source.moveSync(destination);
+    source.moveSync(destination); // 이동 후 source.uri 는 새 위치를 가리킨다.
     return source.uri;
   } catch {
-    return sourceUri;
+    // 이동이 실패하면 복사로라도 문서 디렉터리에 넣는다. 캐시 경로를 DB 에
+    // 남기면 OS 가 캐시를 비운 며칠 뒤 "파일 없음"으로 죽는다 — 실제로 겪었다.
+    try {
+      const destination = new File(recordingsDirectory(), fileName);
+      if (destination.exists) destination.delete();
+      source.copySync(destination);
+      try {
+        source.delete();
+      } catch {
+        // 원본 캐시 파일은 OS 가 알아서 지운다.
+      }
+      return destination.uri;
+    } catch {
+      return sourceUri; // 마지막 수단 — 적어도 이번 세션에는 남아 있다.
+    }
   }
 }
 

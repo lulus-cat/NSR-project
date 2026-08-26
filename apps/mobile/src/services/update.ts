@@ -8,7 +8,7 @@
  * 그래서 "새 판이 나왔는지" 를 앱이 알려주지 않으면 아무도 모른다.
  */
 
-import { Linking } from "react-native";
+import { Linking, Platform } from "react-native";
 import Constants from "expo-constants";
 import {
   decideUpdate,
@@ -158,5 +158,69 @@ export async function openDownload(release: ReleaseInfo): Promise<boolean> {
     return true;
   } catch {
     return false;
+  }
+}
+
+/**
+ * 새 판을 앱 안에서 받아 설치 화면까지 연다 (Android 전용).
+ *
+ * 브라우저를 거치지 않는다: APK 를 앱 캐시에 받고, FileProvider 의
+ * content:// 주소로 안드로이드 패키지 설치 화면을 띄운다.
+ * 설치 확인 자체는 OS 가 사람에게 직접 묻는다 — 앱이 대신 누를 수는 없고,
+ * 그래서도 안 된다. 처음 한 번은 '이 앱의 출처 허용' 설정을 물을 수 있다.
+ * iOS 나 실패 시에는 기존 브라우저 방식으로 돌아간다.
+ */
+export async function downloadAndInstall(
+  release: ReleaseInfo,
+  onProgress?: (pct: number) => void,
+): Promise<{ ok: boolean; error?: string }> {
+  if (Platform.OS !== "android" || !release.apkUrl) {
+    const opened = await openDownload(release);
+    return opened ? { ok: true } : { ok: false, error: "다운로드 페이지를 열 수 없습니다." };
+  }
+  const notifId = "nsr-app-update";
+  try {
+    const { File, Paths } = await import("expo-file-system");
+    const { ensureNotifPermission, notifyDone, notifyProgress } = await import("./progress-notify");
+    await ensureNotifPermission();
+
+    const target = new File(Paths.cache, `nsr-${release.version}.apk`);
+    try {
+      if (target.exists) target.delete();
+    } catch {
+      // 남은 옛 파일이 없으면 그만이다.
+    }
+    await File.downloadFileAsync(release.apkUrl, target, {
+      idempotent: true,
+      onProgress: ({ bytesWritten, totalBytes }) => {
+        const pct = totalBytes > 0 ? Math.round((bytesWritten / totalBytes) * 100) : 0;
+        onProgress?.(pct);
+        void notifyProgress(
+          notifId,
+          pct,
+          `새 판 받는 중 ${pct}%`,
+          `NSR ${release.version} · 받은 뒤 설치 확인이 뜹니다`,
+        );
+      },
+    });
+    if (!target.exists || target.size === 0) {
+      await notifyDone(notifId, "새 판 받기 실패", "받은 파일이 온전하지 않습니다.");
+      return { ok: false, error: "받은 파일이 온전하지 않습니다. 다시 시도해 주십시오." };
+    }
+    await notifyDone(notifId, "새 판 받기 완료", "설치 화면을 엽니다.");
+
+    const IntentLauncher = await import("expo-intent-launcher");
+    await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
+      data: target.contentUri,
+      // FLAG_GRANT_READ_URI_PERMISSION — 설치기가 우리 파일을 읽게 허락한다.
+      flags: 1,
+      type: "application/vnd.android.package-archive",
+    });
+    return { ok: true };
+  } catch (e) {
+    // 인앱 경로가 무엇에든 막히면 브라우저로라도 받게 한다.
+    const fallback = await openDownload(release);
+    if (fallback) return { ok: true };
+    return { ok: false, error: e instanceof Error ? e.message : "다운로드에 실패했습니다." };
   }
 }

@@ -142,7 +142,7 @@ export interface DownloadOutcome {
   error?: string;
 }
 
-/** 진행 중인 내려받기. 화면을 나가거나 취소를 누르면 끊는다. */
+/** 진행 중인 내려받기. 취소 버튼을 누를 때만 끊는다 — 화면을 나가도 계속된다. */
 const inFlight = new Map<string, AbortController>();
 
 export function cancelDownload(modelId: string): void {
@@ -151,6 +151,31 @@ export function cancelDownload(modelId: string): void {
 
 export function isDownloading(modelId: string): boolean {
   return inFlight.has(modelId);
+}
+
+// ── 진행 브로드캐스트 ─────────────────────────────────────────
+// 진행 상태를 화면 로컬이 아니라 모듈에 둔다. 화면을 나갔다 와도
+// 구독만 다시 걸면 받던 자리부터 그대로 보인다.
+const progressMap = new Map<string, DownloadProgress>();
+const progressListeners = new Set<(id: string, p: DownloadProgress | null) => void>();
+
+/** 지금 받는 중인 모델들의 진행. 화면이 mount 될 때 복원용으로 읽는다. */
+export function activeDownloads(): Record<string, DownloadProgress> {
+  return Object.fromEntries(progressMap);
+}
+
+/** p 가 null 이면 그 모델의 다운로드가 끝났다는 뜻이다(성공·실패·취소 불문). */
+export function subscribeDownloads(
+  fn: (modelId: string, p: DownloadProgress | null) => void,
+): () => void {
+  progressListeners.add(fn);
+  return () => progressListeners.delete(fn);
+}
+
+function emitProgress(modelId: string, p: DownloadProgress | null): void {
+  if (p) progressMap.set(modelId, p);
+  else progressMap.delete(modelId);
+  for (const fn of progressListeners) fn(modelId, p);
 }
 
 /**
@@ -186,6 +211,10 @@ export async function downloadModel(
 
   const MB = 1024 * 1024;
   const round = (n: number) => Math.round(n * 10) / 10;
+  const notifId = `nsr-model-${model.id}`;
+  const { ensureNotifPermission, notifyDone, notifyProgress } = await import("./progress-notify");
+  await ensureNotifPermission();
+  emitProgress(model.id, { receivedMb: 0, totalMb: 0, ratio: 0 });
 
   try {
     // 허깅페이스에서 받을 때 내장 토큰이 있으면 붙인다 — 익명 다운로드가
@@ -197,26 +226,43 @@ export async function downloadModel(
       headers: hf ? { Authorization: `Bearer ${BUILT_IN.huggingFaceToken}` } : undefined,
       signal: controller.signal,
       onProgress: ({ bytesWritten, totalBytes }) => {
-        onProgress?.({
+        const p: DownloadProgress = {
           receivedMb: round(bytesWritten / MB),
           totalMb: totalBytes > 0 ? round(totalBytes / MB) : 0,
           ratio: totalBytes > 0 ? Math.min(bytesWritten / totalBytes, 1) : 0,
-        });
+        };
+        onProgress?.(p);
+        emitProgress(model.id, p);
+        const pct = Math.round(p.ratio * 100);
+        void notifyProgress(
+          notifId,
+          pct,
+          p.totalMb > 0 ? `모델 받는 중 ${pct}%` : "모델 받는 중",
+          `${model.name} · ${p.receivedMb}${p.totalMb > 0 ? ` / ${p.totalMb}` : ""} MB · 화면을 닫아도 계속됩니다`,
+        );
       },
     });
 
     const done = new File(dir, model.file);
     if (!done.exists || done.size === 0) {
       deleteModelFile(model);
+      await notifyDone(notifId, "모델 받기 실패", "받은 파일이 온전하지 않습니다. 다시 받아 주십시오.");
       return { ok: false, sizeMb: 0, error: "다운로드된 파일이 온전하지 않습니다. 지우고 다시 받아 주십시오." };
     }
     const sizeMb = round(done.size / MB);
     onProgress?.({ receivedMb: sizeMb, totalMb: sizeMb, ratio: 1 });
+    await notifyDone(notifId, "모델 받기 완료", `${model.name} · ${sizeMb} MB`);
     return { ok: true, sizeMb };
   } catch (error) {
     // 성공하지 못한 파일은 어떤 이유였든 남기지 않는다.
     deleteModelFile(model);
     if (controller.signal.aborted) {
+      try {
+        const Notifications = await import("expo-notifications");
+        await Notifications.dismissNotificationAsync(notifId);
+      } catch {
+        // 알림이 없으면 그만이다.
+      }
       return { ok: false, sizeMb: 0, canceled: true };
     }
     const raw = error instanceof Error ? error.message : "다운로드에 실패했습니다.";
@@ -227,9 +273,11 @@ export async function downloadModel(
       : /Network|ENOTFOUND|ECONN|timeout/i.test(raw)
         ? "인터넷이 끊겼습니다. Wi-Fi 상태를 확인하고 다시 시도하십시오."
         : raw;
+    await notifyDone(notifId, "모델 받기 실패", friendly);
     return { ok: false, sizeMb: 0, error: friendly };
   } finally {
     inFlight.delete(model.id);
+    emitProgress(model.id, null);
   }
 }
 

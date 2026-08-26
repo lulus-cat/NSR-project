@@ -14,9 +14,10 @@
  * 남은 파일은 '전사할 기록'으로 되돌아온다.
  */
 
-import type { RecordingRow } from "../db";
+import { setRecordingState, type RecordingRow } from "../db";
 import { processRecording, resolveProvider } from "./asr";
 import { logDebug } from "./debug";
+import { ensureNotifPermission, notifyDone, notifyProgress } from "./progress-notify";
 
 export interface RunnerState {
   running: boolean;
@@ -59,38 +60,6 @@ function emit(patch: Partial<RunnerState>): void {
 }
 
 const NOTIF_ID = "nsr-transcribe-progress";
-let lastNotifiedPct = -100;
-
-async function notify(title: string, body: string, done = false): Promise<void> {
-  try {
-    const Notifications = await import("expo-notifications");
-    if (!done) {
-      // 진행 알림은 5%p 단위로만 갱신 — 매 틱 갱신하면 알림창이 깜빡인다.
-      if (state.percent - lastNotifiedPct < 5) return;
-      lastNotifiedPct = state.percent;
-    }
-    const perm = await Notifications.getPermissionsAsync();
-    if (!perm.granted) return; // 권한이 없으면 화면 표시만 한다.
-    await Notifications.scheduleNotificationAsync({
-      identifier: NOTIF_ID,
-      content: { title, body, sound: false },
-      trigger: null,
-    });
-  } catch {
-    // 알림은 편의다. 실패해도 전사는 계속된다.
-  }
-}
-
-/** 첫 전사 시작 때 한 번 알림 권한을 청한다. 거절해도 전사는 된다. */
-async function ensureNotifPermission(): Promise<void> {
-  try {
-    const Notifications = await import("expo-notifications");
-    const cur = await Notifications.getPermissionsAsync();
-    if (!cur.granted && cur.canAskAgain) await Notifications.requestPermissionsAsync();
-  } catch {
-    // 없으면 없는 대로.
-  }
-}
 
 /**
  * 전사 작업을 시작한다. 이미 돌고 있으면 무시한다(한 번에 하나).
@@ -101,7 +70,6 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
   const files = recordings.filter((r) => r.state === "recorded" && r.file_uri);
   if (files.length === 0) return false;
 
-  lastNotifiedPct = -100;
   emit({
     running: true,
     shiftId,
@@ -113,32 +81,55 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
 
   void (async () => {
     await ensureNotifPermission();
+    // 캐시 정리 등으로 파일이 사라진 기록은 건너뛰고 마지막에 알린다.
+    let missing = 0;
     try {
+      const { File } = await import("expo-file-system");
       const provider = await resolveProvider();
       for (let i = 0; i < files.length; i++) {
+        const rec = files[i];
         emit({ fileIndex: i + 1, percent: Math.round((i / files.length) * 100) });
-        await notify(
+        if (!rec.file_uri || !new File(rec.file_uri).exists) {
+          missing += 1;
+          await setRecordingState(rec.id, "discarded", "파일이 기기 저장 공간 정리로 사라짐");
+          continue;
+        }
+        await notifyProgress(
+          NOTIF_ID,
+          state.percent,
           `전사 중 ${state.percent}%`,
           `파일 ${i + 1}/${files.length} · 화면을 닫아도 계속됩니다`,
         );
-        await processRecording(files[i], provider, (filePct) => {
+        await processRecording(rec, provider, (filePct) => {
           const overall = Math.round(((i + filePct / 100) / files.length) * 100);
           if (overall !== state.percent) {
             emit({ percent: overall });
-            void notify(
+            void notifyProgress(
+              NOTIF_ID,
+              overall,
               `전사 중 ${overall}%`,
               `파일 ${i + 1}/${files.length} · 화면을 닫아도 계속됩니다`,
             );
           }
         });
       }
-      emit({ running: false, percent: 100, completedAt: Date.now() });
-      await notify("전사 완료", `기록 ${files.length}건을 전사했습니다.`, true);
+      const doneCount = files.length - missing;
+      const summary =
+        missing > 0
+          ? `기록 ${doneCount}건 전사 완료 · ${missing}건은 파일이 사라져 건너뜀`
+          : `기록 ${doneCount}건을 전사했습니다.`;
+      emit({
+        running: false,
+        percent: 100,
+        error: missing > 0 ? `${missing}건은 파일이 저장 공간 정리로 사라져 건너뛰었습니다.` : null,
+        completedAt: Date.now(),
+      });
+      await notifyDone(NOTIF_ID, "전사 완료", summary);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "전사에 실패했습니다.";
       void logDebug(`전사 실패: ${msg}`);
       emit({ running: false, error: msg, completedAt: Date.now() });
-      await notify("전사 중단", msg, true);
+      await notifyDone(NOTIF_ID, "전사 중단", msg);
     }
   })();
 

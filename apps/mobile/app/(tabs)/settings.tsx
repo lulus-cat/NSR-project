@@ -36,7 +36,7 @@ import {
   autoCheckEnabled,
   checkForUpdate,
   currentVersion,
-  openDownload,
+  downloadAndInstall,
   setAutoCheck,
   skipVersion,
   type UpdateCheck,
@@ -205,6 +205,7 @@ export default function Settings() {
   const [checking, setChecking] = useState(false);
   const [debugEntries, setDebugEntries] = useState<DebugEntry[]>([]);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [updatePct, setUpdatePct] = useState<number | null>(null);
 
   const load = useCallback(async () => {
     setAppLock(await getSetting<boolean>(SETTINGS_KEYS.appLock, false));
@@ -353,12 +354,15 @@ export default function Settings() {
             <View style={{ flexDirection: "row", gap: space.sm }}>
               <View style={{ flex: 1 }}>
                 <Button
-                  label="받으러 가기"
+                  label={updatePct !== null ? `받는 중 ${updatePct}%` : "받아서 설치"}
                   tone="primary"
+                  busy={updatePct !== null}
                   onPress={async () => {
-                    if (!update.release) return;
-                    const ok = await openDownload(update.release);
-                    if (!ok) setConnectionMsg("다운로드 페이지를 열 수 없습니다.");
+                    if (!update.release || updatePct !== null) return;
+                    setUpdatePct(0);
+                    const r = await downloadAndInstall(update.release, setUpdatePct);
+                    setUpdatePct(null);
+                    if (!r.ok) setConnectionMsg(r.error ?? "다운로드에 실패했습니다.");
                   }}
                 />
               </View>
