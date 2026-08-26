@@ -26,6 +26,13 @@ import {
 } from "../src/services/models";
 import { getSetting, setSetting } from "../src/db";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
+import {
+  getClovaSecret,
+  loadClovaSettings,
+  saveClovaSettings,
+  setClovaSecret,
+  type ClovaSettings,
+} from "../src/services/clova";
 
 interface ServerAsr {
   enabled: boolean;
@@ -186,6 +193,8 @@ export default function Models() {
   const [form, setForm] = useState({ name: "", file: "", url: "", sizeMb: "" });
   const [formError, setFormError] = useState<string | null>(null);
   const [server, setServer] = useState<ServerAsr>({ enabled: false, endpoint: "" });
+  const [clova, setClova] = useState<ClovaSettings>({ enabled: false, invokeUrl: "" });
+  const [clovaKey, setClovaKey] = useState("");
 
   const load = useCallback(async () => {
     setStatuses(await listModels());
@@ -196,11 +205,23 @@ export default function Models() {
         endpoint: "",
       }),
     );
+    setClova(await loadClovaSettings());
+    setClovaKey((await getClovaSecret()) ?? "");
   }, []);
 
   const saveServer = useCallback(async (next: ServerAsr) => {
     setServer(next);
     await setSetting(SETTINGS_KEYS.cloudTranscription, next);
+  }, []);
+
+  const saveClova = useCallback(async (next: ClovaSettings) => {
+    setClova(next);
+    await saveClovaSettings(next);
+  }, []);
+
+  const saveClovaKey = useCallback(async (key: string) => {
+    setClovaKey(key);
+    await setClovaSecret(key.trim());
   }, []);
 
   useEffect(() => {
@@ -338,6 +359,66 @@ export default function Models() {
               
   설치된 모델이 없습니다. 음성을 전사하려면 모델을 받아주십시오.
 </Small>
+          </>
+        ) : null}
+      </Card>
+
+      {/* 클로바 스피치 — 상용 API. 유일하게 화자 구분이 자동으로 되는 경로다. */}
+      <Card tone={clova.enabled ? "accent" : "default"}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+          <Heading>클로바 스피치로 전사</Heading>
+          {clova.enabled ? <Badge text="사용 중" tone="ok" /> : null}
+        </View>
+        <Small>
+          클로바노트와 같은 엔진(네이버클라우드 CLOVA Speech)입니다. 한국어 정확도가 높고, 이
+          앱에서 유일하게 <Text style={{ fontWeight: "700" }}>화자 구분이 자동</Text>으로 됩니다.
+          켜져 있으면 노트북 서버·기기 전사보다 우선합니다.
+        </Small>
+        <Small>
+          기록 음성 원본이 네이버클라우드 서버로 전송됩니다. 음성은 보내기 전에 가릴 방법이
+          없으므로, 의료법 제19조(비밀 유지)를 확인하고 본인 판단으로 켜십시오.
+        </Small>
+        <Divider />
+        <Small muted={false}>준비 (한 번만)</Small>
+        <Small>
+          1. ncloud.com 가입 후 콘솔에서 CLOVA Speech 이용을 신청하고 도메인을 만드십시오. 2.
+          도메인 상세의 Invoke URL 과 Secret Key 를 아래에 넣으십시오. 3. 무료는 월 20분입니다 —
+          기록 전체를 올리면 기록 시간만큼 요금이 드니, 먼저 짧은 기록 하나로 품질을 확인해
+          보십시오. 요금표는 콘솔에서 볼 수 있습니다.
+        </Small>
+        <Button
+          label="네이버클라우드 열기"
+          onPress={() => void Linking.openURL("https://www.ncloud.com/product/aiService/clovaSpeech")}
+        />
+        <Button
+          label={clova.enabled ? "클로바 전사 끄기" : "클로바 전사 켜기"}
+          tone={clova.enabled ? "default" : "primary"}
+          onPress={() => void saveClova({ ...clova, enabled: !clova.enabled })}
+        />
+        {clova.enabled ? (
+          <>
+            <TextInput
+              value={clova.invokeUrl}
+              onChangeText={(invokeUrl) => void saveClova({ ...clova, invokeUrl })}
+              placeholder="Invoke URL (콘솔 도메인 상세에 있습니다)"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={input}
+            />
+            <TextInput
+              value={clovaKey}
+              onChangeText={(key) => void saveClovaKey(key)}
+              placeholder="Secret Key (이 기기에만 저장됩니다)"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              style={input}
+            />
+            {clova.invokeUrl && clovaKey ? null : (
+              <Small>Invoke URL 과 Secret Key 를 모두 넣어야 동작합니다.</Small>
+            )}
           </>
         ) : null}
       </Card>
