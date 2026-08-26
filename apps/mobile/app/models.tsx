@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { Alert, ScrollView, TextInput, View } from "react-native";
+import { Alert, Linking, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import {
   KOREAN_MODEL_GUIDE,
@@ -35,6 +35,10 @@ interface ServerAsr {
 
 /** 노트북(speaches 등)이 받아 쓰는 한국어 CT2 모델. 러너로 파일 구성을 확인해 둔 id 다. */
 const KOREAN_SERVER_MODEL = "ghost613/faster-whisper-large-v3-turbo-korean";
+
+/** 노트북이 없을 때의 대안 — 콜랩 무료 GPU 로 같은 서버를 띄우는 노트. 저장소가 공개라 바로 열린다. */
+const COLAB_NOTEBOOK_URL =
+  "https://colab.research.google.com/github/lulus-cat/NSR-project/blob/claude/new-nurse-adaptation-app-9xuo5p/docs/colab/nsr-transcribe-server.ipynb";
 
 /** 8시간 근무에서 VAD로 무음을 걷어내면 실제 발화는 대략 이 정도다. */
 const TYPICAL_SPEECH_MINUTES = 90;
@@ -362,6 +366,14 @@ export default function Models() {
           비워도 됩니다 — 서버 기본값을 씁니다. OpenAI 호환(/v1/audio/transcriptions) 서버라면
           무엇이든 붙습니다. 집 밖에서도 쓰려면 Tailscale 이 가장 쉽습니다.
         </Small>
+        <Divider />
+        <Small muted={false}>노트북이 없다면 — 구글 콜랩 (무료 GPU)</Small>
+        <Small>
+          아래 버튼으로 콜랩 노트를 열고 &lsquo;모두 실행&rsquo;하면 몇 분 안에 전사 서버가
+          만들어지고, 마지막 출력의 주소를 여기 주소 칸에 넣으면 됩니다. 기록 음성이 구글
+          서버를 지나는 경로입니다 — 내 컴퓨터가 아닙니다. 콜랩 탭을 닫으면 서버도 꺼집니다.
+        </Small>
+        <Button label="콜랩 노트 열기" onPress={() => void Linking.openURL(COLAB_NOTEBOOK_URL)} />
         <Button
           label={server.enabled ? "서버 전사 끄기" : "서버 전사 켜기"}
           tone={server.enabled ? "default" : "primary"}
