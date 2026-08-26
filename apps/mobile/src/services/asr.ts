@@ -10,10 +10,9 @@
  *
  * "클라우드"라고 부르는 옵션도 **상용 ASR API가 아니라 사용자가 지정한 서버**다.
  * 대부분의 경우 본인이 띄운 faster-whisper 서버이거나 병원이 제공한 내부 서버다.
- *
- * 예외가 하나 있다 — **클로바 스피치**(services/clova.ts). 사용자가 실사용
- * 비교 끝에 고른 상용 API 로, 유일하게 화자 분리가 자동으로 된다. 키를 직접
- * 넣어 명시적으로 켠 경우에만 동작하고, 화면에 무엇이 나가는지 적혀 있다.
+ * 임의의 제3자 서비스에 병동 기록을 올리는 경로는 이 앱이 제공하지 않는다.
+ * (클로바 스피치를 잠깐 열었다가 요금이 오디오 길이 기준이라 접었다 — 근무
+ * 통짜 기록에는 하루 만 원이 넘는다. 무료 경로들이 있는 한 정당화가 안 된다.)
  */
 
 import {
@@ -81,7 +80,7 @@ export interface AsrResult {
 
 export interface AsrProvider {
   readonly id: string;
-  readonly kind: "on-device" | "self-hosted" | "cloud";
+  readonly kind: "on-device" | "self-hosted";
   /** 이 엔진이 실제로 할 수 있는 것. 요청(AsrOptions)과 구분해서 본다. */
   readonly capabilities: AsrCapabilities;
   /** 어떤 모델로 돌리는가. 속도 실측을 이 id에 묶어 둔다. */
@@ -224,27 +223,33 @@ export function createSelfHostedProvider(
     // OpenAI 전사 형식에는 화자 필드가 없다. 있다고 말하지 않는다.
     capabilities: { diarization: false, wordTimestamps: true },
     async transcribe(fileUri, options) {
-      const form = new FormData();
-      form.append("file", {
-        uri: fileUri,
-        name: "audio.m4a",
-        type: "audio/m4a",
-      } as unknown as Blob);
-      form.append("language", options.language);
-      form.append("temperature", String(options.temperature));
-      form.append("response_format", "verbose_json");
-      if (model) form.append("model", model);
-      if (options.initialPrompt) form.append("prompt", options.initialPrompt);
+      // 파일 업로드는 fetch+FormData 가 아니라 네이티브 멀티파트로 한다.
+      // SDK 57 부터 전역 fetch 가 새 구현(expo winter)인데, RN 구식
+      // {uri,name,type} 파일 파트를 "Unsupported FormDataPart implementation"
+      // 으로 거부한다 — 콜랩 첫 실사용에서 그대로 터진 오류다.
+      // uploadAsync 는 디스크에서 스트리밍하므로 긴 조각을 메모리에
+      // 통째로 올리지 않는 부수 이득도 있다.
+      const FileSystem = await import("expo-file-system/legacy");
+      const parameters: Record<string, string> = {
+        language: options.language,
+        temperature: String(options.temperature),
+        response_format: "verbose_json",
+      };
+      if (model) parameters.model = model;
+      if (options.initialPrompt) parameters.prompt = options.initialPrompt;
 
-      const response = await fetch(url, {
-        method: "POST",
+      const response = await FileSystem.uploadAsync(url, fileUri, {
+        httpMethod: "POST",
+        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
+        fieldName: "file",
+        mimeType: "audio/m4a",
+        parameters,
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-        body: form,
       });
-      if (!response.ok) {
-        throw new Error(`전사 서버 오류 ${response.status}: ${await response.text()}`);
+      if (response.status < 200 || response.status >= 300) {
+        throw new Error(`전사 서버 오류 ${response.status}: ${response.body.slice(0, 300)}`);
       }
-      const json = (await response.json()) as {
+      const json = JSON.parse(response.body) as {
         text?: string;
         duration?: number;
         segments?: { start: number; end: number; text: string; speaker?: string }[];
@@ -413,15 +418,8 @@ export async function finalizeShift(input: {
   return { cardsAdded, taeumScore: taeum.score };
 }
 
-/** 현재 설정에 맞는 provider를 만든다. 우선순위: 클로바 > 내 서버 > 기기. */
+/** 현재 설정에 맞는 provider를 만든다. */
 export async function resolveProvider(): Promise<AsrProvider> {
-  const { loadClovaSettings, getClovaSecret, createClovaProvider } = await import("./clova");
-  const clova = await loadClovaSettings();
-  if (clova.enabled && clova.invokeUrl) {
-    const secret = await getClovaSecret();
-    if (secret) return createClovaProvider(clova.invokeUrl, secret);
-  }
-
   const cloud = await getSetting<{
     enabled: boolean;
     endpoint: string;
