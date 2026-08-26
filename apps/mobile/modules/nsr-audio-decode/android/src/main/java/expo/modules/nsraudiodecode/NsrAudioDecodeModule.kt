@@ -1,9 +1,11 @@
 package expo.modules.nsraudiodecode
 
+import android.content.Intent
 import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import androidx.core.content.ContextCompat
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
 import java.io.BufferedOutputStream
@@ -28,6 +30,31 @@ class NsrAudioDecodeModule : Module() {
     // 30분 조각 기준 수 초~수십 초짜리 CPU 작업. 전사 직전에만 부른다.
     AsyncFunction("decodeToWav16k") { srcPath: String, dstPath: String ->
       decode(srcPath, dstPath)
+    }
+
+    // ── 작업 유지 (포그라운드 서비스) ───────────────────────
+    // 다운로드·전사 동안 붙잡아 두면 다른 앱으로 넘어가도
+    // 얼리기(app freezer)·네트워크 차단에서 면제된다.
+    // 시작은 사용자가 버튼을 누른 포그라운드 시점이라 인텐트로,
+    // 갱신·중지는 백그라운드에서도 안전하도록 인스턴스 직접 호출로.
+    Function("workStart") { title: String, body: String ->
+      val context = appContext.reactContext ?: return@Function
+      val running = NsrWorkService.instance
+      if (running != null) {
+        running.updateWork(title, body)
+        return@Function
+      }
+      val intent = Intent(context, NsrWorkService::class.java)
+        .setAction(NsrWorkService.ACTION_START)
+        .putExtra(NsrWorkService.EXTRA_TITLE, title)
+        .putExtra(NsrWorkService.EXTRA_BODY, body)
+      ContextCompat.startForegroundService(context, intent)
+    }
+    Function("workUpdate") { title: String, body: String ->
+      NsrWorkService.instance?.updateWork(title, body)
+    }
+    Function("workStop") {
+      NsrWorkService.instance?.stopWork()
     }
   }
 }

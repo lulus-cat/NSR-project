@@ -212,11 +212,13 @@ export async function downloadModel(
   const MB = 1024 * 1024;
   const round = (n: number) => Math.round(n * 10) / 10;
   const notifId = `nsr-model-${model.id}`;
-  const { ensureNotifPermission, notifyDone, notifyProgress } = await import("./progress-notify");
-  await ensureNotifPermission();
-  emitProgress(model.id, { receivedMb: 0, totalMb: 0, ratio: 0 });
+  const { beginWork, endWork, notifyDone, notifyProgress } = await import("./progress-notify");
+  // 포그라운드 서비스를 잡는다 — 다른 앱으로 넘어가도 소켓이 안 끊기게.
+  // 아래 모든 종료 경로(성공·실패는 notifyDone, 취소는 endWork)와 짝이다.
+  await beginWork("모델 받는 중", `${model.name} · 화면을 닫아도 계속됩니다`);
 
   try {
+    emitProgress(model.id, { receivedMb: 0, totalMb: 0, ratio: 0 });
     // 허깅페이스에서 받을 때 내장 토큰이 있으면 붙인다 — 익명 다운로드가
     // 429/401 로 막히는 경우의 우회로다. 다른 호스트에는 토큰을 보내지 않는다.
     const { BUILT_IN } = await import("../config");
@@ -257,12 +259,7 @@ export async function downloadModel(
     // 성공하지 못한 파일은 어떤 이유였든 남기지 않는다.
     deleteModelFile(model);
     if (controller.signal.aborted) {
-      try {
-        const Notifications = await import("expo-notifications");
-        await Notifications.dismissNotificationAsync(notifId);
-      } catch {
-        // 알림이 없으면 그만이다.
-      }
+      await endWork(notifId); // 취소는 결과 알림 없이 조용히 접는다.
       return { ok: false, sizeMb: 0, canceled: true };
     }
     const raw = error instanceof Error ? error.message : "다운로드에 실패했습니다.";

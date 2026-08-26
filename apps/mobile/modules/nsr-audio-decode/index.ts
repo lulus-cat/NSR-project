@@ -8,6 +8,9 @@ import { requireOptionalNativeModule } from "expo-modules-core";
  */
 const Native = requireOptionalNativeModule<{
   decodeToWav16k(srcPath: string, dstPath: string): Promise<string>;
+  workStart(title: string, body: string): void;
+  workUpdate(title: string, body: string): void;
+  workStop(): void;
 }>("NsrAudioDecode");
 
 export function audioDecodeAvailable(): boolean {
@@ -24,4 +27,35 @@ export async function decodeToWav16k(srcUri: string, dstUri: string): Promise<st
     );
   }
   return Native.decodeToWav16k(stripScheme(srcUri), stripScheme(dstUri));
+}
+
+/**
+ * 작업 유지 — 포그라운드 서비스를 잡아 다른 앱으로 넘어가도
+ * 다운로드·전사가 얼리지 않게 한다 (Android 전용, 없으면 조용히 무시).
+ * 알림 제목/본문이 곧 진행 표시다.
+ */
+export function workStart(title: string, body: string): boolean {
+  if (!Native?.workStart) return false;
+  try {
+    Native.workStart(title, body);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function workUpdate(title: string, body: string): void {
+  try {
+    Native?.workUpdate?.(title, body);
+  } catch {
+    // 서비스가 없으면 그만이다.
+  }
+}
+
+export function workStop(): void {
+  try {
+    Native?.workStop?.();
+  } catch {
+    // 위와 같다.
+  }
 }

@@ -75,25 +75,47 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setNextWindow(result.next ?? (await upcomingWindows())[0] ?? null);
   }, []);
 
+  // 인증 겹침 방지용. 0 이면 쉬는 중, 아니면 프롬프트를 띄운 시각이다.
+  // 시각으로 두는 이유: 프롬프트가 끝맺지 못한 채 앱이 밀려나도
+  // 15초가 지나면 스스로 풀려서 버튼이 영영 죽는 일이 없다.
+  const authStartedAt = useRef(0);
+
   const unlock = useCallback(async () => {
     if (!appLockEnabled.current) {
       setLocked(false);
       return true;
     }
-    const LocalAuthentication = await import("expo-local-authentication");
-    const hasHardware = await LocalAuthentication.hasHardwareAsync();
-    const enrolled = await LocalAuthentication.isEnrolledAsync();
-    if (!hasHardware || !enrolled) {
-      // 생체인증을 쓸 수 없는 기기에서 앱이 통째로 잠기면 안 된다.
-      setLocked(false);
-      return true;
+    const now = Date.now();
+    if (now - authStartedAt.current < 15_000) return false;
+    authStartedAt.current = now;
+    try {
+      const LocalAuthentication = await import("expo-local-authentication");
+      const hasHardware = await LocalAuthentication.hasHardwareAsync();
+      const enrolled = await LocalAuthentication.isEnrolledAsync();
+      if (!hasHardware || !enrolled) {
+        // 생체인증을 쓸 수 없는 기기에서 앱이 통째로 잠기면 안 된다.
+        setLocked(false);
+        return true;
+      }
+      // 이전 인증이 앱 전환 등으로 끝맺지 못하고 걸려 있으면 안드로이드가
+      // 새 프롬프트를 조용히 무시한다 — "버튼을 눌러도 인증 화면이 안 뜨는"
+      // 증상의 원인. 시작 전에 걸린 것을 걷어낸다.
+      try {
+        await LocalAuthentication.cancelAuthenticate();
+      } catch {
+        // 걸린 인증이 없으면 그만이다.
+      }
+      const result = await LocalAuthentication.authenticateAsync({
+        promptMessage: "기록 내용에 민감 정보가 포함될 수 있습니다",
+        cancelLabel: "취소",
+        // 생체인식이 거듭 실패하면 기기 잠금(PIN·패턴)으로도 풀 수 있게.
+        disableDeviceFallback: false,
+      });
+      setLocked(!result.success);
+      return result.success;
+    } finally {
+      authStartedAt.current = 0;
     }
-    const result = await LocalAuthentication.authenticateAsync({
-      promptMessage: "기록 내용에 민감 정보가 포함될 수 있습니다",
-      cancelLabel: "취소",
-    });
-    setLocked(!result.success);
-    return result.success;
   }, []);
 
   const completeOnboarding = useCallback(async () => {

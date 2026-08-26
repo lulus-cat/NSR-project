@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Text, View } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
@@ -87,6 +87,25 @@ function Gate() {
     if (app.onboarded && onOnboarding) router.replace("/");
   }, [app.ready, app.onboarded, segments, router]);
 
+  // 잠금 해제. app 객체는 상태가 바뀔 때마다 새로 만들어지므로
+  // 아래 효과의 의존성은 안정적인 app.unlock 함수만 잡는다.
+  const unlock = app.unlock;
+  const [unlockHint, setUnlockHint] = useState(false);
+  const tryUnlock = useCallback(async () => {
+    setUnlockHint(false);
+    const ok = await unlock();
+    if (!ok) setUnlockHint(true);
+  }, [unlock]);
+
+  // 잠금화면이 뜨면 버튼을 기다리지 않고 곧장 생체인증을 띄운다.
+  // 400ms 유예는 화면(Activity)이 완전히 올라오기 전에 부르면
+  // 프롬프트가 조용히 무시되는 안드로이드 사정 때문이다.
+  useEffect(() => {
+    if (!app.ready || !app.locked) return;
+    const timer = setTimeout(() => void tryUnlock(), 400);
+    return () => clearTimeout(timer);
+  }, [app.ready, app.locked, tryUnlock]);
+
   if (!app.ready) {
     return (
       <View style={{ flex: 1, backgroundColor: t.bg }}>
@@ -116,8 +135,20 @@ function Gate() {
           NSR
         </Text>
         <View style={{ width: 200, marginTop: 24 }}>
-          <Button label="잠금 해제" tone="primary" onPress={() => void app.unlock()} />
+          <Button label="잠금 해제" tone="primary" onPress={() => void tryUnlock()} />
         </View>
+        {unlockHint ? (
+          <Text
+            style={{
+              color: "#8A867E",
+              fontSize: 13,
+              textAlign: "center",
+              paddingHorizontal: 40,
+            }}
+          >
+            인증 창이 뜨지 않으면 '잠금 해제'를 다시 눌러 주십시오.
+          </Text>
+        ) : null}
       </View>
     );
   }

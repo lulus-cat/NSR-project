@@ -6,18 +6,18 @@
  * 러너는 모듈 스코프 싱글턴이라 화면 이동과 무관하게 끝까지 돌고,
  * 어느 화면이든 구독으로 진행률을 읽는다.
  *
- * 상태바 알림: 진행률을 같은 id 의 알림으로 계속 덮어쓴다. 알림 권한이
- * 없으면 조용히 생략한다 — 화면 안 표시는 항상 된다.
+ * 상태바 알림: 작업 동안 포그라운드 서비스(beginWork)를 잡는다. 서비스
+ * 알림이 곧 진행 표시고, 잡고 있는 동안은 다른 앱으로 넘어가도 시스템이
+ * 프로세스를 얼리지 않는다(9차 ①의 원인이 이 얼리기였다).
  *
- * 한계(정직): 앱 프로세스가 살아 있는 동안 계속된다. 화면을 끄거나 다른
- * 앱을 써도 대개 이어지지만, 시스템이 앱을 완전히 종료하면 멈추고
- * 남은 파일은 '전사할 기록'으로 되돌아온다.
+ * 한계(정직): 사용자가 앱을 최근 목록에서 밀어 없애면 서비스째 죽는다.
+ * 그때 남은 파일은 '전사할 기록'으로 되돌아온다.
  */
 
 import { setRecordingState, type RecordingRow } from "../db";
 import { processRecording, resolveProvider } from "./asr";
 import { logDebug } from "./debug";
-import { ensureNotifPermission, notifyDone, notifyProgress } from "./progress-notify";
+import { beginWork, notifyDone, notifyProgress } from "./progress-notify";
 
 export interface RunnerState {
   running: boolean;
@@ -80,7 +80,9 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
   });
 
   void (async () => {
-    await ensureNotifPermission();
+    // 포그라운드 서비스를 잡는다 — 다른 앱으로 넘어가도 얼리지 않게.
+    // notifyDone(성공·실패 공통)이 endWork 라서 여기와 짝이 맞는다.
+    await beginWork("전사 준비 중", "화면을 닫아도 계속됩니다");
     // 캐시 정리 등으로 파일이 사라진 기록은 건너뛰고 마지막에 알린다.
     let missing = 0;
     try {

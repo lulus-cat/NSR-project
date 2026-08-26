@@ -179,10 +179,21 @@ export async function downloadAndInstall(
     return opened ? { ok: true } : { ok: false, error: "다운로드 페이지를 열 수 없습니다." };
   }
   const notifId = "nsr-app-update";
+  // 받는 동안 포그라운드 서비스를 잡는다(beginWork) — 다른 앱을 봐도 안 끊기게.
+  // 종료(endWork)는 성공·실패·예외 어느 길로 빠져도 정확히 한 번이어야 해서
+  // finish 로 감싼다. 두 번 내리면 같이 돌던 전사의 서비스까지 꺼진다.
+  let progress: typeof import("./progress-notify") | null = null;
+  let ended = false;
+  const finish = async (title?: string, body?: string) => {
+    if (!progress || ended) return;
+    ended = true;
+    if (title) await progress.notifyDone(notifId, title, body ?? "");
+    else await progress.endWork(notifId);
+  };
   try {
     const { File, Paths } = await import("expo-file-system");
-    const { ensureNotifPermission, notifyDone, notifyProgress } = await import("./progress-notify");
-    await ensureNotifPermission();
+    progress = await import("./progress-notify");
+    await progress.beginWork("새 판 받는 중", `NSR ${release.version} · 화면을 닫아도 계속됩니다`);
 
     const target = new File(Paths.cache, `nsr-${release.version}.apk`);
     try {
@@ -195,7 +206,7 @@ export async function downloadAndInstall(
       onProgress: ({ bytesWritten, totalBytes }) => {
         const pct = totalBytes > 0 ? Math.round((bytesWritten / totalBytes) * 100) : 0;
         onProgress?.(pct);
-        void notifyProgress(
+        void progress?.notifyProgress(
           notifId,
           pct,
           `새 판 받는 중 ${pct}%`,
@@ -204,10 +215,10 @@ export async function downloadAndInstall(
       },
     });
     if (!target.exists || target.size === 0) {
-      await notifyDone(notifId, "새 판 받기 실패", "받은 파일이 온전하지 않습니다.");
+      await finish("새 판 받기 실패", "받은 파일이 온전하지 않습니다.");
       return { ok: false, error: "받은 파일이 온전하지 않습니다. 다시 시도해 주십시오." };
     }
-    await notifyDone(notifId, "새 판 받기 완료", "설치 화면을 엽니다.");
+    await finish("새 판 받기 완료", "설치 화면을 엽니다.");
 
     const IntentLauncher = await import("expo-intent-launcher");
     await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
@@ -218,6 +229,7 @@ export async function downloadAndInstall(
     });
     return { ok: true };
   } catch (e) {
+    await finish(); // 아직 안 끝냈으면 조용히 접는다.
     // 인앱 경로가 무엇에든 막히면 브라우저로라도 받게 한다.
     const fallback = await openDownload(release);
     if (fallback) return { ok: true };
