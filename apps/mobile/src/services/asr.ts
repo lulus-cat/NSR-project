@@ -246,8 +246,17 @@ export function createSelfHostedProvider(
         parameters,
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
       });
+      // 502/503/504 는 십중팔구 "터널은 있는데 서버(콜랩 세션)는 죽어 있음"이다.
+      // 원시 상태 코드 대신 다음 행동을 말해 준다.
+      const gatewayDown = (status: number): string | null =>
+        status === 502 || status === 503 || status === 504
+          ? `전사 서버가 응답하지 않습니다 (${status}). 콜랩 세션이 꺼진 것 같습니다 — 노트를 '모두 실행'으로 다시 켜고 새 주소를 넣어 주십시오.`
+          : null;
       if (response.status < 200 || response.status >= 300) {
-        throw new Error(`전사 서버 오류 ${response.status}: ${response.body.slice(0, 300)}`);
+        throw new Error(
+          gatewayDown(response.status) ??
+            `전사 서버 오류 ${response.status}: ${response.body.slice(0, 300)}`,
+        );
       }
       type ServerResult = {
         text?: string;
@@ -277,7 +286,10 @@ export function createSelfHostedProvider(
             continue; // 폰 네트워크가 잠깐 출렁여도 작업은 서버에 살아 있다.
           }
           if (!poll.ok) {
-            throw new Error(`전사 서버 오류 ${poll.status}: ${(await poll.text()).slice(0, 300)}`);
+            throw new Error(
+              gatewayDown(poll.status) ??
+                `전사 서버 오류 ${poll.status}: ${(await poll.text()).slice(0, 300)}`,
+            );
           }
           const status = (await poll.json()) as {
             status?: string;
