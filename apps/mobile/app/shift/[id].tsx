@@ -189,8 +189,12 @@ export default function ShiftDetail() {
 
   // 전사는 러너(서비스)가 돌린다 — 이 화면을 벗어나도 계속되고,
   // 돌아오면 구독이 진행률을 다시 이어서 보여준다.
+  // runnerBusy 는 근무 불문 전역 상태다: 어느 근무든 전사가 도는 동안
+  // '전사하기'를 잠근다. 러너는 한 번에 하나만 돌기 때문이다.
+  const [runnerBusy, setRunnerBusy] = useState(false);
   useEffect(() => {
     const apply = (s: RunnerState) => {
+      setRunnerBusy(s.running);
       if (s.shiftId !== shiftId) return;
       if (s.running) {
         setBusy(`전사 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})`);
@@ -348,9 +352,16 @@ export default function ShiftDetail() {
         </Small>
         {pending.length > 0 ? (
           <Button
-            label={`미전사 기록 ${pending.length}건 전사하기`}
+            label={
+              busy?.startsWith("전사")
+                ? busy
+                : runnerBusy
+                  ? "다른 근무 전사 중"
+                  : `미전사 기록 ${pending.length}건 전사하기`
+            }
             tone="primary"
             busy={busy?.startsWith("전사") ?? false}
+            disabled={runnerBusy}
             onPress={() => void runTranscription()}
           />
         ) : null}

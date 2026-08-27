@@ -87,7 +87,7 @@ export interface AsrProvider {
   readonly modelId?: string;
   /** 고른 모델이 없어 다른 것으로 대신 돌리는 중인가. 화면에서 알려야 한다. */
   readonly fellBack?: boolean;
-  /** onProgress 는 0~100. 온디바이스만 지원하고, 서버 전사는 파일 단위로만 안다. */
+  /** onProgress 는 0~100. 온디바이스는 whisper.rn 이, 서버 전사는 작업 조회(폴링)가 준다. */
   transcribe(
     fileUri: string,
     options: AsrOptions,
@@ -222,7 +222,7 @@ export function createSelfHostedProvider(
     kind: "self-hosted",
     // OpenAI 전사 형식에는 화자 필드가 없다. 있다고 말하지 않는다.
     capabilities: { diarization: false, wordTimestamps: true },
-    async transcribe(fileUri, options) {
+    async transcribe(fileUri, options, onProgress) {
       // 파일 업로드는 fetch+FormData 가 아니라 네이티브 멀티파트로 한다.
       // SDK 57 부터 전역 fetch 가 새 구현(expo winter)인데, RN 구식
       // {uri,name,type} 파일 파트를 "Unsupported FormDataPart implementation"
@@ -249,11 +249,54 @@ export function createSelfHostedProvider(
       if (response.status < 200 || response.status >= 300) {
         throw new Error(`전사 서버 오류 ${response.status}: ${response.body.slice(0, 300)}`);
       }
-      const json = JSON.parse(response.body) as {
+      type ServerResult = {
         text?: string;
         duration?: number;
         segments?: { start: number; end: number; text: string; speaker?: string }[];
       };
+      let json = JSON.parse(response.body) as ServerResult & { job_id?: string };
+
+      // 접수증(job_id)을 주는 서버(콜랩 노트)는 결과를 몇 초마다 물어서 받는다.
+      // 다 될 때까지 한 요청으로 기다리는 방식은 업로드 클라이언트(읽기 60초
+      // 고정)와 Cloudflare 터널(응답 약 100초 상한)이 먼저 끊는다 — 실기기
+      // 타임아웃으로 재현된 사실. 접수증이 없는 서버(speaches 등 동기 응답)는
+      // 지금까지처럼 결과를 바로 쓴다.
+      if (json.job_id) {
+        const jobUrl = `${url}/${json.job_id}`;
+        const authHeaders = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
+        const deadline = Date.now() + 60 * 60 * 1000; // 한 시간이면 무엇이든 끝난다.
+        for (;;) {
+          if (Date.now() > deadline) {
+            throw new Error("전사 서버가 한 시간 안에 끝내지 못했습니다. 서버 상태를 확인하십시오.");
+          }
+          await new Promise((resolve) => setTimeout(resolve, 3000));
+          let poll: Response;
+          try {
+            poll = await fetch(jobUrl, { headers: authHeaders });
+          } catch {
+            continue; // 폰 네트워크가 잠깐 출렁여도 작업은 서버에 살아 있다.
+          }
+          if (!poll.ok) {
+            throw new Error(`전사 서버 오류 ${poll.status}: ${(await poll.text()).slice(0, 300)}`);
+          }
+          const status = (await poll.json()) as {
+            status?: string;
+            progress?: number;
+            error?: string;
+            result?: ServerResult;
+          };
+          if (status.status === "error") {
+            throw new Error(`전사 실패: ${status.error ?? "원인 미상"}`);
+          }
+          if (status.status === "done" && status.result) {
+            json = status.result;
+            break;
+          }
+          if (typeof status.progress === "number") {
+            onProgress?.(Math.round(Math.max(0, Math.min(1, status.progress)) * 100));
+          }
+        }
+      }
       const segments = (json.segments ?? []).map((s) => ({
         startSec: s.start,
         endSec: s.end,
