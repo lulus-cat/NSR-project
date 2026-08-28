@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, TextInput, View } from "react-native";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { FlatList, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { useLocalSearchParams } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import {
   DEFAULT_TEMPLATES,
   assignSpeakerRange,
@@ -14,7 +16,7 @@ import {
   type ShiftCode,
 } from "@nsr/core";
 import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
-import { radius, space, type, useTheme } from "../../src/theme";
+import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   getShiftReportMarkdown,
   getTaeumScore,
@@ -24,6 +26,7 @@ import {
   saveCorrectionMemory,
   saveUserTerm,
   setSpeakerRole,
+  setSpeakerRoleForCluster,
   updateSegmentText,
   type RecordingRow,
 } from "../../src/db";
@@ -56,83 +59,136 @@ const ROLE_LABELS: Record<SpeakerRole, string> = {
 };
 
 function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60);
+  const h = Math.floor(sec / 3600);
+  const m = Math.floor((sec % 3600) / 60);
   const s = Math.floor(sec % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+/** 세그먼트 id 는 `${recordingId}#s{n}.{m}` 꼴이다 — 앞부분이 재생할 기록이다. */
+function recordingIdOf(segment: TranscriptSegment): string {
+  return segment.id.split("#s")[0];
+}
+
+/** 화자 분리 결과의 라벨(SPEAKER_00 등)을 사람이 부를 이름으로. */
+function speakerName(speakerId: string, order: string[]): string {
+  const i = order.indexOf(speakerId);
+  return `화자 ${i >= 0 ? i + 1 : "?"}`;
 }
 
 type Tab = "transcript" | "report" | "environment";
 
 /**
- * 문장 한 줄.
+ * 전사 한 줄 — 다글로식.
  *
- * 두 가지를 동시에 받아야 한다 — **문장 누르기**(화자 구간)와
- * **단어 길게 누르기**(고치기). 그래서 어절마다 Pressable 을 두고,
- * 짧게 누르면 문장 쪽으로 넘기고 길게 누르면 단어 쪽으로 넘긴다.
- *
- * 어절 단위로 자르는 이유: 한국어는 조사가 붙어 있어 "폴리를" 이 한 덩어리다.
- * 글자 단위로 고르게 하면 폰에서 정확히 짚기가 어렵다.
+ * 화자가 바뀌는 줄에만 화자·시각 머리줄을 얹고, 본문은 어절 단위 Pressable 로
+ * 편다(한국어는 조사가 붙어 "폴리를"이 한 덩어리라, 글자 단위보다 어절이 짚기
+ * 쉽다). 손가락 문법은 세 가지다:
+ *   문장 누르기       → 그 시점부터 재생
+ *   머리줄(배지) 누르기 → 화자 구간 지정의 시작/끝
+ *   단어 길게 누르기   → 고치기·사전 등록
  */
-function SentenceCard({
+const SentenceRow = memo(function SentenceRow({
   segment,
+  showHeader,
+  headerLabel,
   isRangeStart,
+  isPlaying,
+  onPressHeader,
   onPressSentence,
   onPressWord,
 }: {
   segment: TranscriptSegment;
+  showHeader: boolean;
+  headerLabel: string;
   isRangeStart: boolean;
-  onPressSentence: () => void;
-  onPressWord: (word: string) => void;
+  isPlaying: boolean;
+  onPressHeader: (id: string) => void;
+  onPressSentence: (segment: TranscriptSegment) => void;
+  onPressWord: (segmentId: string, word: string) => void;
 }) {
   const t = useTheme();
   const role = segment.speakerRole ?? "unknown";
   const words = segment.text.split(/(\s+)/).filter((w) => w.length > 0);
 
   return (
-    <Card tone={isRangeStart ? "accent" : "default"}>
-      <Pressable accessibilityRole="button" onPress={onPressSentence}>
-        <View
+    <View style={{ paddingHorizontal: space.lg }}>
+      {showHeader ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${headerLabel} — 눌러서 화자 구간 지정`}
+          onPress={() => onPressHeader(segment.id)}
           style={{
             flexDirection: "row",
-            justifyContent: "space-between",
             alignItems: "center",
+            gap: space.sm,
+            marginTop: space.md,
+            marginBottom: space.xs,
+            minHeight: 28,
           }}
         >
           <Badge
-            text={ROLE_LABELS[role]}
+            text={headerLabel}
             tone={role === "self" ? "ok" : role === "unknown" ? "warn" : "muted"}
           />
-          <Small>{formatTime(segment.startSec)}</Small>
-        </View>
-      </Pressable>
-
-      <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
-        {words.map((word, i) =>
-          /^\s+$/.test(word) ? (
-            <Text key={i} style={[type.body, { color: t.text }]}>
-              {" "}
-            </Text>
-          ) : (
-            <Pressable
-              key={i}
-              accessibilityRole="button"
-              accessibilityLabel={`${word} — 길게 눌러 수정`}
-              onPress={onPressSentence}
-              onLongPress={() => onPressWord(word)}
-              delayLongPress={300}
-            >
-              <Text style={[type.body, { color: t.text }]}>{word}</Text>
-            </Pressable>
-          ),
-        )}
-      </View>
-
-      {segment.text !== segment.rawText ? (
-        <Small>원문: {segment.rawText}</Small>
+          <Text style={[type.caption, TABULAR, { color: t.textMuted }]}>
+            {formatTime(segment.startSec)}
+          </Text>
+        </Pressable>
       ) : null}
-    </Card>
+      <Pressable
+        accessibilityRole="button"
+        accessibilityLabel="누르면 이 시점부터 재생"
+        onPress={() => onPressSentence(segment)}
+        style={{
+          borderRadius: radius.md,
+          backgroundColor: isRangeStart
+            ? t.accentSoft
+            : isPlaying
+              ? t.surfaceAlt
+              : "transparent",
+          paddingVertical: space.xs,
+          paddingHorizontal: space.sm,
+        }}
+      >
+        <View style={{ flexDirection: "row", flexWrap: "wrap", alignItems: "center" }}>
+          {isPlaying ? (
+            <Ionicons
+              name="volume-high"
+              size={13}
+              color={t.accent}
+              style={{ marginRight: 5 }}
+            />
+          ) : null}
+          {words.map((word, i) =>
+            /^\s+$/.test(word) ? (
+              <Text key={i} style={[type.body, { color: t.text }]}>
+                {" "}
+              </Text>
+            ) : (
+              <Pressable
+                key={i}
+                accessibilityRole="button"
+                accessibilityLabel={`${word} — 길게 눌러 수정`}
+                onPress={() => onPressSentence(segment)}
+                onLongPress={() => onPressWord(segment.id, word)}
+                delayLongPress={300}
+              >
+                <Text style={[type.body, { color: t.text }]}>{word}</Text>
+              </Pressable>
+            ),
+          )}
+        </View>
+        {segment.text !== segment.rawText ? (
+          <Text style={[type.caption, { color: t.textMuted, marginTop: 2 }]}>
+            원문: {segment.rawText}
+          </Text>
+        ) : null}
+      </Pressable>
+    </View>
   );
-}
+});
 
 export default function ShiftDetail() {
   const t = useTheme();
@@ -167,30 +223,151 @@ export default function ShiftDetail() {
     void load();
   }, [load]);
 
-  /**
-   * 화자 지정 진행 상황.
-   *
-   * 온디바이스 whisper.cpp 는 화자를 나누지 못하므로 speakerId 가 없다.
-   * 그래서 클러스터로 묶는 대신 **문장 구간**으로 지정한다.
-   */
   const coverage = useMemo(() => speakerCoverage(segments), [segments]);
+
+  /** 화자 분리 결과가 있으면 등장 순서대로. 역할 일괄 지정의 단위다. */
+  const speakerOrder = useMemo(() => {
+    const order: string[] = [];
+    for (const s of segments) {
+      if (s.speakerId && !order.includes(s.speakerId)) order.push(s.speakerId);
+    }
+    return order;
+  }, [segments]);
 
   /** 구간 지정 중일 때의 시작 문장 id. 두 번째를 누르면 그 사이가 지정된다. */
   const [rangeStart, setRangeStart] = useState<string | null>(null);
   const [pendingRole, setPendingRole] = useState<SpeakerRole>("senior");
-  /** 단어를 눌렀을 때 뜨는 패널. */
+  /** 단어를 길게 눌렀을 때 뜨는 패널. */
   const [wordTarget, setWordTarget] = useState<
     { segmentId: string; word: string; replacement: string } | null
   >(null);
+
+  // ── 재생 ──────────────────────────────────────────────
+  // 문장을 누르면 그 기록 파일을 그 시점부터 들려준다. 전사가 미덥지 않은
+  // 문장은 눈이 아니라 귀로 확인하는 게 빠르다.
+  const playerRef = useRef<AudioPlayer | null>(null);
+  const pendingSeekRef = useRef<number | null>(null);
+  const [playback, setPlayback] = useState<
+    { recordingId: string; positionSec: number; playing: boolean } | null
+  >(null);
+
+  useEffect(() => {
+    // 위치는 0.5초마다 읽는다. 이벤트 API 보다 단순하고, 하이라이트에는 충분하다.
+    const timer = setInterval(() => {
+      const p = playerRef.current;
+      if (!p) return;
+      try {
+        // 파일이 열리기 전에 넣은 seek 는 무시됐을 수 있다 — 열린 뒤 한 번 민다.
+        // 이미 목표 근처면 다시 밀지 않는다(첫 seek 가 성공했는데 되감으면 안 된다).
+        if (pendingSeekRef.current !== null && p.duration > 0) {
+          const target = pendingSeekRef.current;
+          pendingSeekRef.current = null;
+          if (Math.abs(p.currentTime - target) > 2) void p.seekTo(target);
+        }
+        // 표시는 초 단위다. 같은 초 안에서는 상태를 안 바꿔 목록 재렌더를 아낀다.
+        setPlayback((prev) => {
+          if (!prev) return prev;
+          if (
+            Math.floor(prev.positionSec) === Math.floor(p.currentTime) &&
+            prev.playing === p.playing
+          ) {
+            return prev;
+          }
+          return { ...prev, positionSec: p.currentTime, playing: p.playing };
+        });
+      } catch {
+        // 플레이어가 해제된 직후의 틱 — 다음 틱에서 정리된다.
+      }
+    }, 500);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(
+    () => () => {
+      // 화면을 떠나면 소리도 끝난다.
+      try {
+        playerRef.current?.remove();
+      } catch {
+        // 이미 해제됐으면 그만이다.
+      }
+    },
+    [],
+  );
+
+  const stopPlayback = useCallback(() => {
+    try {
+      playerRef.current?.remove();
+    } catch {
+      // 이미 해제된 플레이어 — 무시한다.
+    }
+    playerRef.current = null;
+    pendingSeekRef.current = null;
+    setPlayback(null);
+  }, []);
+
+  const playFrom = useCallback(
+    (segment: TranscriptSegment) => {
+      const recId = recordingIdOf(segment);
+      const rec = recordings.find((r) => r.id === recId);
+      if (!rec?.file_uri) {
+        setNotice("이 문장의 기록 파일이 기기에 없어 재생할 수 없습니다.");
+        return;
+      }
+      try {
+        if (playerRef.current && playback?.recordingId === recId) {
+          pendingSeekRef.current = null;
+          void playerRef.current.seekTo(segment.startSec);
+          playerRef.current.play();
+        } else {
+          try {
+            playerRef.current?.remove();
+          } catch {
+            // 이전 플레이어 해제 실패는 재생을 막지 않는다.
+          }
+          const player = createAudioPlayer({ uri: rec.file_uri });
+          playerRef.current = player;
+          // 파일이 열리기 전의 seek 는 무시될 수 있다 — 틱이 열림을 보고 다시 민다.
+          pendingSeekRef.current = segment.startSec;
+          void player.seekTo(segment.startSec);
+          player.play();
+        }
+        setPlayback({ recordingId: recId, positionSec: segment.startSec, playing: true });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "재생하지 못했습니다.");
+      }
+    },
+    [playback?.recordingId, recordings],
+  );
+
+  const togglePause = useCallback(() => {
+    const p = playerRef.current;
+    if (!p) return;
+    try {
+      if (p.playing) p.pause();
+      else p.play();
+      const nowPlaying = p.playing;
+      setPlayback((prev) => (prev ? { ...prev, playing: nowPlaying } : prev));
+    } catch {
+      // 해제 직후 — 표시 상태는 틱이 맞춘다.
+    }
+  }, []);
+
+  /** 지금 소리 나는 문장. 같은 기록 안에서 시간이 걸치는 첫 문장이다. */
+  const playingRowId = useMemo(() => {
+    if (!playback) return null;
+    const hit = segments.find(
+      (s) =>
+        recordingIdOf(s) === playback.recordingId &&
+        playback.positionSec >= s.startSec &&
+        playback.positionSec < Math.max(s.endSec, s.startSec + 1),
+    );
+    return hit?.id ?? null;
+  }, [playback, segments]);
 
   const pending = recordings.filter((r) => r.state === "recorded");
   const durationSec = recordings.reduce((sum, r) => sum + r.duration_sec, 0);
   const dutyLabel = DEFAULT_TEMPLATES[(code as ShiftCode) ?? "OTHER"]?.label ?? "근무";
 
-  // 전사는 러너(서비스)가 돌린다 — 이 화면을 벗어나도 계속되고,
-  // 돌아오면 구독이 진행률을 다시 이어서 보여준다.
-  // runnerBusy 는 근무 불문 전역 상태다: 어느 근무든 전사가 도는 동안
-  // '전사하기'를 잠근다. 러너는 한 번에 하나만 돌기 때문이다.
   const [runnerBusy, setRunnerBusy] = useState(false);
   useEffect(() => {
     const apply = (s: RunnerState) => {
@@ -230,14 +407,6 @@ export default function ShiftDetail() {
     }
   }, [date, durationSec, dutyLabel, load, shiftId]);
 
-  /**
-   * 내보내기는 두 걸음이다.
-   *   1) 가린 결과를 **먼저 보여준다**
-   *   2) 사용자가 눈으로 확인한 뒤에 공유 시트가 열린다
-   *
-   * 한 번에 공유 시트를 여는 편이 편하지만, 그러면 무엇이 나가는지 모르는 채로
-   * 나간다. 되돌릴 수 없는 일에는 한 걸음을 더 두는 게 맞다.
-   */
   const prepareExport = useCallback(async () => {
     if (!reportMd) return;
     setError(null);
@@ -262,13 +431,7 @@ export default function ShiftDetail() {
     }
   }, [code, date, dutyLabel, preview]);
 
-
-  /**
-   * 구간 지정. 첫 번째 누름은 시작점, 두 번째 누름은 끝점이다.
-   *
-   * 같은 문장을 두 번 누르면 그 한 줄만 지정된다 — 한 줄만 다른 사람인 경우가
-   * 실제로 있어서(짧은 대답) 취소가 아니라 단일 지정으로 둔다.
-   */
+  /** 머리줄(배지)을 눌러 구간을 지정한다. 첫 누름 = 시작, 두 번째 = 끝. */
   const toggleRange = useCallback(
     async (segmentId: string) => {
       if (!rangeStart) {
@@ -278,10 +441,7 @@ export default function ShiftDetail() {
       const next = assignSpeakerRange(segments, rangeStart, segmentId, pendingRole);
       setRangeStart(null);
       setSegments(next);
-      // 바뀐 것만 저장한다. 수백 줄을 매번 다 쓰면 느려진다.
-      const changed = next.filter(
-        (n, i) => n.speakerRole !== segments[i]?.speakerRole,
-      );
+      const changed = next.filter((n, i) => n.speakerRole !== segments[i]?.speakerRole);
       for (const seg of changed) {
         if (seg.speakerRole) await setSpeakerRole(seg.id, seg.speakerRole);
       }
@@ -289,12 +449,17 @@ export default function ShiftDetail() {
     [pendingRole, rangeStart, segments],
   );
 
-  /**
-   * 단어 하나를 고친다.
-   *
-   * 본문만 바꾸고 **rawText 는 절대 안 건드린다.** 원문이 남아 있어야
-   * 나중에 "앱이 고친 것인지 내가 고친 것인지" 를 가릴 수 있다.
-   */
+  /** 화자 분리 결과(화자 N) 전체에 역할을 준다 — 분리가 있으면 이쪽이 제일 빠르다. */
+  const assignCluster = useCallback(
+    async (speakerId: string) => {
+      await setSpeakerRoleForCluster(shiftId, speakerId, pendingRole);
+      setSegments((prev) =>
+        prev.map((s) => (s.speakerId === speakerId ? { ...s, speakerRole: pendingRole } : s)),
+      );
+    },
+    [pendingRole, shiftId],
+  );
+
   const applyWordFix = useCallback(async () => {
     if (!wordTarget) return;
     const { segmentId, word, replacement } = wordTarget;
@@ -309,19 +474,10 @@ export default function ShiftDetail() {
     setWordTarget(null);
 
     await updateSegmentText(segmentId, nextText);
-
-    // 교정 이력에 쌓는다. 같은 교정이 minCount(기본 2)번 넘으면 다음 전사부터
-    // 자동으로 적용된다 — 같은 병동에서 같은 말이 반복해서 틀리기 때문이다.
     const memory = await loadCorrectionMemory();
     await saveCorrectionMemory(recordCorrection(memory, word, to, Date.now()));
   }, [segments, wordTarget]);
 
-  /**
-   * 이 말을 내 사전에 담는다.
-   *
-   * 뜻은 비워 둔다. 지금 채우라고 하면 흐름이 끊겨서 아무도 안 담는다.
-   * 담아만 두면 다음 전사부터 이 말을 알아듣고, 뜻은 나중에 채우면 된다.
-   */
   const addToMyDict = useCallback(async () => {
     if (!wordTarget) return;
     const surface = wordTarget.word.trim();
@@ -342,8 +498,19 @@ export default function ShiftDetail() {
     setNotice(`'${surface}'${josa(surface, "을")} 사전에 넣었습니다. 세부 뜻은 나중에 사전에서 적어주십시오.`);
   }, [wordTarget]);
 
-  return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+  const onPressWord = useCallback((segmentId: string, word: string) => {
+    setWordTarget({ segmentId, word, replacement: word });
+  }, []);
+
+  /**
+   * 목록 머리 — 전사 행 이외의 모든 것.
+   *
+   * 수천 문장을 그리려면 목록이 가상화(FlatList)되어야 한다. 3시간 통짜
+   * 기록을 ScrollView 로 다 그리다 앱이 "응답하지 않음"으로 죽은 실사고가
+   * 있다. 그래서 화면 전체가 FlatList 하나이고, 나머지 카드는 머리에 얹는다.
+   */
+  const listHeader = (
+    <View style={{ padding: space.lg, paddingBottom: 0, gap: space.md }}>
       <Card>
         <Heading>
           {date} · {dutyLabel}
@@ -392,19 +559,8 @@ export default function ShiftDetail() {
           <Small muted={false}>{coverage.message}</Small>
           <Divider />
           <Small>
-
-  Whisper 전사는
-{" "}
-            <Text style={{ fontWeight: "700" }}>목소리를 구별하지 못합니다.</Text>
-  자동 화자 분리를 지원하지 않으니 라벨을 직접 지정해 주십시오.
-</Small>
-          <Small>
-            
-  문장별로 고르지 말고, 역할을 선택한 뒤 전사 탭에서
-<Text
-            style={{ fontWeight: "700" }}>시작 문장과 끝 문장</Text>
-  시작과 끝 문장을 선택하면 범위가 일괄 지정됩니다.
-</Small>
+            먼저 아래에서 역할을 고른 뒤 —
+          </Small>
           <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
             {ROLE_OPTIONS.map((opt) => {
               const on = pendingRole === opt.role;
@@ -428,14 +584,53 @@ export default function ShiftDetail() {
               );
             })}
           </View>
+          {speakerOrder.length > 0 ? (
+            <>
+              <Small>
+                화자 분리가 켜져 있던 전사입니다. 화자를 누르면 그 화자의 모든 문장이 위에서
+                고른 역할로 한 번에 지정됩니다.
+              </Small>
+              <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
+                {speakerOrder.map((sid) => {
+                  const count = segments.filter((s) => s.speakerId === sid).length;
+                  const role = segments.find((s) => s.speakerId === sid && s.speakerRole)
+                    ?.speakerRole;
+                  return (
+                    <Pressable
+                      key={sid}
+                      accessibilityRole="button"
+                      onPress={() => void assignCluster(sid)}
+                      style={{
+                        paddingVertical: space.xs,
+                        paddingHorizontal: space.md,
+                        borderRadius: radius.sm,
+                        backgroundColor: t.surfaceAlt,
+                        minHeight: 36,
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={[type.small, { color: t.text, fontWeight: "600" }]}>
+                        {speakerName(sid, speakerOrder)} · {count}문장
+                        {role && role !== "unknown" ? ` → ${ROLE_LABELS[role]}` : ""}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            </>
+          ) : (
+            <Small>
+              전사 탭에서 <Text style={{ fontWeight: "700" }}>문장 위 배지(머리줄)</Text>를
+              시작과 끝 두 번 누르면 그 사이가 일괄 지정됩니다. 자동 화자 분리는 전사
+              설정의 콜랩에서 켤 수 있습니다.
+            </Small>
+          )}
           {rangeStart ? (
             <>
               <Small muted={false}>
-                
-  시작 문장이 선택되었습니다. 끝 문장을 누르면 &lsquo;
-{ROLE_LABELS[pendingRole]}
-  &rsquo;(으)로 일괄 지정됩니다.
-</Small>
+                시작 문장이 선택되었습니다. 끝 문장의 배지를 누르면 &lsquo;
+                {ROLE_LABELS[pendingRole]}&rsquo;(으)로 일괄 지정됩니다.
+              </Small>
               <Button label="구간 지정 취소" onPress={() => setRangeStart(null)} />
             </>
           ) : null}
@@ -477,86 +672,19 @@ export default function ShiftDetail() {
         segments.length === 0 ? (
           <Card>
             <Body muted>
-              
+
   전사 내용이 없습니다. 먼저 전사를 실행해 주십시오.
 </Body>
           </Card>
         ) : (
-          <>
-            <Card>
-              <Small>
-                
-  문장을 누르면 화자 구간을 지정하고
-<Text style={{ fontWeight: "700" }}>
-                단어를 길게 누르면</Text> 
-  내용을 고치거나 사전에 등록합니다. 수정 내역은 다음 전사에 자동 적용됩니다.
-</Small>
-            </Card>
-            {segments.map((seg) => (
-              <SentenceCard
-                key={seg.id}
-                segment={seg}
-                isRangeStart={rangeStart === seg.id}
-                onPressSentence={() => void toggleRange(seg.id)}
-                onPressWord={(word) =>
-                  setWordTarget({ segmentId: seg.id, word, replacement: word })
-                }
-              />
-            ))}
-          </>
+          <Card>
+            <Small>
+              <Text style={{ fontWeight: "700" }}>문장을 누르면 그 시점부터 재생</Text>됩니다.
+              단어를 길게 누르면 고치거나 사전에 넣고, 문장 위 배지를 누르면 화자 구간을
+              지정합니다.
+            </Small>
+          </Card>
         )
-      ) : null}
-
-      {/* 단어 고치기 */}
-      {wordTarget ? (
-        <Card tone="accent">
-          <Heading>&ldquo;{wordTarget.word}&rdquo;</Heading>
-          <Small>
-            
-  
-  전사 오류를 직접 고치십시오. 같은 교정이 2번 쌓이면 다음부터는 자동으로 고쳐집니다.
-</Small>
-          <TextInput
-            value={wordTarget.replacement}
-            onChangeText={(replacement) =>
-              setWordTarget((w) => (w ? { ...w, replacement } : w))
-            }
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={{
-              color: t.text,
-              backgroundColor: t.surfaceAlt,
-              borderRadius: radius.md,
-              padding: space.md,
-              fontSize: 15,
-            }}
-          />
-          <View style={{ flexDirection: "row", gap: space.sm }}>
-            <View style={{ flex: 1 }}>
-              <Button
-                label="고치기"
-                tone="primary"
-                disabled={
-                  wordTarget.replacement.trim().length === 0 ||
-                  wordTarget.replacement.trim() === wordTarget.word
-                }
-                onPress={() => void applyWordFix()}
-              />
-            </View>
-            <View style={{ flex: 1 }}>
-              <Button label="닫기" onPress={() => setWordTarget(null)} />
-            </View>
-          </View>
-          <Divider />
-          <Small muted={false}>
-  병동 전용 용어입니까?
-</Small>
-          <Small>
-            
-  사전에 넣으면 전사와 암기 카드에 자동 반영됩니다. 세부 뜻은 병동 사전에서 적을 수 있습니다.
-</Small>
-          <Button label="내 사전에 추가" onPress={() => void addToMyDict()} />
-        </Card>
       ) : null}
 
       {tab === "report" ? (
@@ -566,7 +694,7 @@ export default function ShiftDetail() {
               <Text style={[type.body, { color: t.text }]}>{reportMd}</Text>
             ) : (
               <Body muted>
-                
+
   보고서가 없습니다. 전사를 마친 뒤 ‘카드·보고서 만들기’를 실행하십시오.
 </Body>
             )}
@@ -576,7 +704,7 @@ export default function ShiftDetail() {
             <Card>
               <Heading>내보내기</Heading>
               <Small>
-                
+
   이름과 연락처 등 가려진 개인정보 내역을 꼭 확인한 뒤 보내십시오.
 </Small>
               <Button label="내보낼 내용 확인" onPress={() => void prepareExport()} />
@@ -612,7 +740,7 @@ export default function ShiftDetail() {
               </View>
               <Divider />
               <Small>
-                
+
   수신자와 메신저 서버에 기록이 남습니다. 개인정보가 없는지 마지막으로 확인하십시오.
 </Small>
               <View style={{ flexDirection: "row", gap: space.sm }}>
@@ -684,7 +812,7 @@ export default function ShiftDetail() {
   감지된 특이 발언이 없습니다.
 </Body>
                 <Small>
-                  
+
   아무 문제 없다는 뜻이 아닙니다. 텍스트에는 어조나 맥락이 담기지 않습니다.
 </Small>
               </Card>
@@ -694,7 +822,7 @@ export default function ShiftDetail() {
               <Card>
                 <Heading>응대 중 폭언</Heading>
                 <Small>
-                  
+
   응대 중 폭언은 산업안전보건법상 보호 대상입니다. 병원 보안 절차에 따라 대응하십시오.
 </Small>
                 {taeum.patientAggression.map((e, i) => (
@@ -710,7 +838,7 @@ export default function ShiftDetail() {
             <Card>
               <Heading>참고</Heading>
               <Small>
-                
+
   근로기준법은 직장 내 괴롭힘과 신고자에 대한 불이익 처우를 엄격히 금지합니다.
 </Small>
               <Small>
@@ -722,12 +850,144 @@ export default function ShiftDetail() {
         ) : (
           <Card>
             <Body muted>
-              
+
   화자를 지정한 후 ‘카드·보고서 만들기’를 누르십시오.
 </Body>
           </Card>
         )
       ) : null}
-    </ScrollView>
+    </View>
+  );
+
+  const rows = tab === "transcript" ? segments : [];
+
+  return (
+    <View style={{ flex: 1 }}>
+      <FlatList
+        data={rows}
+        keyExtractor={(s) => s.id}
+        ListHeaderComponent={listHeader}
+        contentContainerStyle={{
+          paddingBottom: space.bottom + (playback || wordTarget ? 180 : 0),
+        }}
+        initialNumToRender={20}
+        windowSize={11}
+        removeClippedSubviews
+        renderItem={({ item, index }) => {
+          const prev = index > 0 ? rows[index - 1] : null;
+          const speakerKey = (s: TranscriptSegment | null) =>
+            s ? `${s.speakerId ?? ""}|${s.speakerRole ?? "unknown"}|${recordingIdOf(s)}` : "·";
+          const showHeader = speakerKey(prev) !== speakerKey(item);
+          const role = item.speakerRole ?? "unknown";
+          const headerLabel = item.speakerId
+            ? role !== "unknown"
+              ? `${ROLE_LABELS[role]} (${speakerName(item.speakerId, speakerOrder)})`
+              : speakerName(item.speakerId, speakerOrder)
+            : ROLE_LABELS[role];
+          return (
+            <SentenceRow
+              segment={item}
+              showHeader={showHeader}
+              headerLabel={headerLabel}
+              isRangeStart={rangeStart === item.id}
+              isPlaying={playingRowId === item.id}
+              onPressHeader={(id) => void toggleRange(id)}
+              onPressSentence={playFrom}
+              onPressWord={onPressWord}
+            />
+          );
+        }}
+      />
+
+      {/* ── 바닥 패널: 재생 막대와 단어 고치기. 목록 위에 뜬다 ──
+          비어 있을 때는 아예 안 그린다 — 투명한 패널이 목록 끝의 터치를 먹는다. */}
+      {playback || wordTarget ? (
+      <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: space.md, gap: space.sm }}>
+        {playback ? (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: space.md,
+              backgroundColor: t.surfaceRaised,
+              borderRadius: radius.lg,
+              paddingHorizontal: space.lg,
+              minHeight: TOUCH_MIN + 8,
+            }}
+          >
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={playback.playing ? "일시정지" : "재생"}
+              onPress={togglePause}
+              style={{ minWidth: 40, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
+            >
+              <Ionicons name={playback.playing ? "pause" : "play"} size={22} color={t.accent} />
+            </Pressable>
+            <Text style={[type.small, TABULAR, { color: t.text, fontWeight: "600", flex: 1 }]}>
+              {formatTime(playback.positionSec)} · 기록 재생 중
+            </Text>
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="재생 종료"
+              onPress={stopPlayback}
+              style={{ minWidth: 40, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
+            >
+              <Ionicons name="close" size={20} color={t.textMuted} />
+            </Pressable>
+          </View>
+        ) : null}
+
+        {wordTarget ? (
+          <View
+            style={{
+              backgroundColor: t.surfaceRaised,
+              borderRadius: radius.lg,
+              padding: space.lg,
+              gap: space.sm,
+            }}
+          >
+            <Heading>&ldquo;{wordTarget.word}&rdquo;</Heading>
+            <Small>
+              전사 오류를 직접 고치십시오. 같은 교정이 2번 쌓이면 다음부터는 자동으로 고쳐집니다.
+            </Small>
+            <TextInput
+              value={wordTarget.replacement}
+              onChangeText={(replacement) =>
+                setWordTarget((w) => (w ? { ...w, replacement } : w))
+              }
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={{
+                color: t.text,
+                backgroundColor: t.surfaceAlt,
+                borderRadius: radius.md,
+                padding: space.md,
+                fontSize: 15,
+              }}
+            />
+            <View style={{ flexDirection: "row", gap: space.sm }}>
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="고치기"
+                  tone="primary"
+                  disabled={
+                    wordTarget.replacement.trim().length === 0 ||
+                    wordTarget.replacement.trim() === wordTarget.word
+                  }
+                  onPress={() => void applyWordFix()}
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button label="내 사전에 추가" onPress={() => void addToMyDict()} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Button label="닫기" onPress={() => setWordTarget(null)} />
+              </View>
+            </View>
+          </View>
+        ) : null}
+      </View>
+      ) : null}
+    </View>
   );
 }

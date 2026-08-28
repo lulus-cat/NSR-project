@@ -12,7 +12,7 @@
  * 이 파라미터를 읽어 필요하면 모델을 갈아끼운다.
  */
 import { useCallback, useEffect, useState } from "react";
-import { Linking, Pressable, ScrollView, TextInput, View } from "react-native";
+import { Linking, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps } from "react";
@@ -24,6 +24,7 @@ import {
 import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/ui";
 import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
+import { getHfToken, setHfToken } from "../src/services/asr";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 
 type ServerMode = "colab" | "pc";
@@ -36,6 +37,8 @@ interface ServerAsr {
   mode?: ServerMode;
   /** 모드별로 기억해 두는 주소 — 모드를 오가도 붙여넣은 주소가 안 날아간다. */
   endpoints?: Partial<Record<ServerMode, string>>;
+  /** 화자 분리(pyannote) — 콜랩 노트만 지원한다. 토큰은 보안 저장소에 따로 둔다. */
+  diarize?: boolean;
 }
 
 /**
@@ -142,6 +145,10 @@ export default function TranscriptionSetup() {
   const [check, setCheck] = useState<
     { state: "idle" } | { state: "checking" } | { state: "done"; ok: boolean; message: string }
   >({ state: "idle" });
+  // 화자 분리 토큰. 값은 보안 저장소에만 있고, 화면에는 있는지 여부만 띄운다.
+  const [hasHfToken, setHasHfToken] = useState(false);
+  const [tokenInput, setTokenInput] = useState("");
+  const [tokenNotice, setTokenNotice] = useState<string | null>(null);
 
   useEffect(() => {
     void (async () => {
@@ -154,6 +161,7 @@ export default function TranscriptionSetup() {
       const endpoints = { ...saved.endpoints };
       if (saved.endpoint && !endpoints[m]) endpoints[m] = saved.endpoint;
       setServer({ ...saved, mode: m, endpoints });
+      setHasHfToken((await getHfToken()) !== null);
     })();
   }, []);
 
@@ -163,6 +171,19 @@ export default function TranscriptionSetup() {
     setServer(stored);
     await setSetting(SETTINGS_KEYS.cloudTranscription, stored);
   }, []);
+
+  const saveToken = useCallback(async () => {
+    await setHfToken(tokenInput);
+    const saved = tokenInput.trim().length > 0;
+    setHasHfToken(saved);
+    setTokenInput("");
+    setTokenNotice(
+      saved ? "토큰을 기기 보안 저장소에 넣었습니다." : "토큰을 지웠습니다. 화자 분리도 꺼집니다.",
+    );
+    if (!saved && server.diarize) {
+      await save({ ...server, diarize: false });
+    }
+  }, [save, server, tokenInput]);
 
   const mode = inferMode(server);
   const models = serverModelsFor(mode);
@@ -353,6 +374,85 @@ export default function TranscriptionSetup() {
           ) : null}
         </Card>
       )}
+
+      {/* ── 화자 분리 — 콜랩 전용 ── */}
+      {mode === "colab" ? (
+        <Card>
+          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+            <Heading>화자 분리</Heading>
+            {server.diarize && hasHfToken ? <Badge text="사용 중" tone="ok" /> : null}
+          </View>
+          <Small>
+            전사와 함께 누가 말했는지(화자 1·2·3…)를 자동으로 나눕니다. 기록 화면에서
+            화자별로 역할을 한 번에 지정할 수 있습니다. 전사가 몇 분 더 걸립니다.
+          </Small>
+          <Divider />
+          {!hasHfToken ? (
+            <>
+              <Small muted={false}>준비 (한 번만, 무료 · 약 5분)</Small>
+              <Small>
+                분리 모델(pyannote)은 무료지만 허깅페이스 로그인이 필요합니다. 무료 계정을
+                만들고, 아래 두 모델 페이지에서 &lsquo;동의&rsquo;를 누른 뒤, 토큰을 만들어
+                붙여넣으십시오.
+              </Small>
+              <Button
+                label="1. 분리 모델 페이지 열기 (동의)"
+                onPress={() =>
+                  void Linking.openURL("https://huggingface.co/pyannote/speaker-diarization-3.1")
+                }
+              />
+              <Button
+                label="2. 구간 모델 페이지 열기 (동의)"
+                onPress={() =>
+                  void Linking.openURL("https://huggingface.co/pyannote/segmentation-3.0")
+                }
+              />
+              <Button
+                label="3. 토큰 만들기 (Read 권한)"
+                onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
+              />
+            </>
+          ) : (
+            <Small muted={false}>토큰이 보안 저장소에 있습니다. 바꾸려면 새로 붙여넣으십시오.</Small>
+          )}
+          <TextInput
+            value={tokenInput}
+            onChangeText={setTokenInput}
+            placeholder="hf_로 시작하는 토큰 붙여넣기"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            style={input}
+          />
+          <Button
+            label={hasHfToken && tokenInput.trim().length === 0 ? "토큰 지우기" : "토큰 저장"}
+            tone={hasHfToken && tokenInput.trim().length === 0 ? "default" : "primary"}
+            onPress={() => void saveToken()}
+          />
+          {tokenNotice ? <Small muted={false}>{tokenNotice}</Small> : null}
+          <Divider />
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              minHeight: TOUCH_MIN,
+            }}
+          >
+            <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>화자 분리 사용</Text>
+            <Switch
+              value={!!server.diarize && hasHfToken}
+              disabled={!hasHfToken}
+              onValueChange={(v) => void save({ ...server, diarize: v })}
+            />
+          </View>
+          <Small>
+            토큰과 기록 음성은 <Text style={{ fontWeight: "700" }}>내가 띄운 콜랩 서버로만</Text>{" "}
+            전송됩니다. 토큰은 기기 보안 저장소(키체인)에 보관되고 설정·로그에 남지 않습니다.
+          </Small>
+        </Card>
+      ) : null}
 
       {/* ── 모델 선택: 모드가 무엇이든 같은 문법 ── */}
       <Card>

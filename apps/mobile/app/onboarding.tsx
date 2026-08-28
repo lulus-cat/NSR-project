@@ -7,6 +7,7 @@ import { Body, Button, Card, Heading, Small } from "../src/components/ui";
 import { useApp } from "../src/state/AppContext";
 import { TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { setSetting } from "../src/db";
+import { SETTINGS_KEYS } from "../src/services/scheduler";
 import { searchWorkplace, setWorkplacePlace, type PlaceHit } from "../src/services/geofence";
 import { requestRecordingPermissionsAsync } from "expo-audio";
 import * as Location from "expo-location";
@@ -27,28 +28,27 @@ const PARTS = [
   { key: "etc", label: "기타" },
 ];
 
-const MODEL_CHOICES = [
+/**
+ * 전사 방식 — 설정 → 전사 화면과 같은 두 갈래다. 온보딩과 설정이 다른 말을
+ * 하면 사용자는 둘 다 못 믿는다. 여기서 고른 모드가 그 화면의 기본값이 된다.
+ */
+const METHOD_CHOICES = [
   {
-    key: "small-q5_1",
-    title: "Small (추천 시작점)",
-    body: "바로 쓸 수 있지만 한국어 인식이 낮습니다. 향후 다른 모델로 바꾸십시오.",
+    key: "colab",
+    title: "구글 콜랩 (무료 GPU, 추천)",
+    body: "컴퓨터 없이 무료 GPU가 전사합니다. 준비 3분 — 자세한 연결은 설정 → 전사에서 안내합니다.",
   },
   {
-    key: "korean-medium",
-    title: "한국어 Medium (파인튜닝, 추천)",
-    body: "원본보다 한국어 인식이 뛰어납니다. 설정에서 쉽게 다운받을 수 있습니다.",
-  },
-  {
-    key: "server",
-    title: "노트북·PC 서버",
-    body: "노트북이 전사를 대신합니다. 같은 Wi-Fi 환경에서 가장 빠릅니다.",
+    key: "pc",
+    title: "내 컴퓨터 (PC·노트북)",
+    body: "같은 Wi-Fi의 내 컴퓨터가 전사합니다. 기록 음성이 집 밖으로 나가지 않습니다.",
   },
   {
     key: "later",
     title: "나중에 정하기",
-    body: "지금 건너뛰어도 첫 전사 전에 설정에서 모델을 받을 수 있습니다.",
+    body: "지금 건너뛰어도 첫 전사 전에 설정 → 전사에서 연결하면 됩니다.",
   },
-];
+] as const;
 
 const ITEMS: { key: string; title: string; body: string }[] = [
   {
@@ -92,11 +92,12 @@ const ITEMS: { key: string; title: string; body: string }[] = [
     title: "알파 버전 안내",
     body:
       "알파 버전이라 기능이 바뀔 수 있습니다. 중요한 기록은 따로 백업하십시오. " +
-      "전사 전에 모델을 내려받아야 합니다. 화자 분리는 자동으로 되지 않으니 직접 지정하십시오.",
+      "전사 전에 콜랩 또는 내 컴퓨터 서버를 연결해야 합니다. 화자 분리는 콜랩의 " +
+      "화자 분리 옵션을 켜거나 전사 후 직접 지정합니다.",
   },
 ];
 
-const STEPS = ["근무지", "파트", "전사 모델", "필수 확인"];
+const STEPS = ["근무지", "파트", "전사 방식", "필수 확인"];
 
 export default function Onboarding() {
   const t = useTheme();
@@ -271,17 +272,17 @@ export default function Onboarding() {
           </>
         ) : null}
 
-        {/* ── 3. 모델 ── */}
+        {/* ── 3. 전사 방식 ── */}
         {step === 2 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>
-  사용할 전사 모델을 선택하십시오.
+  어디서 전사할지 선택하십시오.
 </Text>
             <Small>
-              
-  여기서는 모델 유형만 선택합니다. 실제 다운로드는 설정에서 진행하십시오.
-</Small>
-            {MODEL_CHOICES.map((m) => {
+              전사는 폰이 아니라 콜랩(무료 GPU) 또는 내 컴퓨터가 합니다. 기록 음성이
+              선택한 곳으로 전송됩니다. 여기서 고르면 설정 → 전사에 기본으로 잡힙니다.
+            </Small>
+            {METHOD_CHOICES.map((m) => {
               const on = model === m.key;
               return (
                 <Pressable key={m.key} accessibilityRole="button" onPress={() => setModel(m.key)}>
@@ -296,7 +297,14 @@ export default function Onboarding() {
               label="다음"
               tone="primary"
               onPress={async () => {
-                if (model) await setSetting("profile.plannedModel", model);
+                if (model === "colab" || model === "pc") {
+                  // 설정 → 전사 화면이 이 모드로 열린다. 주소는 거기서 잇는다.
+                  await setSetting(SETTINGS_KEYS.cloudTranscription, {
+                    enabled: false,
+                    endpoint: "",
+                    mode: model,
+                  });
+                }
                 next();
               }}
             />

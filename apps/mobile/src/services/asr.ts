@@ -80,6 +80,31 @@ export interface AsrProvider {
 }
 
 /**
+ * 허깅페이스 토큰 — 화자 분리(pyannote)용.
+ *
+ * pyannote 모델은 무료·공개지만 허깅페이스가 문을 잠가 두어(게이트), 받으려면
+ * 사용자 본인의 토큰이 필요하다. 토큰은 기기 보안 저장소에만 두고, 전사
+ * 요청에 실려 **사용자가 띄운 콜랩 서버로만** 간다. 설정 DB·로그에 안 남긴다.
+ */
+const HF_TOKEN_KEY = "nsr.hf.token";
+
+export async function getHfToken(): Promise<string | null> {
+  const SecureStore = await import("expo-secure-store");
+  return SecureStore.getItemAsync(HF_TOKEN_KEY);
+}
+
+export async function setHfToken(token: string | null): Promise<void> {
+  const SecureStore = await import("expo-secure-store");
+  if (token && token.trim()) {
+    await SecureStore.setItemAsync(HF_TOKEN_KEY, token.trim(), {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+  } else {
+    await SecureStore.deleteItemAsync(HF_TOKEN_KEY);
+  }
+}
+
+/**
  * 사용자가 지정한 서버로 전사한다 (faster-whisper 등).
  *
  * 전송 전에 **오디오 자체는 비식별화할 수 없다.** 음성에는 이름과 진단이 그대로 담긴다.
@@ -90,6 +115,7 @@ export function createSelfHostedProvider(
   endpoint: string,
   apiKey?: string,
   model?: string,
+  extras?: { diarize?: boolean; hfToken?: string | null },
 ): AsrProvider {
   // OpenAI 오디오 전사 표준(/v1/audio/transcriptions, verbose_json)으로 말한다.
   // 노트북에서 speaches(구 faster-whisper-server)·LocalAI 를 켜면 바로 붙는다.
@@ -116,6 +142,11 @@ export function createSelfHostedProvider(
       };
       if (model) parameters.model = model;
       if (options.initialPrompt) parameters.prompt = options.initialPrompt;
+      // 화자 분리 — 콜랩 노트만 이해한다. 다른 서버는 모르는 필드를 무시한다.
+      if (extras?.diarize && extras.hfToken) {
+        parameters.diarize = "1";
+        parameters.hf_token = extras.hfToken;
+      }
 
       const response = await FileSystem.uploadAsync(url, fileUri, {
         httpMethod: "POST",
@@ -254,8 +285,12 @@ export function createSelfHostedProvider(
             lastProgress = Math.max(0, Math.min(1, status.progress));
             onProgress?.(
               Math.round(lastProgress * 100),
-              // 모델을 처음 받는 중이면 %가 몇 분씩 0 에 머문다 — 이유를 말해 준다.
-              status.stage === "model" ? "서버가 모델을 준비 중입니다 (처음 한 번, 몇 분)" : undefined,
+              // %가 안 움직이는 구간의 이유를 말해 준다 — 모델 준비와 화자 분리.
+              status.stage === "model"
+                ? "서버가 모델을 준비 중입니다 (처음 한 번, 몇 분)"
+                : status.stage === "diarize"
+                  ? "서버가 화자를 나누는 중입니다 (몇 분)"
+                  : undefined,
             );
           }
         }
@@ -338,15 +373,27 @@ export async function processRecording(
     const sentences = splitAllIntoSentences(rawSegments);
 
     // 2) 문장마다 교정한다.
+    //
+    //    3시간짜리 통짜 기록이면 문장이 수천 개다. 교정은 동기 CPU 작업이라
+    //    한 번에 돌리면 JS 스레드가 몇 분씩 멎고, 화면이 100% 에서 굳은 채
+    //    안드로이드가 "앱이 응답하지 않음"으로 죽인다 — 실사용 사고다.
+    //    덩어리로 나눠 이벤트 루프에 숨 쉴 틈을 주고, 어디까지 왔는지 말한다.
     const segments: TranscriptSegment[] = [];
     const perSegment: { edits: Edit[]; annotations: TermAnnotation[] }[] = [];
+    const CHUNK = 25;
 
-    for (const sentence of sentences) {
+    for (let i = 0; i < sentences.length; i++) {
+      if (i % CHUNK === 0) {
+        onProgress?.(100, `받은 전사 정리 중 — ${i}/${sentences.length} 문장`);
+        await new Promise((resolve) => setTimeout(resolve, 0));
+      }
+      const sentence = sentences[i];
       const corrected = correctTranscript(sentence.text, { lexicon, memory });
       segments.push({ ...sentence, text: corrected.text });
       perSegment.push({ edits: corrected.edits, annotations: corrected.annotations });
     }
 
+    onProgress?.(100, `전사본 저장 중 (${segments.length} 문장)`);
     await saveSegments(recording.id, recording.shift_id, segments, perSegment);
     if (asr.partial) {
       // 부분 회수: 받은 데까지는 방금 저장했다. 던지면 아래 catch 가 상태를
@@ -442,11 +489,16 @@ export async function resolveProvider(): Promise<AsrProvider> {
     endpoint: string;
     apiKey?: string;
     model?: string;
+    diarize?: boolean;
   }>(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" });
   if (!cloud.endpoint) {
     throw new Error(
       "전사 서버가 연결되어 있지 않습니다. 설정 → 전사에서 콜랩(무료 GPU) 또는 내 컴퓨터를 연결하십시오.",
     );
   }
-  return createSelfHostedProvider(cloud.endpoint, cloud.apiKey, cloud.model);
+  const hfToken = cloud.diarize ? await getHfToken() : null;
+  return createSelfHostedProvider(cloud.endpoint, cloud.apiKey, cloud.model, {
+    diarize: cloud.diarize,
+    hfToken,
+  });
 }
