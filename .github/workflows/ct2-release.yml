@@ -1,0 +1,90 @@
+# 한국어 파인튜닝 모델을 faster-whisper(CT2) 형식으로 변환해 Releases 에 올린다.
+#
+# 왜 필요한가: 콜랩 전사 서버(faster-whisper)는 CT2 형식만 싣는데, 쓸 만한
+# 한국어 medium 파인튜닝(장민, 대화 1,273시간)은 transformers 형식뿐이다.
+# 러너가 float16 으로 변환해 우리 Releases(models 태그)에 붙이면
+# 콜랩 노트가 허깅페이스를 안 거치고 여기서 바로 받는다 — 낡은 HF_TOKEN 이
+# 공개 모델까지 401 로 막던 실사고와 무관해지고, float16 저장이라
+# 적재 때 변환 복사가 없어 램도 안전하다.
+#
+# 실행: Actions 탭 → "CT2 모델 릴리스" → Run workflow (기본값이면 그대로).
+name: CT2 모델 릴리스
+
+on:
+  workflow_dispatch:
+    inputs:
+      model:
+        description: "HF 모델 id (transformers 형식)"
+        required: true
+        default: "jangmin/whisper-medium-ko-normalized-1273h"
+      tokenizer_from:
+        description: "파인튜닝판에 없는 토크나이저 파일을 빌려올 원본 id"
+        required: true
+        default: "openai/whisper-medium"
+      name:
+        description: "릴리스 파일 이름 (.tar.gz)"
+        required: true
+        default: "ct2-korean-medium-1273h-fp16.tar.gz"
+
+permissions:
+  contents: write
+
+jobs:
+  convert:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: 변환 도구 설치
+        run: |
+          pip install --quiet torch --index-url https://download.pytorch.org/whl/cpu
+          pip install --quiet ctranslate2 transformers huggingface_hub
+      - name: 원본 받기
+        # 파인튜닝 저장소에는 가중치·설정만 있고 토크나이저가 없는 경우가
+        # 흔하다(장민 판이 그렇다 — 어휘를 안 바꿨으니 원본 것을 그대로 쓴다).
+        # 원본의 토크나이저 파일을 먼저 깔고 파인튜닝판 파일로 덮는다 —
+        # 파인튜닝판에 있는 파일이 항상 이긴다.
+        run: |
+          python - <<'EOF'
+          import os, shutil
+          from huggingface_hub import snapshot_download
+
+          TOKENIZER_FILES = [
+              "tokenizer.json", "tokenizer_config.json", "vocab.json", "merges.txt",
+              "normalizer.json", "added_tokens.json", "special_tokens_map.json",
+          ]
+          MODEL_FILES = [
+              "config.json", "generation_config.json", "preprocessor_config.json",
+              "pytorch_model.bin", "model.safetensors",
+          ]
+          os.makedirs("src_model", exist_ok=True)
+          base = snapshot_download("${{ inputs.tokenizer_from }}", allow_patterns=TOKENIZER_FILES)
+          tuned = snapshot_download("${{ inputs.model }}", allow_patterns=TOKENIZER_FILES + MODEL_FILES)
+          for d in (base, tuned):
+              for f in os.listdir(d):
+                  p = os.path.join(d, f)
+                  if os.path.isfile(p):
+                      shutil.copy(p, os.path.join("src_model", f))
+          print(sorted(os.listdir("src_model")))
+          EOF
+      - name: CT2 float16 변환
+        run: |
+          ct2-transformers-converter --model ./src_model --output_dir ./ct2 \
+            --quantization float16 --copy_files tokenizer.json preprocessor_config.json
+          ls -lh ct2
+      - name: 묶기
+        run: |
+          rm -rf src_model
+          tar czf "${{ inputs.name }}" -C ct2 .
+          ls -lh "${{ inputs.name }}"
+      - name: 릴리스에 붙이기
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: models
+          name: 전사 모델 보관함
+          body: |
+            앱의 "한국어 파인튜닝 모델 추가"에서 아래 파일 주소를 넣어 받습니다.
+            이 릴리스는 모델 파일 보관용이라 판 번호와 무관합니다.
+          prerelease: true
+          files: ${{ inputs.name }}
