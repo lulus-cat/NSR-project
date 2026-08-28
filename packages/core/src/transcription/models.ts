@@ -1,428 +1,99 @@
 /**
- * 온디바이스 모델 목록과 선택 판단.
+ * 전사 서버 모델 카탈로그.
  *
- * 왜 여러 개를 두는가
- * -----------------
- * 한 모델로는 안 된다. 기기 성능과 상황이 너무 다르다.
- *
- *   구형 폰 + 8시간 녹음  → 작은 모델 아니면 밤새 돌려도 안 끝난다
- *   최신 폰 + 중요한 근무 → 큰 모델로 정확도를 사는 게 맞다
- *   충전 중 · 오프 날     → 큰 모델을 돌릴 유일한 시간
- *
- * 그래서 모델을 **골라서 받고, 상황에 따라 바꿔 쓰는** 구조로 둔다.
+ * 전사는 폰에서 하지 않는다
+ * ----------------------
+ * 온디바이스 전사(whisper.cpp)는 접었다. 8시간 근무 기록을 폰이 삭이려면
+ * 몇 시간씩 걸리고 뜨거워지고, 그 시간을 견딜 만큼 정확하지도 않았다.
+ * 지금 경로는 둘뿐이다 — **구글 콜랩(무료 GPU)** 과 **내 컴퓨터(PC·노트북)**.
+ * 둘 다 같은 OpenAI 호환 API 로 붙고, 어떤 모델로 돌릴지는 여기 목록에서
+ * 사용자가 고른다. 앱이 요청에 model 파라미터로 실어 보낸다.
  *
  * 크기보다 한국어가 먼저다
  * ----------------------
  * 공개된 실측에서 whisper-small 원본의 한국어 CER 이 18.05%인데,
  * 같은 크기를 한국어로 재학습하면 6.45%로 떨어진다. 세 배 차이다.
- * 반면 small → large-v3 는 18% → 8~12% 수준이다.
- *
- * 즉 **모델을 키우는 것보다 한국어로 학습된 것을 쓰는 쪽이 훨씬 크게 먹힌다.**
  * 목록에서 한국어 파인튜닝 모델을 위에 두는 이유다.
  *
- * 속도를 미리 못 적는 이유
- * ----------------------
- * 폰마다 몇 배씩 차이가 난다. 그래서 절대 속도를 적지 않고
- * **small 대비 상대 속도**만 둔다. 앱이 기기에서 small 을 한 번 재보고
- * 나머지를 추정한다 (`estimateMinutes`). 남의 폰 벤치마크를 적어 두는 것보다 정직하다.
+ * summary 규칙: **한 문장.** 한국어 정확도(실측이 있으면 숫자, 없으면
+ * 학습 데이터)와 특징을 그 한 문장에 담는다. 실측이 없는 모델에
+ * 숫자를 지어내지 않는다 — 적어 두면 사용자가 사실로 받아들인다.
  */
 
-export type ModelFamily =
-  /** OpenAI 원본을 ggml 로 변환한 것. 한국어 학습이 따로 안 됨. */
-  | "whisper-official"
-  /** 한국어로 재학습된 것. 같은 크기면 이쪽이 훨씬 낫다. */
-  | "whisper-korean"
-  /** 사용자가 직접 넣은 것. */
-  | "custom";
-
-export interface KoreanAccuracy {
-  /** 문자 오류율(%). 낮을수록 좋다. */
-  cer: number;
-  /** 어디서 나온 숫자인지. 출처 없는 숫자는 적지 않는다. */
-  source: string;
-}
-
-export interface AsrModel {
+export interface ServerAsrModel {
+  /**
+   * 서버에 model 파라미터로 보내는 값.
+   * 허깅페이스 CT2 저장소 id, 또는 우리 릴리스 미러를 뜻하는 "nsr-korean-medium".
+   */
   id: string;
   name: string;
-  /** ggml 파일 이름. whisper.cpp 가 이 이름으로 찾는다. */
-  file: string;
-  /** 받을 곳. 사용자가 직접 넣는 모델은 비어 있을 수 있다. */
-  url?: string;
-  /** 대략적인 파일 크기(MB). 실제 크기는 받아 봐야 안다. */
-  approxSizeMb: number;
-  family: ModelFamily;
+  /** 화면에 보이는 전부 — 한국어 정확도와 특징을 담은 한 문장. */
+  summary: string;
   /**
-   * 한국어 정확도. **모르면 null 이다.**
-   * 추정치를 적어 두면 사용자가 그걸 사실로 받아들인다.
+   * 어디서 쓸 수 있는가.
+   * "colab": 우리 콜랩 노트 전용(깃허브 릴리스 미러라서 허깅페이스에 없다).
+   * "any": 허깅페이스 공개 저장소라 콜랩·speaches 등 어디서든 받아진다.
    */
-  korean: KoreanAccuracy | null;
-  /** small 을 1.0 으로 둔 상대 속도. 클수록 빠르다. */
-  relativeSpeed: number;
-  /** 언제 이걸 고르면 되는지. */
-  guidance: string;
+  where: "colab" | "any";
+  /** 대략의 내려받기 크기(GB). 서버가 받는 것이지 폰이 받는 게 아니다. */
+  approxGb: number;
 }
 
-const HF = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main";
-
 /**
- * whisper.cpp 공식 배포 모델.
- *
- * 파일 이름과 배포처는 확인된 것이다. **크기는 대략치**이고,
- * 한국어 CER 은 공개 벤치마크 종합이라 폭이 넓다 — 테스트셋에 따라 달라진다.
- * 양자화(q5_1 등)는 파일을 절반 이하로 줄이고 정확도 손실은 작은 편이다.
+ * 다섯 항목 전부 2026-08 러너 조사로 실존·파일 구성을 확인했다.
+ * (지난 401 사고의 원인이 기억으로 적은 유령 저장소였다 — 같은 실수를 반복하지 않는다.)
  */
-/**
- * 한국어 파인튜닝 모델은 우리 저장소 Releases(models 태그)에 미러해 두고
- * 거기서 받는다. HF 원본은 f16(1.5GB)뿐이라 릴리스 워크플로가 q5_0 으로
- * 양자화해 올린다. 링크가 우리 손에 있으니 죽지 않는다.
- */
-const MIRROR = "https://github.com/lulus-cat/NSR-project/releases/download/models";
-
-export const OFFICIAL_MODELS: AsrModel[] = [
+export const SERVER_MODELS: ServerAsrModel[] = [
   {
-    id: "korean-medium-q5_0",
-    name: "한국어 Medium (파인튜닝)",
-    file: "ggml-korean-medium-q5_0.bin",
-    url: `${MIRROR}/ggml-korean-medium-q5_0.bin`,
-    approxSizeMb: 539,
-    family: "whisper-korean",
-    // 제작자가 밝힌 것은 학습량(한국어 200시간)뿐, 이 판의 CER 실측은 없다.
-    korean: null,
-    relativeSpeed: 0.4,
-    guidance:
-      "한국어 200시간으로 재학습된 Medium입니다. 같은 크기의 원본보다 한국어가 " +
-      "크게 낫습니다. 대부분의 기기에서 이 모델을 권장합니다.",
+    id: "nsr-korean-medium",
+    name: "NSR 한국어 Medium (대화 특화)",
+    summary:
+      "한국어 대화 1,273시간(소음 섞인 대화 363시간 포함)으로 재학습되어 병동 대화체에 가장 강합니다.",
+    where: "colab",
+    approxGb: 1.5,
   },
   {
-    id: "korean-large-v3-turbo-q5_0",
-    name: "한국어 Large v3 Turbo (파인튜닝)",
-    file: "ggml-korean-large-v3-turbo-q5_0.bin",
-    url: `${MIRROR}/ggml-korean-large-v3-turbo-q5_0.bin`,
-    approxSizeMb: 574,
-    family: "whisper-korean",
-    korean: null,
-    relativeSpeed: 0.7,
-    guidance:
-      "한국어로 재학습된 Turbo입니다. Medium보다 빠르고 정확도도 좋은 편이나 " +
-      "낭독 음성으로 학습되어 대화체에서는 체감이 다를 수 있습니다.",
+    id: "ghost613/faster-whisper-large-v3-turbo-korean",
+    name: "한국어 Large v3 Turbo",
+    summary:
+      "한국어 낭독 음성으로 재학습된 대형 모델이라 또렷한 발음에 강하지만, 대화체 정확도 실측은 공개돼 있지 않습니다.",
+    where: "any",
+    approxGb: 3.2,
   },
   {
-    id: "tiny-q5_1",
-    name: "Tiny (양자화)",
-    file: "ggml-tiny-q5_1.bin",
-    url: `${HF}/ggml-tiny-q5_1.bin`,
-    approxSizeMb: 31,
-    family: "whisper-official",
-    korean: null,
-    relativeSpeed: 6,
-    guidance:
-      "속도는 엄청 빠르지만 한국어를 못 알아듣습니다. 전사 테스트용으로만 쓰십시오.",
+    id: "deepdml/faster-whisper-large-v3-turbo-ct2",
+    name: "다국어 Large v3 Turbo",
+    summary:
+      "한국어 전용 학습은 없지만 빠르고 메모리가 안전해 무료 콜랩에서 끊김 없이 돌기 좋습니다.",
+    where: "any",
+    approxGb: 1.6,
   },
   {
-    id: "base-q5_1",
-    name: "Base (양자화)",
-    file: "ggml-base-q5_1.bin",
-    url: `${HF}/ggml-base-q5_1.bin`,
-    approxSizeMb: 57,
-    family: "whisper-official",
-    korean: null,
-    relativeSpeed: 3.5,
-    guidance: "성능이 달리는 구형 기기용입니다. 전문 용어를 곧잘 놓칩니다.",
+    id: "Systran/faster-whisper-large-v3",
+    name: "다국어 Large v3",
+    summary:
+      "원본 중 한국어가 가장 정확(공개 벤치마크 CER 8~12%)하지만 가장 크고 느립니다.",
+    where: "any",
+    approxGb: 3.0,
   },
   {
-    id: "small-q5_1",
-    name: "Small (양자화)",
-    file: "ggml-small-q5_1.bin",
-    url: `${HF}/ggml-small-q5_1.bin`,
-    approxSizeMb: 181,
-    family: "whisper-official",
-    korean: { cer: 18.05, source: "ENERZAi 공개 실측" },
-    relativeSpeed: 1,
-    guidance:
-      "튜닝 안 된 원본 기본 모델입니다. 한국어 인식률이 낮아 권장하지 않습니다." +
-      "이왕이면 용량이 같은 한국어 전용 파인튜닝 모델을 고르는 게 훨씬 낫습니다.",
-  },
-  {
-    id: "medium-q5_0",
-    name: "Medium (양자화)",
-    file: "ggml-medium-q5_0.bin",
-    url: `${HF}/ggml-medium-q5_0.bin`,
-    approxSizeMb: 514,
-    family: "whisper-official",
-    korean: null,
-    relativeSpeed: 0.4,
-    guidance: "정확도와 속도의 균형이 좋습니다. 최신 폰이나 태블릿에 올리기 좋습니다.",
-  },
-  {
-    id: "large-v3-turbo-q5_0",
-    name: "Large v3 Turbo (양자화)",
-    file: "ggml-large-v3-turbo-q5_0.bin",
-    url: `${HF}/ggml-large-v3-turbo-q5_0.bin`,
-    approxSizeMb: 574,
-    family: "whisper-official",
-    korean: null,
-    relativeSpeed: 0.7,
-    guidance:
-      "거대한 Large 모델을 빠르게 깎아 만든 버전입니다. 고성능 기기를 쓴다면" +
-      "엄청 무거운 Large-v3 원본보다 이게 훨씬 실용적입니다.",
-  },
-  {
-    id: "large-v3-q5_0",
-    name: "Large v3 (양자화)",
-    file: "ggml-large-v3-q5_0.bin",
-    url: `${HF}/ggml-large-v3-q5_0.bin`,
-    approxSizeMb: 1100,
-    family: "whisper-official",
-    korean: { cer: 10, source: "공개 벤치마크 종합 (8~12% 범위의 중간값)" },
-    relativeSpeed: 0.25,
-    guidance:
-      "가장 똑똑하지만, 폰이 매우 뜨거워지고 전사 시간도 한세월 걸립니다." +
-      "충전기를 꽂고 자는 시간 등 여유로울 때만 전사를 돌리십시오." +
-      "어설픈 모델보다 한국어로만 훈련된 전용 Medium 모델이 훨씬 잘 알아듣습니다.",
+    id: "Systran/faster-whisper-medium",
+    name: "다국어 Medium",
+    summary:
+      "가볍고 빨라 급할 때 좋지만, 한국어 원본 CER이 높아 병동 전문 용어를 곧잘 놓칩니다.",
+    where: "any",
+    approxGb: 1.5,
   },
 ];
 
-/**
- * 한국어 파인튜닝 모델을 어떻게 넣는가.
- *
- * 공개된 것이 여럿 있지만 **URL 을 여기 박아 두지 않는다.** 모델은 사라지고
- * 이름이 바뀌고 라이선스가 달라진다. 죽은 링크를 코드에 남기는 것보다
- * 넣는 방법을 알려주는 편이 오래간다.
- *
- * HuggingFace 의 파인튜닝 모델은 whisper.cpp 의 변환 스크립트로 ggml 이 된다.
- *
- *   python3 whisper.cpp/models/convert-h5-to-ggml.py \
- *     ./내려받은-모델-폴더/ ./whisper ./출력폴더
- *
- * 그 뒤 앱의 모델 화면에서 "직접 추가"로 파일이나 URL 을 넣는다.
- */
-export const KOREAN_MODEL_GUIDE = {
-  /**
-   * 실제로 존재하는 한국어 파인튜닝 모델들.
-   *
-   * URL 을 박아 두지 않고 **id 만** 적는다. 주소는 바뀌고 파일명도 바뀌지만
-   * id 로 검색하면 옮겨간 자리도 찾을 수 있다. 죽은 링크보다 낫다.
-   *
-   * 확인된 것 (2026-08 조사):
-   *  - large-v3 는 **turbo 파생**에 생태계가 몰려 있다. 순수 large-v3 한국어
-   *    파인튜닝은 하나뿐이고 성능 수치가 공개돼 있지 않다.
-   *  - 아래 첫 항목은 **이미 ggml 로 변환돼 있어** 변환 없이 바로 넣을 수 있다.
-   */
-  known: [
-    {
-      id: "royshilkrot/whisper-large-v3-turbo-korean-ggml",
-      base: "large-v3-turbo",
-      note: "위 목록에 있는 '한국어 Large v3 Turbo'가 바로 이 모델입니다.",
-      ready: true,
-    },
-    {
-      id: "royshilkrot/whisper-medium-korean-ggml",
-      base: "medium",
-      note: "위 목록의 '한국어 Medium'입니다. 대화체 특화는 아래 장민 모델을 보십시오.",
-      ready: true,
-    },
-    {
-      id: "jangmin/whisper-medium-ko-normalized-1273h",
-      base: "medium",
-      note:
-        "**대화체 특화 Medium 모델입니다.** AI Hub 음성 796시간 및" +
-        "소음 대화 363시간 등 총 1,273시간 학습 — 실전 대화 데이터로" +
-        "병동 대화 환경에 적합합니다. Safetensors 형식으로 ggml 변환 및 양자화가 필요합니다.",
-      ready: false,
-    },
-    {
-      id: "bybb138/whisper-large-v3-turbo-korean",
-      base: "large-v3-turbo",
-      note:
-        "Zeroth Korean 206시간 학습. 모델 카드 실측 test CER 7.58% → 2.06%. " +
-        "**다만 Zeroth는 낭독 음성 기반 데이터이므로" +
-        "병동 대화 환경의 수치와는 차이가 있을 수 있습니다.**" +
-        "Safetensors F32 형식으로 ggml 변환 및 양자화가 필요합니다." +
-        "제작자 주: 학습 진행 중인 모델입니다.",
-      ready: false,
-    },
-    {
-      id: "ghost613/whisper-large-v3-turbo-korean",
-      base: "large-v3-turbo",
-      note: "동일 Zeroth 계열 모델입니다. ggml 변환이 필요합니다.",
-      ready: false,
-    },
-    {
-      id: "seastar105/whisper-medium-ko-zeroth",
-      base: "medium",
-      note: "Zeroth Korean 모델입니다. ggml 변환이 필요합니다.",
-      ready: false,
-    },
-  ],
-  searchHint: "HuggingFace에서 해당 ID로 검색하거나 'whisper korean ggml'을 검색하십시오.",
-  convertCommand:
-    "python3 whisper.cpp/models/convert-h5-to-ggml.py ./모델폴더/ ./whisper ./출력",
-  /**
-   * 변환만 하면 F32 그대로라 3GB 쯤 된다. 폰에 넣으려면 양자화까지 해야 한다.
-   * q5_0 이면 1/5 로 줄고 정확도 손실은 작은 편이다.
-   */
-  quantizeCommand:
-    "./build/bin/quantize ./출력/ggml-model.bin ./ggml-ko-turbo-q5_0.bin q5_0",
-  why:
-    "같은 크기에서 원본 CER 18.05% → 한국어 재학습 6.45%. " +
-    "모델 덩치를 키우는 것보다 한국어 전용 모델을 고르는 게 훨씬 정확합니다.",
-  /**
-   * 직접 파인튜닝을 생각한다면 알아야 할 것.
-   *
-   * large-v3 full fine-tune 은 24GB 로도 안 된다 — batch 1, 오디오 2.5초로
-   * 잘라도 OOM 났다는 보고가 있다. LoRA + 8bit 면 **8GB** 로 떨어진다
-   * (무료 Colab T4 실측). 8GB 노트북 GPU 는 경계선이고 실측 사례가 없다.
-   *
-   * 데이터는 8~12시간이면 의미 있는 개선의 최소선(HF 공식 블로그),
-   * 위 한국어 turbo 모델은 200시간을 썼다.
-   */
-  finetune: {
-    fullVramGb: 24,
-    loraVramGb: 8,
-    minHours: 8,
-    note: "덥석 파인튜닝 모델을 올리기 전에, 원본 모델로 폰 속도부터 견적을 내보십시오.",
-  },
-} as const;
+/** 콜랩의 기본 모델. 앱이 아무것도 안 고르면 노트의 드롭다운(같은 값)이 정한다. */
+export const DEFAULT_COLAB_MODEL_ID = "nsr-korean-medium";
 
-export function getModel(id: string): AsrModel | undefined {
-  return OFFICIAL_MODELS.find((m) => m.id === id);
+export function getServerModel(id: string): ServerAsrModel | undefined {
+  return SERVER_MODELS.find((m) => m.id === id);
 }
 
-/** 앱이 처음 권하는 모델. 기기 성능을 모를 때의 안전한 출발점. */
-export const DEFAULT_MODEL_ID = "small-q5_1";
-
-// ────────────────────────────────────────────────────────────
-//  시간 추정
-// ────────────────────────────────────────────────────────────
-
-export interface SpeedSample {
-  /** 어떤 모델로 쟀는지. */
-  modelId: string;
-  /** 오디오 1초를 처리하는 데 걸린 실제 시간(초). 1보다 작으면 실시간보다 빠르다. */
-  secondsPerAudioSecond: number;
-}
-
-export interface TranscribeEstimate {
-  minutes: number;
-  /** 실측 없이 추정한 값인가. 화면에서 "대략"이라고 표시해야 한다. */
-  estimated: boolean;
-  /** 사람이 읽을 한 줄. */
-  label: string;
-}
-
-/**
- * 이 모델로 이 길이를 전사하면 얼마나 걸리는지.
- *
- * 기기에서 한 번 재 본 값(`sample`)이 있으면 그걸 기준으로 환산한다.
- * 없으면 못 한다고 말한다 — **남의 폰 숫자를 내 폰 숫자인 척 보여주지 않는다.**
- *
- * @param audioMinutes VAD 로 무음을 걷어낸 뒤의 실제 발화 길이
- */
-export function estimateMinutes(
-  model: AsrModel,
-  audioMinutes: number,
-  sample?: SpeedSample,
-): TranscribeEstimate {
-  if (!sample) {
-    return {
-      minutes: 0,
-      estimated: true,
-      label: "기기 측정을 통해 확인할 수 있습니다.",
-    };
-  }
-  const base = getModel(sample.modelId);
-  if (!base) {
-    return { minutes: 0, estimated: true, label: "기준 모델을 찾지 못했습니다." };
-  }
-
-  // sample 은 base 모델 기준이다. 상대 속도로 목표 모델에 환산한다.
-  const ratio = base.relativeSpeed / model.relativeSpeed;
-  const minutes = audioMinutes * sample.secondsPerAudioSecond * ratio;
-  const rounded = Math.round(minutes);
-
-  return {
-    minutes: rounded,
-    estimated: model.id !== sample.modelId,
-    label:
-      rounded >= 60
-        ? `약 ${Math.floor(rounded / 60)}시간 ${rounded % 60}분`
-        : `약 ${rounded}분`,
-  };
-}
-
-/**
- * 이 근무를 이 모델로 돌리는 게 현실적인가.
- *
- * 기준은 단순하다 — **다음 근무 전에 끝나야 한다.** 안 끝나면 쌓이고,
- * 쌓이면 앱을 안 열게 된다.
- */
-export interface Feasibility {
-  ok: boolean;
-  reason?: string;
-}
-
-export function checkFeasible(
-  estimate: TranscribeEstimate,
-  hoursUntilNextShift: number,
-): Feasibility {
-  if (estimate.minutes === 0) {
-    return { ok: true, reason: "속도를 측정한 기록이 없어 알 수 없습니다." };
-  }
-  const available = hoursUntilNextShift * 60;
-  if (estimate.minutes > available) {
-    return {
-      ok: false,
-      reason:
-        `예상 시간 ${estimate.label}, 다음 출근까지 딱 ${Math.round(available)}분 남았습니다.` +
-        "시간이 빡빡하니 가벼운 모델로 내리거나 돌아오는 오프 날에 여유롭게 전사하십시오.",
-    };
-  }
-  if (estimate.minutes > available * 0.6) {
-    return {
-      ok: true,
-      reason: "전사 작업 중에는 폰을 꼭 충전기에 꽂아두십시오.",
-    };
-  }
-  return { ok: true };
-}
-
-/** 사용자가 직접 넣은 모델을 검증한다. */
-export interface CustomModelInput {
-  name: string;
-  file: string;
-  url?: string;
-  approxSizeMb?: number;
-}
-
-export function makeCustomModel(input: CustomModelInput): {
-  model: AsrModel | null;
-  error?: string;
-} {
-  const name = input.name.trim();
-  const file = input.file.trim();
-  if (!name) return { model: null, error: "이름을 입력하십시오." };
-  if (!file.endsWith(".bin")) {
-    return { model: null, error: "whisper.cpp는 ggml .bin 파일만 지원합니다." };
-  }
-  if (input.url && !/^https:\/\//i.test(input.url)) {
-    return { model: null, error: "URL은 https://로 시작해야 합니다." };
-  }
-  return {
-    model: {
-      id: `custom-${file.replace(/[^a-zA-Z0-9]/g, "-").toLowerCase()}`,
-      name,
-      file,
-      url: input.url,
-      approxSizeMb: input.approxSizeMb ?? 0,
-      family: "custom",
-      // 남이 만든 모델의 정확도를 우리가 알 수 없다. 모르면 모른다고 둔다.
-      korean: null,
-      // 크기로 속도를 짐작한다. 정확하지 않으니 재보라고 안내한다.
-      relativeSpeed: input.approxSizeMb
-        ? Math.max(0.15, 181 / Math.max(input.approxSizeMb, 1))
-        : 1,
-      guidance: "사용자 추가 모델입니다. 속도는 기기 측정을 통해 확인하십시오.",
-    },
-  };
+/** 이 모드에서 고를 수 있는 모델 목록. */
+export function serverModelsFor(mode: "colab" | "pc"): ServerAsrModel[] {
+  return mode === "colab" ? SERVER_MODELS : SERVER_MODELS.filter((m) => m.where === "any");
 }

@@ -5,12 +5,13 @@
  *
  * 엔진 선택
  * --------
- * 기본은 **온디바이스**다. 병동 대화에는 환자 정보가 그대로 들어 있고,
- * 그걸 외부로 보내는 것은 의료법 제19조가 걸리는 행위다.
+ * 전사는 **사용자가 지정한 서버**가 한다 — 콜랩 노트(무료 GPU)든 내 컴퓨터의
+ * speaches 든, 같은 OpenAI 호환 API 로 붙는다. 온디바이스(whisper.cpp) 전사는
+ * 접었다: 8시간 근무 기록을 폰이 삭이려면 몇 시간씩 걸리고 뜨거워지고,
+ * 그 시간을 견딜 만큼 정확하지도 않았다.
  *
- * "클라우드"라고 부르는 옵션도 **상용 ASR API가 아니라 사용자가 지정한 서버**다.
- * 대부분의 경우 본인이 띄운 faster-whisper 서버이거나 병원이 제공한 내부 서버다.
- * 임의의 제3자 서비스에 병동 기록을 올리는 경로는 이 앱이 제공하지 않는다.
+ * 상용 ASR API 는 여전히 없다. 병동 대화에는 환자 정보가 그대로 들어 있고,
+ * 임의의 제3자 서비스에 그걸 올리는 경로는 이 앱이 제공하지 않는다.
  * (클로바 스피치를 잠깐 열었다가 요금이 오디오 길이 기준이라 접었다 — 근무
  * 통짜 기록에는 하루 만 원이 넘는다. 무료 경로들이 있는 한 정당화가 안 된다.)
  */
@@ -22,7 +23,6 @@ import {
   buildLexicon,
   correctTranscript,
   splitAllIntoSentences,
-  DEFAULT_MODEL_ID,
   generateCards,
   buildShiftReport,
   reportToMarkdown,
@@ -50,22 +50,6 @@ import {
 } from "../db";
 import { getSetting } from "../db";
 import { SETTINGS_KEYS } from "./scheduler";
-import { recordSpeedSample, resolveModelPath } from "./models";
-
-/**
- * 어떤 모델을 쓰는지는 이제 **사용자가 고른다.** 목록과 판단 근거는
- * core 의 `transcription/models.ts` 에, 받고 지우는 일은 `services/models.ts` 에 있다.
- *
- * 여기 남은 것은 하나 — 아무것도 고르지 않았을 때의 출발점이다.
- *
- * **한국어 파인튜닝된 모델을 쓸 것.** 원본 Whisper 는 한국어에서 약하다.
- * 공개된 실측으로 whisper-small 의 한국어 CER 이 18% 수준인데,
- * 같은 크기를 한국어 데이터로 재학습하면 6% 대로 떨어진다.
- * 세 배 차이다 — 모델을 키우는 것보다 한국어로 학습시키는 쪽이 훨씬 크게 먹힌다.
- *
- * 자세한 근거: docs/03-asr-tooling-and-prior-art.md
- */
-export { DEFAULT_MODEL_ID } from "@nsr/core";
 
 export interface AsrResult {
   segments: {
@@ -80,123 +64,14 @@ export interface AsrResult {
 
 export interface AsrProvider {
   readonly id: string;
-  readonly kind: "on-device" | "self-hosted";
   /** 이 엔진이 실제로 할 수 있는 것. 요청(AsrOptions)과 구분해서 본다. */
   readonly capabilities: AsrCapabilities;
-  /** 어떤 모델로 돌리는가. 속도 실측을 이 id에 묶어 둔다. */
-  readonly modelId?: string;
-  /** 고른 모델이 없어 다른 것으로 대신 돌리는 중인가. 화면에서 알려야 한다. */
-  readonly fellBack?: boolean;
-  /** onProgress 는 0~100. 온디바이스는 whisper.rn 이, 서버 전사는 작업 조회(폴링)가 준다. */
+  /** onProgress 는 0~100. 서버 전사는 작업 조회(폴링)가 준다. */
   transcribe(
     fileUri: string,
     options: AsrOptions,
     onProgress?: (pct: number) => void,
   ): Promise<AsrResult>;
-}
-
-/**
- * whisper.cpp 온디바이스 전사.
- *
- * 네이티브 모듈이 필요하므로 Expo Go에서는 동작하지 않는다. 개발 빌드가 필요하다.
- *   npx expo install whisper.rn && npx expo prebuild
- * 모델(ggml, 양자화)은 최초 실행 시 내려받아 기기에 보관한다.
- */
-export function createOnDeviceProvider(
-  modelPath: string,
-  modelId: string,
-  fellBack = false,
-): AsrProvider {
-  let context: {
-    transcribe: (
-      uri: string,
-      opts: Record<string, unknown>,
-    ) => { promise: Promise<{ segments?: { text: string; t0: number; t1: number }[] }> };
-  } | null = null;
-
-  return {
-    id: "whisper.cpp",
-    kind: "on-device",
-    // whisper.cpp 는 화자를 나누지 못한다. Whisper 는 음성을 글자로 옮기는
-    // 모델이지 목소리를 구별하는 모델이 아니다. 화자분리는 화자 임베딩을 뽑아
-    // 군집화하는 별개의 모델(pyannote 등)이 하는 일이고, 그건 여기 없다.
-    // 그래서 화면은 "직접 지정해 주세요" 라고 말해야 한다.
-    capabilities: { diarization: false, wordTimestamps: true },
-    modelId,
-    fellBack,
-    async transcribe(fileUri, options, onProgress) {
-      const startedAt = Date.now();
-      if (!context) {
-        // 경로가 /index 인 이유: whisper.rn 0.7.3 의 exports 맵에 "." 항목이 없어
-        // 맨이름("whisper.rn")은 해석에 실패한다. "./*" 패턴에는 걸린다.
-        const mod = await import("whisper.rn/index");
-        context = (await mod.initWhisper({
-          filePath: modelPath.replace(/^file:\/\//, ""),
-        })) as unknown as typeof context;
-      }
-
-      // whisper.cpp 는 WAV(PCM16)만 읽는다. 녹음은 m4a 로 나오므로
-      // 전사 직전에 OS 코덱으로 16kHz WAV 를 만들고, 끝나면 지운다.
-      let inputUri = fileUri;
-      let tempWav: InstanceType<typeof import("expo-file-system").File> | null = null;
-      if (!/\.wav$/i.test(fileUri.split("?")[0])) {
-        const { audioDecodeAvailable, decodeToWav16k } = await import(
-          "../../modules/nsr-audio-decode"
-        );
-        if (!audioDecodeAvailable()) {
-          throw new Error(
-            "이 기기에서는 기록 파일을 변환할 수 없습니다. " +
-              "설정 > 전사 모델에서 '노트북·서버 전사'를 이용하십시오.",
-          );
-        }
-        const { File, Paths } = await import("expo-file-system");
-        tempWav = new File(Paths.cache, `nsr-asr-${Date.now()}.wav`);
-        await decodeToWav16k(fileUri, tempWav.uri);
-        inputUri = tempWav.uri;
-      }
-
-      try {
-      const { promise } = context!.transcribe(inputUri, {
-        language: options.language,
-        // 디코더 앞 문맥. 도메인 용어의 사전확률을 올린다 (224토큰 상한).
-        prompt: options.initialPrompt,
-        // 의료 전사에 창의성은 필요 없다. 결정적 디코딩.
-        temperature: options.temperature,
-        // 무음 구간에서의 반복 환각을 막는다.
-        maxLen: 0,
-        tokenTimestamps: true,
-        onProgress: onProgress
-          ? (p: number) => onProgress(Math.max(0, Math.min(100, p)))
-          : undefined,
-      });
-      const result = await promise;
-      const segments = (result.segments ?? []).map((s) => ({
-        // whisper.cpp의 t0/t1은 1/100초 단위다.
-        startSec: s.t0 / 100,
-        endSec: s.t1 / 100,
-        text: s.text.trim(),
-      }));
-      const durationSec = segments.length > 0 ? segments[segments.length - 1].endSec : 0;
-
-      // 이번에 걸린 시간을 남긴다. 다음부터 "이 모델이면 얼마나 걸리는지"를
-      // 이 기기의 실측으로 말할 수 있다. 별도 벤치마크를 돌릴 이유가 없다.
-      void recordSpeedSample({
-        modelId,
-        audioSeconds: durationSec,
-        elapsedSeconds: (Date.now() - startedAt) / 1000,
-      });
-
-      return { segments, durationSec };
-      } finally {
-        // 변환한 WAV 는 원본의 4배 부피다. 남겨 두지 않는다.
-        try {
-          tempWav?.delete();
-        } catch {
-          // 못 지워도 전사 결과는 유효하다. 다음 정리 때 캐시가 비워진다.
-        }
-      }
-    },
-  };
 }
 
 /**
@@ -219,7 +94,6 @@ export function createSelfHostedProvider(
     : `${endpoint.replace(/\/+$/, "")}/v1/audio/transcriptions`;
   return {
     id: `self-hosted:${endpoint}`,
-    kind: "self-hosted",
     // OpenAI 전사 형식에는 화자 필드가 없다. 있다고 말하지 않는다.
     capabilities: { diarization: false, wordTimestamps: true },
     async transcribe(fileUri, options, onProgress) {
@@ -274,6 +148,11 @@ export function createSelfHostedProvider(
         const jobUrl = `${url}/${json.job_id}`;
         const authHeaders = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
         const deadline = Date.now() + 60 * 60 * 1000; // 한 시간이면 무엇이든 끝난다.
+        // 502/503/504 한 방에 포기하지 않는다. Cloudflare 터널은 몇십 초씩
+        // 출렁이곤 하는데, 작업은 서버에 살아 있다 — 실사용에서 전사가 100%
+        // 까지 가 놓고 마지막 조회의 일시 오류로 통째로 버려진 사고가 있었다.
+        // 3분을 넘겨 계속 죽어 있으면 그때 세션이 꺼진 것으로 판단한다.
+        let gatewaySince: number | null = null;
         for (;;) {
           if (Date.now() > deadline) {
             throw new Error("전사 서버가 한 시간 안에 끝내지 못했습니다. 서버 상태를 확인하십시오.");
@@ -285,10 +164,22 @@ export function createSelfHostedProvider(
           } catch {
             continue; // 폰 네트워크가 잠깐 출렁여도 작업은 서버에 살아 있다.
           }
+          if (poll.status === 502 || poll.status === 503 || poll.status === 504) {
+            gatewaySince = gatewaySince ?? Date.now();
+            if (Date.now() - gatewaySince < 3 * 60 * 1000) continue;
+            throw new Error(gatewayDown(poll.status) ?? `전사 서버 오류 ${poll.status}`);
+          }
+          gatewaySince = null;
+          if (poll.status === 404) {
+            // 작업 목록은 콜랩 세션 메모리에 있다. 404 는 세션이 재시작됐다는 뜻.
+            throw new Error(
+              "전사 서버가 재시작되어 진행 중이던 작업이 사라졌습니다. " +
+                "콜랩 노트를 '모두 실행'으로 다시 켜고 새 주소를 넣은 뒤, 전사를 다시 시작하십시오.",
+            );
+          }
           if (!poll.ok) {
             throw new Error(
-              gatewayDown(poll.status) ??
-                `전사 서버 오류 ${poll.status}: ${(await poll.text()).slice(0, 300)}`,
+              `전사 서버 오류 ${poll.status}: ${(await poll.text()).slice(0, 300)}`,
             );
           }
           const status = (await poll.json()) as {
@@ -473,7 +364,12 @@ export async function finalizeShift(input: {
   return { cardsAdded, taeumScore: taeum.score };
 }
 
-/** 현재 설정에 맞는 provider를 만든다. */
+/**
+ * 현재 설정에 맞는 provider를 만든다.
+ *
+ * 전사 경로는 서버(콜랩 또는 내 컴퓨터)뿐이다. 주소가 없으면 전사를 시작할
+ * 수 없고, 어디서 연결하는지까지 오류 문장이 말해 준다.
+ */
 export async function resolveProvider(): Promise<AsrProvider> {
   const cloud = await getSetting<{
     enabled: boolean;
@@ -481,14 +377,10 @@ export async function resolveProvider(): Promise<AsrProvider> {
     apiKey?: string;
     model?: string;
   }>(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" });
-  if (cloud.enabled && cloud.endpoint) {
-    return createSelfHostedProvider(cloud.endpoint, cloud.apiKey, cloud.model);
-  }
-  const { path, model, fellBack } = await resolveModelPath();
-  if (!path) {
+  if (!cloud.endpoint) {
     throw new Error(
-      "전사 모델이 없습니다. 설정 → 전사 모델에서 다운로드하십시오.",
+      "전사 서버가 연결되어 있지 않습니다. 설정 → 전사에서 콜랩(무료 GPU) 또는 내 컴퓨터를 연결하십시오.",
     );
   }
-  return createOnDeviceProvider(path, model?.id ?? DEFAULT_MODEL_ID, fellBack);
+  return createSelfHostedProvider(cloud.endpoint, cloud.apiKey, cloud.model);
 }

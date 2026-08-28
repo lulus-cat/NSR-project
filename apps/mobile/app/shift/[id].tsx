@@ -390,10 +390,10 @@ export default function ShiftDetail() {
           <Small muted={false}>{coverage.message}</Small>
           <Divider />
           <Small>
-            
-  온디바이스 Whisper는
+
+  Whisper 전사는
 {" "}
-            <Text style={{ fontWeight: "700" }}>목소리를 구별하지 못합니다.</Text> 
+            <Text style={{ fontWeight: "700" }}>목소리를 구별하지 못합니다.</Text>
   자동 화자 분리를 지원하지 않으니 라벨을 직접 지정해 주십시오.
 </Small>
           <Small>

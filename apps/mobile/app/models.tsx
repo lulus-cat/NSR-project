@@ -1,301 +1,239 @@
+/**
+ * 전사 설정 — 어디서(콜랩/내 컴퓨터), 어떤 모델로 전사할지 고르는 화면.
+ *
+ * 폰 전사는 없앴다. 8시간 근무 기록을 폰이 삭이려면 몇 시간씩 걸리고
+ * 뜨거워지는데, 그 시간을 견딜 만큼 정확하지도 않았다. 남은 경로는 둘이고,
+ * 이 화면의 첫 번째 일은 **그 둘을 헷갈리지 않게 가르는 것**이다 —
+ * 예전엔 한 카드에 도커·콜랩·모델 버튼이 뒤섞여 있어서, 콜랩을 쓰는
+ * 사람이 PC 용 버튼을 누르고 왜 안 바뀌는지 알 수 없었다.
+ *
+ * 모델 선택은 모드와 무관하게 같은 문법이다: 목록에서 누르면 그 모델이
+ * 선택되고, 다음 전사 요청에 model 파라미터로 실려 간다. 콜랩 노트는
+ * 이 파라미터를 읽어 필요하면 모델을 갈아끼운다.
+ */
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Linking, ScrollView, TextInput, View } from "react-native";
+import { Linking, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import type { ComponentProps } from "react";
 import {
-  KOREAN_MODEL_GUIDE,
-  estimateMinutes,
-  checkFeasible,
-  type AsrModel,
-  type SpeedSample,
+  DEFAULT_COLAB_MODEL_ID,
+  serverModelsFor,
+  type ServerAsrModel,
 } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, Heading, Small } from "../src/components/ui";
-import { CONTENT_MAX, radius, space, type, useTheme } from "../src/theme";
-import {
-  addCustomModel,
-  activeDownloads,
-  cancelDownload,
-  subscribeDownloads,
-  deleteModelFile,
-  downloadModel,
-  listModels,
-  loadSpeedSample,
-  removeCustomModel,
-  setActiveModel,
-  type DownloadProgress,
-  type ModelStatus,
-} from "../src/services/models";
+import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/ui";
+import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 
+type ServerMode = "colab" | "pc";
+
 interface ServerAsr {
   enabled: boolean;
+  /** 지금 쓰는 주소. 전사(resolveProvider)는 이 값만 본다. */
   endpoint: string;
   model?: string;
+  mode?: ServerMode;
+  /** 모드별로 기억해 두는 주소 — 모드를 오가도 붙여넣은 주소가 안 날아간다. */
+  endpoints?: Partial<Record<ServerMode, string>>;
 }
 
-/** 노트북(speaches 등)이 받아 쓰는 한국어 CT2 모델. 러너로 파일 구성을 확인해 둔 id 다. */
-const KOREAN_SERVER_MODEL = "ghost613/faster-whisper-large-v3-turbo-korean";
-
-/** 노트북이 없을 때의 대안 — 콜랩 무료 GPU 로 같은 서버를 띄우는 노트. 저장소가 공개라 바로 열린다. */
+/**
+ * 콜랩 노트 주소. 이 브랜치의 노트를 가리켜야 앱과 노트가 같은 판으로 논다 —
+ * 드라이브 사본이 아니라 이 링크로 열어야 최신판이다.
+ */
 const COLAB_NOTEBOOK_URL =
-  "https://colab.research.google.com/github/lulus-cat/NSR-project/blob/claude/new-nurse-adaptation-app-9xuo5p/docs/colab/nsr-transcribe-server.ipynb";
+  "https://colab.research.google.com/github/lulus-cat/NSR-project/blob/claude/transcription-model-ui-niyqxa/docs/colab/nsr-transcribe-server.ipynb";
 
-/** 8시간 근무에서 VAD로 무음을 걷어내면 실제 발화는 대략 이 정도다. */
-const TYPICAL_SPEECH_MINUTES = 90;
-
-function familyLabel(model: AsrModel): { text: string; tone: "ok" | "warn" | "muted" } {
-  if (model.family === "whisper-korean") return { text: "한국어 학습됨", tone: "ok" };
-  if (model.family === "custom") return { text: "직접 넣음", tone: "muted" };
-  return { text: "원본", tone: "muted" };
+/** 저장된 설정에 mode 가 없던 옛 판 사용자 — 주소 생김새로 짐작한다. */
+function inferMode(server: ServerAsr): ServerMode {
+  if (server.mode) return server.mode;
+  if (server.endpoint && !server.endpoint.includes("trycloudflare.com")) return "pc";
+  return "colab";
 }
 
-function ProgressBar({ ratio }: { ratio: number }) {
-  const t = useTheme();
-  return (
-    <View
-      style={{
-        height: 6,
-        borderRadius: radius.sm,
-        backgroundColor: t.surfaceAlt,
-        overflow: "hidden",
-      }}
-    >
-      <View
-        style={{
-          width: `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`,
-          height: "100%",
-          backgroundColor: t.accent,
-        }}
-      />
-    </View>
-  );
-}
-
-function ModelCard({
-  status,
-  sample,
-  progress,
-  onDownload,
-  onCancel,
-  onDelete,
-  onUse,
+/** 전사 방식 타일 — 콜랩/내 컴퓨터를 한눈에 가르는 큰 선택지. */
+function ModeTile({
+  icon,
+  title,
+  caption,
+  selected,
+  onPress,
 }: {
-  status: ModelStatus;
-  sample?: SpeedSample;
-  progress?: DownloadProgress;
-  onDownload: () => void;
-  onCancel: () => void;
-  onDelete: () => void;
-  onUse: () => void;
+  icon: ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  caption: string;
+  selected: boolean;
+  onPress: () => void;
 }) {
   const t = useTheme();
-  const { model, installed, active, actualSizeMb } = status;
-  const family = familyLabel(model);
-
-  const estimate = estimateMinutes(model, TYPICAL_SPEECH_MINUTES, sample);
-  const feasible = checkFeasible(estimate, 12);
-  const downloading = progress !== undefined;
-
   return (
-    <Card tone={active ? "accent" : "default"}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: space.sm,
-        }}
-      >
-        <Text style={[type.heading, { color: t.text, flexShrink: 1 }]}>{model.name}</Text>
-        {active ? <Badge text="사용 중" tone="ok" /> : <Badge text={family.text} tone={family.tone} />}
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: 96,
+        borderRadius: radius.lg,
+        borderWidth: 2,
+        borderColor: selected ? t.accent : "transparent",
+        backgroundColor: selected ? t.accentSoft : t.surfaceAlt,
+        padding: space.md,
+        gap: space.xs,
+        transform: [{ scale: pressed ? 0.97 : 1 }],
+      })}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+        <Ionicons name={icon} size={20} color={selected ? t.accent : t.textMuted} />
+        {selected ? <Badge text="사용 중" tone="ok" /> : null}
       </View>
-
-      <Small>{model.guidance}</Small>
-
-      <Divider />
-
-      <View style={{ gap: space.xs }}>
-        <Small muted={false}>
-          크기 {installed && actualSizeMb > 0 ? `${actualSizeMb} MB` : `약 ${model.approxSizeMb} MB`}
-          {installed ? " · 받아 둠" : ""}
-        </Small>
-        <Small>
-          한국어 정확도{" "}
-          {model.korean
-            ? `문자 오류율 ${model.korean.cer}% (${model.korean.source})`
-            : "공개된 실측 데이터가 없습니다"}
-        </Small>
-        <Small>
-          8시간 근무 전사 예상 시간: {estimate.label}
-          {estimate.estimated && estimate.minutes > 0 ? "(타 모델 측정값 기준 환산)" : ""}
-        </Small>
-        {!feasible.ok && feasible.reason ? (
-          <Small muted={false}>⚠ {feasible.reason}</Small>
-        ) : null}
-      </View>
-
-      {downloading ? (
-        <>
-          <ProgressBar ratio={progress.ratio} />
-          <Small>
-            {progress.totalMb > 0
-              ? `${progress.receivedMb} / ${progress.totalMb} MB`
-              : `${progress.receivedMb} MB 다운로드 중`}
-          </Small>
-          <Button label="취소" onPress={onCancel} />
-        </>
-      ) : (
-        <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
-          {!installed ? (
-            <View style={{ flex: 1, minWidth: 120 }}>
-              <Button
-                label={model.url ? "내려받기" : "주소 없음"}
-                tone="primary"
-                disabled={!model.url}
-                onPress={onDownload}
-              />
-            </View>
-          ) : null}
-          {installed && !active ? (
-            <View style={{ flex: 1, minWidth: 120 }}>
-              <Button label="이걸로 전사" tone="primary" onPress={onUse} />
-            </View>
-          ) : null}
-          {installed ? (
-            <View style={{ flex: 1, minWidth: 100 }}>
-              <Button label="지우기" onPress={onDelete} />
-            </View>
-          ) : null}
-          {model.family === "custom" && !installed ? (
-            <View style={{ flex: 1, minWidth: 100 }}>
-              <Button label="목록에서 빼기" onPress={onDelete} />
-            </View>
-          ) : null}
-        </View>
-      )}
-    </Card>
+      <Text style={[type.heading, { color: t.text }]}>{title}</Text>
+      <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>{caption}</Text>
+    </Pressable>
   );
 }
 
-export default function Models() {
+/**
+ * 모델 한 줄 — 누르면 그 모델이 선택된다.
+ * 설명은 딱 한 문장(한국어 정확도 + 특징)만 둔다. 표가 길어지면 안 읽는다.
+ */
+function ModelRow({
+  model,
+  selected,
+  onSelect,
+}: {
+  model: ServerAsrModel;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const t = useTheme();
-  const [statuses, setStatuses] = useState<ModelStatus[]>([]);
-  const [sample, setSample] = useState<SpeedSample | undefined>();
-  const [progress, setProgress] = useState<Record<string, DownloadProgress>>({});
-  const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", file: "", url: "", sizeMb: "" });
-  const [formError, setFormError] = useState<string | null>(null);
-  const [server, setServer] = useState<ServerAsr>({ enabled: false, endpoint: "" });
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      onPress={onSelect}
+      style={({ pressed }) => ({
+        minHeight: TOUCH_MIN,
+        borderRadius: radius.md,
+        backgroundColor: selected ? t.accentSoft : pressed ? t.surfaceAlt : "transparent",
+        padding: space.md,
+        gap: space.xs,
+      })}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+        <Text style={[type.body, { color: t.text, fontWeight: "700", flexShrink: 1 }]}>
+          {model.name}
+        </Text>
+        {selected ? (
+          <Badge text="선택됨" tone="ok" />
+        ) : (
+          <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>선택</Text>
+        )}
+      </View>
+      <Small>{model.summary}</Small>
+    </Pressable>
+  );
+}
 
-  const load = useCallback(async () => {
-    setStatuses(await listModels());
-    setSample(await loadSpeedSample());
-    setServer(
-      await getSetting<ServerAsr>(SETTINGS_KEYS.cloudTranscription, {
+export default function TranscriptionSetup() {
+  const t = useTheme();
+  const [server, setServer] = useState<ServerAsr>({ enabled: false, endpoint: "" });
+  const [check, setCheck] = useState<
+    { state: "idle" } | { state: "checking" } | { state: "done"; ok: boolean; message: string }
+  >({ state: "idle" });
+
+  useEffect(() => {
+    void (async () => {
+      const saved = await getSetting<ServerAsr>(SETTINGS_KEYS.cloudTranscription, {
         enabled: false,
         endpoint: "",
-      }),
-    );
-  }, []);
-
-  const saveServer = useCallback(async (next: ServerAsr) => {
-    setServer(next);
-    await setSetting(SETTINGS_KEYS.cloudTranscription, next);
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // 진행은 서비스가 브로드캐스트한다 — 화면을 나갔다 와도 받던 자리부터 보인다.
-  useEffect(() => {
-    setProgress(activeDownloads());
-    return subscribeDownloads((id, p) => {
-      setProgress((prev) => {
-        const next = { ...prev };
-        if (p) next[id] = p;
-        else delete next[id];
-        return next;
       });
-    });
+      // 옛 판 설정에는 모드별 기억이 없다 — 지금 주소를 지금 모드 것으로 심는다.
+      const m = inferMode(saved);
+      const endpoints = { ...saved.endpoints };
+      if (saved.endpoint && !endpoints[m]) endpoints[m] = saved.endpoint;
+      setServer({ ...saved, mode: m, endpoints });
+    })();
   }, []);
 
-  const start = useCallback(
-    async (model: AsrModel) => {
-      const outcome = await downloadModel(model);
-      await load();
+  const save = useCallback(async (next: ServerAsr) => {
+    // 켜고 끄는 스위치는 없다 — 전사 경로가 서버뿐이라 주소가 있으면 켜진 것이다.
+    const stored = { ...next, enabled: next.endpoint.trim().length > 0 };
+    setServer(stored);
+    await setSetting(SETTINGS_KEYS.cloudTranscription, stored);
+  }, []);
 
-      if (outcome.canceled) return;
-      if (!outcome.ok) {
-        Alert.alert("다운로드에 실패했습니다", outcome.error ?? "알 수 없는 오류입니다.");
-        return;
-      }
-      // 처음 받은 모델이면 바로 쓰게 한다. 받아 놓고 안 고르는 실수를 막는다.
-      const installedCount = (await listModels()).filter((s) => s.installed).length;
-      if (installedCount === 1) {
-        await setActiveModel(model.id);
-        await load();
-      }
+  const mode = inferMode(server);
+  const models = serverModelsFor(mode);
+  // 콜랩은 비워 둬도 노트 기본값이 같은 모델이라, 화면에서는 기본 모델이 선택된 것으로 보여준다.
+  const selectedModelId =
+    server.model ?? (mode === "colab" ? DEFAULT_COLAB_MODEL_ID : undefined);
+
+  const setEndpoint = useCallback(
+    (endpoint: string) => {
+      void save({
+        ...server,
+        endpoint,
+        endpoints: { ...server.endpoints, [mode]: endpoint },
+      });
     },
-    [load],
+    [mode, save, server],
   );
 
-  const confirmDownload = useCallback(
-    (model: AsrModel) => {
-      Alert.alert(
-        `${model.name} 다운로드`,
-        `약 ${model.approxSizeMb} MB를 받습니다. Wi-Fi 사용을 권장합니다.`,
-        [
-          { text: "취소", style: "cancel" },
-          { text: "받기", onPress: () => void start(model) },
-        ],
-      );
+  const switchMode = useCallback(
+    (nextMode: ServerMode) => {
+      if (nextMode === mode) return;
+      setCheck({ state: "idle" });
+      // 주소는 모드마다 다른 물건이다(터널 주소 vs 집 IP). 콜랩 주소로 PC
+      // 전사를 시도하는 헛걸음이 없도록, 그 모드에서 마지막으로 쓰던 주소로
+      // 갈아끼운다. 모델도 모드 목록에 없는 것이면 비운다.
+      const keepModel =
+        server.model && serverModelsFor(nextMode).some((m) => m.id === server.model)
+          ? server.model
+          : undefined;
+      void save({
+        ...server,
+        endpoint: server.endpoints?.[nextMode] ?? "",
+        model: keepModel,
+        mode: nextMode,
+      });
     },
-    [start],
+    [mode, save, server],
   );
 
-  const confirmDelete = useCallback(
-    (status: ModelStatus) => {
-      const { model } = status;
-      Alert.alert(
-        `${model.name} 삭제`,
-        status.active
-          ? "사용 중인 모델입니다. 지우면 다른 모델로 전사합니다."
-          : "모델 파일만 지워지며 언제든 다시 받을 수 있습니다.",
-        [
-          { text: "취소", style: "cancel" },
-          {
-            text: "지우기",
-            style: "destructive",
-            onPress: async () => {
-              if (model.family === "custom") await removeCustomModel(model.id);
-              else deleteModelFile(model);
-              await load();
-            },
-          },
-        ],
-      );
-    },
-    [load],
-  );
-
-  const submitCustom = useCallback(async () => {
-    const sizeMb = Number(form.sizeMb);
-    const result = await addCustomModel({
-      name: form.name,
-      file: form.file,
-      url: form.url.trim() || undefined,
-      approxSizeMb: Number.isFinite(sizeMb) && sizeMb > 0 ? sizeMb : undefined,
-    });
-    if (!result.ok) {
-      setFormError(result.error ?? "추가하지 못했습니다.");
+  const checkConnection = useCallback(async () => {
+    const base = server.endpoint.trim().replace(/\/+$/, "");
+    if (!base) {
+      setCheck({ state: "done", ok: false, message: "주소를 먼저 넣으십시오." });
       return;
     }
-    setForm({ name: "", file: "", url: "", sizeMb: "" });
-    setFormError(null);
-    setAdding(false);
-    await load();
-  }, [form, load]);
+    setCheck({ state: "checking" });
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`${base}/health`, { signal: controller.signal });
+      clearTimeout(timer);
+      setCheck(
+        res.ok
+          ? { state: "done", ok: true, message: "연결됐습니다. 이제 기록 화면에서 전사를 누르면 됩니다." }
+          : {
+              state: "done",
+              ok: false,
+              message: `서버가 ${res.status}로 답했습니다. 주소를 끝까지(비밀 문자열 포함) 붙여넣었는지 확인하십시오.`,
+            },
+      );
+    } catch {
+      setCheck({
+        state: "done",
+        ok: false,
+        message:
+          mode === "colab"
+            ? "연결하지 못했습니다. 콜랩 노트가 '모두 실행' 상태인지, 주소를 통째로 붙여넣었는지 확인하십시오."
+            : "연결하지 못했습니다. 폰과 컴퓨터가 같은 Wi-Fi인지, 서버가 켜져 있는지 확인하십시오.",
+      });
+    }
+  }, [mode, server.endpoint]);
 
   const input = {
     color: t.text,
@@ -304,8 +242,6 @@ export default function Models() {
     padding: space.md,
     fontSize: 14,
   };
-
-  const installedCount = statuses.filter((s) => s.installed).length;
 
   return (
     <ScrollView
@@ -317,250 +253,165 @@ export default function Models() {
         alignSelf: "center",
       }}
     >
+      {/* ── 방식 선택: 이 화면의 첫 질문 ── */}
       <Card>
-        <Heading>전사 모델</Heading>
-        <Body muted>
-          
-  전사는 기기에서 직접 처리합니다. 성능에 맞는 모델을 선택하십시오.
-</Body>
-        <Divider />
-        <Small muted={false}>
-  모델 크기보다 한국어 최적화가 중요합니다
-</Small>
+        <Heading>어디서 전사합니까</Heading>
         <Small>
-          {KOREAN_MODEL_GUIDE.why} 
-  모델 크기를 키우는 것보다 한국어 파인튜닝 모델을 쓰는 편이 훨씬 정확합니다.
-</Small>
-        {installedCount === 0 ? (
-          <>
-            <Divider />
-            <Small muted={false}>
-              
-  설치된 모델이 없습니다. 음성을 전사하려면 모델을 받아주십시오.
-</Small>
-          </>
-        ) : null}
+          전사는 폰이 아니라 아래 둘 중 한 곳이 합니다. 기록 음성이 선택한 곳으로
+          전송됩니다 — 폰에서는 전송 외에 아무 일도 하지 않습니다.
+        </Small>
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <ModeTile
+            icon="logo-google"
+            title="구글 콜랩"
+            caption="무료 GPU · 준비 3분 · 컴퓨터 없이"
+            selected={mode === "colab"}
+            onPress={() => switchMode("colab")}
+          />
+          <ModeTile
+            icon="laptop-outline"
+            title="내 컴퓨터"
+            caption="같은 Wi-Fi · 음성이 집 밖으로 안 나감"
+            selected={mode === "pc"}
+            onPress={() => switchMode("pc")}
+          />
+        </View>
       </Card>
 
-      {/* 노트북·서버 전사 — 폰이 느릴 때의 탈출구 */}
-      <Card tone={server.enabled ? "accent" : "default"}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <Heading>노트북·서버로 전사</Heading>
-          {server.enabled ? <Badge text="사용 중" tone="ok" /> : null}
-        </View>
-        <Small>
-          같은 Wi-Fi의 노트북이 전사를 대신합니다. 폰보다 몇 배 빠르고 배터리를 아낍니다.
-          기록 음성이 그 서버로 전송되므로 <Text style={{ fontWeight: "700" }}>내 컴퓨터에만</Text>{" "}
-          연결하십시오.
-        </Small>
-        <Divider />
-        <Small muted={false}>노트북에서 한 번만 하면 됩니다</Small>
-        <Small>1. Docker(docker.com) 설치 후 터미널에 입력:</Small>
-        <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.md, padding: space.md }}>
-          <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
-            docker run -d -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
-          </Text>
-        </View>
-        <Small>
-          2. 노트북의 Wi-Fi IP(예: 192.168.0.10)를 확인해 아래에 넣으십시오. 3. 모델 칸은
-          비워도 됩니다 — 서버 기본값을 씁니다. OpenAI 호환(/v1/audio/transcriptions) 서버라면
-          무엇이든 붙습니다. 집 밖에서도 쓰려면 Tailscale 이 가장 쉽습니다.
-        </Small>
-        <Divider />
-        <Small muted={false}>노트북이 없다면 — 구글 콜랩 (무료 GPU)</Small>
-        <Small>
-          아래 버튼으로 콜랩 노트를 열고 &lsquo;모두 실행&rsquo;하면 몇 분 안에 전사 서버가
-          만들어지고, 마지막 출력의 주소를 여기 주소 칸에 넣으면 됩니다. 기록 음성이 구글
-          서버를 지나는 경로입니다 — 내 컴퓨터가 아닙니다. 콜랩 탭을 닫으면 서버도 꺼집니다.
-        </Small>
-        <Button label="콜랩 노트 열기" onPress={() => void Linking.openURL(COLAB_NOTEBOOK_URL)} />
-        <Button
-          label={server.enabled ? "서버 전사 끄기" : "서버 전사 켜기"}
-          tone={server.enabled ? "default" : "primary"}
-          onPress={() => void saveServer({ ...server, enabled: !server.enabled })}
-        />
-        {server.enabled ? (
-          <>
-            <TextInput
-              value={server.endpoint}
-              onChangeText={(endpoint) => void saveServer({ ...server, endpoint })}
-              placeholder="http://192.168.0.10:8000"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={input}
-            />
-            <TextInput
-              value={server.model ?? ""}
-              onChangeText={(model) => void saveServer({ ...server, model: model || undefined })}
-              placeholder="모델 (선택, 예: Systran/faster-whisper-medium)"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={input}
-            />
-            <Divider />
-            <Small muted={false}>한국어 파인튜닝 모델을 노트북에 설치할까요?</Small>
-            <Small>
-              누르면 서버 모델이 한국어 파인튜닝판(ghost613 turbo)으로 지정됩니다. 첫 전사 때
-              노트북이 알아서 내려받습니다(약 3.2GB, 한 번만). 폰에는 아무것도 안 받습니다.
-            </Small>
-            <Button
-              label={
-                server.model === KOREAN_SERVER_MODEL
-                  ? "한국어 모델 사용 중"
-                  : "노트북에 한국어 모델 쓰기"
-              }
-              tone="primary"
-              disabled={server.model === KOREAN_SERVER_MODEL}
-              onPress={() => void saveServer({ ...server, model: KOREAN_SERVER_MODEL })}
-            />
-          </>
-        ) : null}
-      </Card>
-
-      {sample ? (
-        <Card>
+      {/* ── 선택한 방식의 연결 ── */}
+      {mode === "colab" ? (
+        <Card tone="accent">
+          <Heading>콜랩 연결</Heading>
           <Small>
-
-  현재 기기 속도를 기준으로 추정합니다. 환산값에는 오차가 있을 수 있습니다.
-</Small>
+            기록 음성이 구글(콜랩) 서버와 Cloudflare 터널을 지나갑니다 — 내 컴퓨터가
+            아닙니다. 전사하는 동안 콜랩 탭을 열어 두십시오. 탭을 닫으면 서버도 꺼집니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>1. 콜랩 노트를 열고 &lsquo;런타임 → 모두 실행&rsquo;</Small>
+          <Button label="콜랩 노트 열기" tone="primary" onPress={() => void Linking.openURL(COLAB_NOTEBOOK_URL)} />
+          <Small muted={false}>2. 마지막 셀에 나온 주소를 통째로 붙여넣기</Small>
+          <TextInput
+            value={server.endpoint}
+            onChangeText={setEndpoint}
+            placeholder="https://….trycloudflare.com/비밀문자열"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={input}
+          />
+          <Small>
+            콜랩 세션이 꺼졌다 켜지면 주소가 새로 나옵니다 — 그때마다 다시 붙여넣으십시오.
+          </Small>
+          <Button
+            label={check.state === "checking" ? "확인 중" : "연결 확인"}
+            busy={check.state === "checking"}
+            onPress={() => void checkConnection()}
+          />
+          {check.state === "done" ? (
+            <Text style={[type.small, { color: check.ok ? t.ok : t.danger, fontWeight: "600" }]}>
+              {check.message}
+            </Text>
+          ) : null}
         </Card>
       ) : (
-        <Card>
+        <Card tone="accent">
+          <Heading>내 컴퓨터 연결</Heading>
           <Small>
-            
-  이력이 없어 예상 시간을 알 수 없습니다. 첫 전사를 마치면 표시됩니다.
-</Small>
+            같은 Wi-Fi의 내 컴퓨터가 전사합니다. 음성이 그 컴퓨터로만 가므로,{" "}
+            <Text style={{ fontWeight: "700" }}>내 컴퓨터에만</Text> 연결하십시오.
+          </Small>
+          <Divider />
+          <Small muted={false}>1. 컴퓨터에서 한 번만: Docker(docker.com) 설치 후 터미널에 입력</Small>
+          <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.md, padding: space.md }}>
+            <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
+              docker run -d -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
+            </Text>
+          </View>
+          <Small muted={false}>2. 컴퓨터의 Wi-Fi IP를 확인해 주소로 넣기</Small>
+          <TextInput
+            value={server.endpoint}
+            onChangeText={setEndpoint}
+            placeholder="http://192.168.0.10:8000"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={input}
+          />
+          <Small>
+            OpenAI 호환(/v1/audio/transcriptions) 서버라면 무엇이든 붙습니다. 집 밖에서도
+            쓰려면 Tailscale 이 가장 쉽습니다.
+          </Small>
+          <Button
+            label={check.state === "checking" ? "확인 중" : "연결 확인"}
+            busy={check.state === "checking"}
+            onPress={() => void checkConnection()}
+          />
+          {check.state === "done" ? (
+            <Text style={[type.small, { color: check.ok ? t.ok : t.danger, fontWeight: "600" }]}>
+              {check.message}
+            </Text>
+          ) : null}
         </Card>
       )}
 
-      {statuses.map((status) => (
-        <ModelCard
-          key={status.model.id}
-          status={status}
-          sample={sample}
-          progress={progress[status.model.id]}
-          onDownload={() => confirmDownload(status.model)}
-          onCancel={() => cancelDownload(status.model.id)}
-          onDelete={() => confirmDelete(status)}
-          onUse={async () => {
-            await setActiveModel(status.model.id);
-            await load();
-          }}
-        />
-      ))}
-
-      {/* 직접 넣기 */}
+      {/* ── 모델 선택: 모드가 무엇이든 같은 문법 ── */}
       <Card>
-        <Heading>
-  한국어 파인튜닝 모델 추가
-</Heading>
+        <Heading>전사 모델</Heading>
         <Small>
-          
-  다운로드 링크 변경에 대비해 직접 등록을 지원합니다. 주소나 파일을 입력하십시오.
-</Small>
+          {mode === "colab"
+            ? "누르면 다음 전사부터 그 모델을 씁니다. 콜랩이 처음 쓰는 모델은 내려받느라 몇 분 더 걸립니다 — 폰에는 아무것도 받지 않습니다."
+            : "누르면 다음 전사부터 그 모델을 씁니다. 컴퓨터가 첫 전사 때 알아서 내려받습니다 — 폰에는 아무것도 받지 않습니다."}
+        </Small>
         <Divider />
-        <Small muted={false}>1. 찾기</Small>
-        <Small>{KOREAN_MODEL_GUIDE.searchHint}</Small>
-        {KOREAN_MODEL_GUIDE.known.map((m) => (
-          <View key={m.id} style={{ gap: space.xxs, paddingVertical: space.tight }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-              <Badge text={m.ready ? "변환 불필요" : "변환 필요"} tone={m.ready ? "ok" : "muted"} />
-              <Small muted={false}>{m.base}</Small>
-            </View>
-            <Text selectable style={[type.small, { color: t.text, fontFamily: "monospace" }]}>
-              {m.id}
-            </Text>
-            <Small>{m.note}</Small>
+        {models.map((m, i) => (
+          <View key={m.id}>
+            {i > 0 ? <Divider /> : null}
+            <ModelRow
+              model={m}
+              selected={selectedModelId === m.id}
+              onSelect={() => void save({ ...server, model: m.id })}
+            />
           </View>
         ))}
-        <Small muted={false}>
-  2. ggml 변환 및 양자화
-</Small>
-        <View
-          style={{
-            backgroundColor: t.surfaceAlt,
-            borderRadius: radius.md,
-            padding: space.md,
-          }}
-        >
-          <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
-            {KOREAN_MODEL_GUIDE.convertCommand}
-          </Text>
-          <Text
-            selectable
-            style={{ color: t.text, fontFamily: "monospace", fontSize: 12, marginTop: 8 }}
-          >
-            {KOREAN_MODEL_GUIDE.quantizeCommand}
-          </Text>
-        </View>
-        <Small muted={false}>
-  3. 아래 항목 등록 후 모델 폴더에 파일 이동 또는 URL 입력
-</Small>
-
-        {adding ? (
+        {mode === "pc" ? (
           <>
             <Divider />
-            <TextInput
-              value={form.name}
-              onChangeText={(name) => setForm((f) => ({ ...f, name }))}
-              placeholder="이름 (예: 한국어 Small 재학습)"
-              placeholderTextColor={t.textMuted}
-              style={input}
-            />
-            <TextInput
-              value={form.file}
-              onChangeText={(file) => setForm((f) => ({ ...f, file }))}
-              placeholder="파일 이름 (예: ggml-ko-small-q5_1.bin)"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={input}
-            />
-            <TextInput
-              value={form.url}
-              onChangeText={(url) => setForm((f) => ({ ...f, url }))}
-              placeholder="다운로드 URL (https://…, 미입력 가능)"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={input}
-            />
-            <TextInput
-              value={form.sizeMb}
-              onChangeText={(sizeMb) => setForm((f) => ({ ...f, sizeMb }))}
-              placeholder="예상 크기 (MB, 선택 사항)"
-              placeholderTextColor={t.textMuted}
-              keyboardType="number-pad"
-              style={input}
-            />
-            {formError ? <Small muted={false}>{formError}</Small> : null}
-            <View style={{ flexDirection: "row", gap: space.sm }}>
-              <View style={{ flex: 1 }}>
-                <Button label="추가" tone="primary" onPress={() => void submitCustom()} />
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ selected: selectedModelId === undefined }}
+              onPress={() => void save({ ...server, model: undefined })}
+              style={({ pressed }) => ({
+                minHeight: TOUCH_MIN,
+                borderRadius: radius.md,
+                backgroundColor:
+                  selectedModelId === undefined
+                    ? t.accentSoft
+                    : pressed
+                      ? t.surfaceAlt
+                      : "transparent",
+                padding: space.md,
+                gap: space.xs,
+              })}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>서버 기본값</Text>
+                {selectedModelId === undefined ? (
+                  <Badge text="선택됨" tone="ok" />
+                ) : (
+                  <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>선택</Text>
+                )}
               </View>
-              <View style={{ flex: 1 }}>
-                <Button
-                  label="취소"
-                  onPress={() => {
-                    setAdding(false);
-                    setFormError(null);
-                  }}
-                />
-              </View>
-            </View>
+              <Small>모델을 지정하지 않고 서버가 미리 실어 둔 모델을 그대로 씁니다.</Small>
+            </Pressable>
           </>
-        ) : (
-          <Button label="직접 추가" onPress={() => setAdding(true)} />
-        )}
+        ) : null}
       </Card>
 
       <Card>
         <Small>
-          
-  모델 파일은 기기 내부 저장소에만 보관되며, 앱 삭제 시 함께 제거됩니다.
-</Small>
+          전사가 끝난 전사본은 폰에만 저장됩니다. 콜랩은 세션을 닫으면 서버 쪽 사본도 함께
+          사라집니다.
+        </Small>
       </Card>
     </ScrollView>
   );

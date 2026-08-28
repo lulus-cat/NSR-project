@@ -30,7 +30,7 @@ import {
   savePrivacySettings,
   type PrivacySettings,
 } from "../../src/services/export";
-import { activeModelId, listModels } from "../../src/services/models";
+import { getServerModel } from "@nsr/core";
 import {
   RELEASE_REPO,
   autoCheckEnabled,
@@ -189,10 +189,6 @@ export default function Settings() {
   const [serverModel, setServerModel] = useState("");
   const [connectionMsg, setConnectionMsg] = useState<string | null>(null);
   const [storageMb, setStorageMb] = useState(0);
-  const [cloudAsr, setCloudAsr] = useState<{ enabled: boolean; endpoint: string }>({
-    enabled: false,
-    endpoint: "",
-  });
   const [privacy, setPrivacy] = useState<PrivacySettings>({
     enabled: true,
     disabled: ["location"],
@@ -213,9 +209,6 @@ export default function Settings() {
     setWorkplace(await getWorkplace());
     setGeoOn(await geofenceEnabled());
     setLlmEnabled(await getSetting<boolean>(SETTINGS_KEYS.llmPostEdit, false));
-    setCloudAsr(
-      await getSetting(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" }),
-    );
     const provider = await getProvider();
     const custom = await getCustomServer();
     if (custom) {
@@ -229,12 +222,17 @@ export default function Settings() {
     setAutoUpdate(await autoCheckEnabled());
     setDebugEntries(await readDebugLog());
 
-    const [statuses, activeId] = await Promise.all([listModels(), activeModelId()]);
-    const installed = statuses.filter((m) => m.installed);
-    const active = statuses.find((m) => m.model.id === activeId);
-    if (installed.length === 0) setModelSummary("설치된 모델 없음");
-    else if (active?.installed) setModelSummary(`${active.model.name} · 보유 ${installed.length}개`);
-    else setModelSummary(`선택 모델 미설치 · 보유 ${installed.length}개`);
+    // 전사는 서버가 한다 — 어디에 연결됐고 어떤 모델인지를 한 줄로.
+    const asr = await getSetting<{ endpoint?: string; model?: string; mode?: string }>(
+      SETTINGS_KEYS.cloudTranscription,
+      {},
+    );
+    if (!asr.endpoint) setModelSummary("연결 안 됨");
+    else {
+      const where = asr.mode === "pc" ? "내 컴퓨터" : "콜랩";
+      const model = asr.model ? (getServerModel(asr.model)?.name ?? asr.model) : "서버 기본 모델";
+      setModelSummary(`${where} · ${model}`);
+    }
   }, []);
 
   useEffect(() => {
@@ -828,29 +826,19 @@ export default function Settings() {
       <Card>
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
         <Small>
-          
-  전사는 기기 내부에서 처리됩니다. 민감 정보 유출은 의료법 위반입니다.
-</Small>
+          전사는 폰이 아니라 콜랩(무료 GPU) 또는 내 컴퓨터가 합니다. 기록 음성이 그 서버로
+          전송됩니다 — 연결한 곳이 어디인지 아래 한 줄로 항상 보입니다.
+        </Small>
         <Divider />
         <Row
-          label="전사 모델"
-          value={modelSummary}
+          label="전사 서버·모델"
+          value={`${modelSummary} ›`}
           onPress={() => router.push("/models")}
         />
         <Small>
-          
+
   모델 크기를 키우는 것보다 한국어 전용 모델을 쓰는 편이 훨씬 정확합니다.
 </Small>
-        <Divider />
-        <Row
-          label="노트북·서버로 전사"
-          value={cloudAsr.enabled ? "사용 중 ›" : "꺼짐 ›"}
-          onPress={() => router.push("/models")}
-        />
-        <Small>
-          같은 Wi-Fi의 노트북이 전사를 대신하는 기능입니다. 켜는 방법과 설정은 전사 모델
-          화면에 있습니다.
-        </Small>
       </Card>
 
       {/* 보조 기능 */}

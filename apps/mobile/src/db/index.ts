@@ -30,6 +30,11 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
     dbPromise = (async () => {
       const db = await SQLite.openDatabaseAsync("nsr.db");
       await db.execAsync(SCHEMA_SQL);
+      // 전사 도중 앱이 죽으면(프로세스 종료·강제 종료) 'transcribing' 이 영영
+      // 남는다. 그러면 그 기록은 '전사할 기록'에서 사라져 다시 전사할 길이
+      // 없다 — 실사용에서 콜랩 끊김 뒤 그대로 재현된 사고다. 러너는 프로세스
+      // 안에서만 돌므로, 새로 열 때 남아 있는 'transcribing' 은 전부 유령이다.
+      await db.runAsync("UPDATE recordings SET state = 'recorded' WHERE state = 'transcribing'");
       return db;
     })();
   }

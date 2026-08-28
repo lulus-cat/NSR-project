@@ -35,14 +35,14 @@ import { Thermometer } from "../../src/components/thermometer";
 import { useApp } from "../../src/state/AppContext";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
+  getSetting,
   listDutyEntries,
   listReviewStates,
   listTaeumScores,
   pendingTranscriptions,
 } from "../../src/db";
-import { startManual, stopManual } from "../../src/services/scheduler";
+import { SETTINGS_KEYS, startManual, stopManual } from "../../src/services/scheduler";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
-import { listModels } from "../../src/services/models";
 import { importAudioFile } from "../../src/services/import-audio";
 
 function formatClock(epochMs: number): string {
@@ -303,7 +303,7 @@ export default function Home() {
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingShiftId, setPendingShiftId] = useState<string | null>(null);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
-  const [needsModel, setNeedsModel] = useState(false);
+  const [needsServer, setNeedsServer] = useState(false);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [weekStrip, setWeekStrip] = useState<
     { date: string; day: number; code?: string; label?: string }[]
@@ -345,7 +345,9 @@ export default function Home() {
       if (!map.has(date)) map.set(date, taeumTemperature(sc.score));
     }
     setTemps(map);
-    setNeedsModel((await listModels()).every((m) => !m.installed));
+    // 전사는 서버(콜랩·내 컴퓨터)가 한다. 주소가 없으면 연결부터 안내한다.
+    const server = await getSetting<{ endpoint?: string }>(SETTINGS_KEYS.cloudTranscription, {});
+    setNeedsServer(!server.endpoint);
   }, []);
 
   useEffect(() => {
@@ -483,7 +485,7 @@ export default function Home() {
     {
       key: "records",
       label: "기록",
-      alert: pendingCount > 0 || needsModel,
+      alert: pendingCount > 0 || needsServer,
       body: (
         <>
           <BriefRow
@@ -491,20 +493,22 @@ export default function Home() {
             label="전사할 기록"
             value={pendingCount > 0 ? `${pendingCount}건 · 전사하기` : "없음"}
             valueColor={pendingCount > 0 ? t.warn : undefined}
-            onPress={() => {
-              // 미전사 기록이 있는 근무로 바로 간다 — 거기 '전사하기' 버튼이 있다.
-              const target = pendingShiftId ?? todayShift?.id ?? recent[0]?.id;
-              if (target) router.push(`/shift/${encodeURIComponent(target)}`);
-              else router.push("/duty");
-            }}
+            // 미전사 기록이 있는 근무로 바로 간다 — 거기 '전사하기' 버튼이 있다.
+            // 기록이 없으면 눌리지 않는다: 예전엔 듀티표로 보내서, 전사하러
+            // 들어온 사람이 영문 모를 화면에 떨어졌다.
+            onPress={
+              pendingShiftId
+                ? () => router.push(`/shift/${encodeURIComponent(pendingShiftId)}`)
+                : undefined
+            }
           />
-          {needsModel ? (
+          {needsServer ? (
             <>
               <DashedDivider />
               <BriefRow
-                icon="cloud-download-outline"
-                label="전사 모델을 설치해 주십시오."
-                value="받기"
+                icon="cloud-outline"
+                label="전사 서버를 연결해 주십시오."
+                value="연결"
                 valueColor={t.warn}
                 onPress={() => router.push("/models")}
               />
@@ -774,7 +778,7 @@ export default function Home() {
         <View style={{ flexDirection: "row", gap: space.sm }}>
           {[
             { label: "병동 사전", to: "/ward-dict" },
-            { label: "전사 모델", to: "/models" },
+            { label: "전사 설정", to: "/models" },
           ].map((c) => (
             <Pressable
               key={c.label}
