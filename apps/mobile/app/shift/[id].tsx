@@ -197,7 +197,9 @@ export default function ShiftDetail() {
       setRunnerBusy(s.running);
       if (s.shiftId !== shiftId) return;
       if (s.running) {
-        setBusy(`전사 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})`);
+        setBusy(
+          `전사 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})${s.note ? ` · ${s.note}` : ""}`,
+        );
       } else {
         setBusy(null);
         if (s.error) setError(s.error);

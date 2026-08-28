@@ -60,17 +60,22 @@ export interface AsrResult {
     confidence?: number;
   }[];
   durationSec: number;
+  /**
+   * 서버가 끝까지 못 가고 죽었지만 받은 데까지는 건진 경우의 안내문.
+   * 이 값이 있으면 전사본은 저장하되 기록은 '전사할 기록'에 남겨야 한다.
+   */
+  partial?: string;
 }
 
 export interface AsrProvider {
   readonly id: string;
   /** 이 엔진이 실제로 할 수 있는 것. 요청(AsrOptions)과 구분해서 본다. */
   readonly capabilities: AsrCapabilities;
-  /** onProgress 는 0~100. 서버 전사는 작업 조회(폴링)가 준다. */
+  /** onProgress 는 0~100. note 는 %가 안 움직이는 이유(모델 준비 중 등). */
   transcribe(
     fileUri: string,
     options: AsrOptions,
-    onProgress?: (pct: number) => void,
+    onProgress?: (pct: number, note?: string) => void,
   ): Promise<AsrResult>;
 }
 
@@ -120,12 +125,20 @@ export function createSelfHostedProvider(
         parameters,
         headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
       });
-      // 502/503/504 는 십중팔구 "터널은 있는데 서버(콜랩 세션)는 죽어 있음"이다.
-      // 원시 상태 코드 대신 다음 행동을 말해 준다.
-      const gatewayDown = (status: number): string | null =>
-        status === 502 || status === 503 || status === 504
-          ? `전사 서버가 응답하지 않습니다 (${status}). 콜랩 세션이 꺼진 것 같습니다 — 노트를 '모두 실행'으로 다시 켜고 새 주소를 넣어 주십시오.`
-          : null;
+      // 5xx 는 "폰도 터널도 멀쩡한데 그 너머가 죽어 있음"이다. 원시 상태
+      // 코드 대신 다음 행동을 말해 준다. 502/503/504 는 터널 뒤 서버가 죽은
+      // 것, 530(등 Cloudflare 계열)은 터널 자체가 사라진 것 — 콜랩 세션이
+      // 회수되면 cloudflared 도 죽어서 Cloudflare 가장자리가 530 을 준다.
+      // 지난번 "재연결하니 취소됐다" 사고의 정체가 이 530 이었다.
+      const gatewayDown = (status: number): string | null => {
+        if (status === 502 || status === 503 || status === 504) {
+          return `전사 서버가 응답하지 않습니다 (${status}). 콜랩 세션이 꺼진 것 같습니다 — 노트를 '모두 실행'으로 다시 켜고 새 주소를 넣어 주십시오.`;
+        }
+        if (status >= 500) {
+          return `전사 서버로 가는 터널이 끊겼습니다 (${status}). 콜랩 세션이 종료된 것 같습니다 — 노트를 '모두 실행'으로 다시 켜고 새 주소를 넣어 주십시오.`;
+        }
+        return null;
+      };
       if (response.status < 200 || response.status >= 300) {
         throw new Error(
           gatewayDown(response.status) ??
@@ -144,38 +157,68 @@ export function createSelfHostedProvider(
       // 고정)와 Cloudflare 터널(응답 약 100초 상한)이 먼저 끊는다 — 실기기
       // 타임아웃으로 재현된 사실. 접수증이 없는 서버(speaches 등 동기 응답)는
       // 지금까지처럼 결과를 바로 쓴다.
+      let partialNote: string | undefined;
       if (json.job_id) {
         const jobUrl = `${url}/${json.job_id}`;
         const authHeaders = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
         const deadline = Date.now() + 60 * 60 * 1000; // 한 시간이면 무엇이든 끝난다.
-        // 502/503/504 한 방에 포기하지 않는다. Cloudflare 터널은 몇십 초씩
-        // 출렁이곤 하는데, 작업은 서버에 살아 있다 — 실사용에서 전사가 100%
-        // 까지 가 놓고 마지막 조회의 일시 오류로 통째로 버려진 사고가 있었다.
-        // 3분을 넘겨 계속 죽어 있으면 그때 세션이 꺼진 것으로 판단한다.
-        let gatewaySince: number | null = null;
-        for (;;) {
+
+        // 세그먼트를 되는 족족 받아 둔다(?since 증분). 결과가 서버 메모리에만
+        // 있으면 세션이 회수되는 순간 100% 전사도 통째로 사라진다 — 실사용
+        // 사고다. 받아 둔 것이 있으면 서버가 죽어도 그만큼은 건진다.
+        const collected: NonNullable<ServerResult["segments"]> = [];
+        let sinceIndex = 0;
+        let lastProgress = 0;
+
+        // 일시 오류 한 방에 포기하지 않는다. Cloudflare 터널은 몇십 초씩
+        // 출렁이고, 그동안 작업은 서버에 살아 있다. 폰 네트워크 단절이든
+        // 5xx 든 한 바구니로 재고, 3분을 넘기면 그때 죽은 것으로 판단한다.
+        let outageSince: number | null = null;
+        let lastFailure = "전사 서버와 연결이 끊겼습니다.";
+
+        // 죽음이 확정됐을 때: 받아 둔 것이 있으면 부분 회수, 없으면 그냥 실패.
+        const giveUp = (reason: string): void => {
+          if (collected.length === 0) throw new Error(reason);
+          partialNote =
+            `서버 연결이 끊겨 약 ${Math.round(lastProgress * 100)}% 지점까지만 저장했습니다. ` +
+            "기록은 '전사할 기록'에 남아 있으니, 서버를 다시 켠 뒤 처음부터 다시 전사할 수 있습니다. " +
+            `(원인: ${reason})`;
+          json = {
+            segments: collected,
+            duration: collected[collected.length - 1].end,
+          };
+        };
+
+        poll_loop: for (;;) {
           if (Date.now() > deadline) {
-            throw new Error("전사 서버가 한 시간 안에 끝내지 못했습니다. 서버 상태를 확인하십시오.");
+            giveUp("전사 서버가 한 시간 안에 끝내지 못했습니다. 서버 상태를 확인하십시오.");
+            break;
           }
           await new Promise((resolve) => setTimeout(resolve, 3000));
-          let poll: Response;
+          let poll: Response | null = null;
           try {
-            poll = await fetch(jobUrl, { headers: authHeaders });
+            poll = await fetch(`${jobUrl}?since=${sinceIndex}`, { headers: authHeaders });
           } catch {
-            continue; // 폰 네트워크가 잠깐 출렁여도 작업은 서버에 살아 있다.
+            lastFailure = "전사 서버에 연결할 수 없습니다. 폰 네트워크와 콜랩 세션을 확인하십시오.";
           }
-          if (poll.status === 502 || poll.status === 503 || poll.status === 504) {
-            gatewaySince = gatewaySince ?? Date.now();
-            if (Date.now() - gatewaySince < 3 * 60 * 1000) continue;
-            throw new Error(gatewayDown(poll.status) ?? `전사 서버 오류 ${poll.status}`);
+          if (poll && poll.status >= 500) {
+            lastFailure = gatewayDown(poll.status) ?? `전사 서버 오류 ${poll.status}`;
+            poll = null;
           }
-          gatewaySince = null;
+          if (!poll) {
+            outageSince = outageSince ?? Date.now();
+            if (Date.now() - outageSince < 3 * 60 * 1000) continue;
+            giveUp(lastFailure);
+            break;
+          }
+          outageSince = null;
           if (poll.status === 404) {
             // 작업 목록은 콜랩 세션 메모리에 있다. 404 는 세션이 재시작됐다는 뜻.
-            throw new Error(
+            giveUp(
               "전사 서버가 재시작되어 진행 중이던 작업이 사라졌습니다. " +
                 "콜랩 노트를 '모두 실행'으로 다시 켜고 새 주소를 넣은 뒤, 전사를 다시 시작하십시오.",
             );
+            break;
           }
           if (!poll.ok) {
             throw new Error(
@@ -185,18 +228,35 @@ export function createSelfHostedProvider(
           const status = (await poll.json()) as {
             status?: string;
             progress?: number;
+            stage?: string;
             error?: string;
             result?: ServerResult;
+            segments?: { start: number; end: number; text: string }[];
+            next?: number;
           };
-          if (status.status === "error") {
-            throw new Error(`전사 실패: ${status.error ?? "원인 미상"}`);
+          switch (status.status) {
+            case "error":
+              throw new Error(`전사 실패: ${status.error ?? "원인 미상"}`);
+            case "done":
+              if (status.result) {
+                json = status.result;
+                break poll_loop;
+              }
+              break;
+            default:
+              break;
           }
-          if (status.status === "done" && status.result) {
-            json = status.result;
-            break;
+          if (Array.isArray(status.segments) && status.segments.length > 0) {
+            collected.push(...status.segments);
           }
+          sinceIndex = status.next ?? collected.length;
           if (typeof status.progress === "number") {
-            onProgress?.(Math.round(Math.max(0, Math.min(1, status.progress)) * 100));
+            lastProgress = Math.max(0, Math.min(1, status.progress));
+            onProgress?.(
+              Math.round(lastProgress * 100),
+              // 모델을 처음 받는 중이면 %가 몇 분씩 0 에 머문다 — 이유를 말해 준다.
+              status.stage === "model" ? "서버가 모델을 준비 중입니다 (처음 한 번, 몇 분)" : undefined,
+            );
           }
         }
       }
@@ -215,7 +275,7 @@ export function createSelfHostedProvider(
           speakerId: undefined,
         });
       }
-      return { segments, durationSec: json.duration ?? 0 };
+      return { segments, durationSec: json.duration ?? 0, partial: partialNote };
     },
   };
 }
@@ -250,7 +310,7 @@ export async function buildAsrOptions(lexicon: Lexicon): Promise<AsrOptions> {
 export async function processRecording(
   recording: RecordingRow,
   provider: AsrProvider,
-  onProgress?: (pct: number) => void,
+  onProgress?: (pct: number, note?: string) => void,
 ): Promise<number> {
   if (!recording.file_uri) return 0;
 
@@ -288,6 +348,12 @@ export async function processRecording(
     }
 
     await saveSegments(recording.id, recording.shift_id, segments, perSegment);
+    if (asr.partial) {
+      // 부분 회수: 받은 데까지는 방금 저장했다. 던지면 아래 catch 가 상태를
+      // 'recorded' 로 되돌려서, 부분 전사본은 화면에 보이고 기록은
+      // '전사할 기록'에 남는다 — 다시 전사하면 같은 자리에 덮어써진다.
+      throw new Error(asr.partial);
+    }
     await setRecordingState(recording.id, "transcribed");
     return segments.length;
   } catch (error) {

@@ -27,6 +27,8 @@ export interface RunnerState {
   fileCount: number;
   /** 전체 작업 기준 0~100. */
   percent: number;
+  /** %가 안 움직이는 이유(서버가 모델 준비 중 등). 움직이기 시작하면 지워진다. */
+  note: string | null;
   /** 끝난 뒤 한 번 보여줄 오류. 새 작업을 시작하면 지워진다. */
   error: string | null;
   /** 마지막 완료 작업의 문장 수 합계. 화면 새로고침 신호로도 쓴다. */
@@ -39,6 +41,7 @@ let state: RunnerState = {
   fileIndex: 0,
   fileCount: 0,
   percent: 0,
+  note: null,
   error: null,
   completedAt: null,
 };
@@ -76,6 +79,7 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
     fileIndex: 1,
     fileCount: files.length,
     percent: 0,
+    note: null,
     error: null,
   });
 
@@ -102,15 +106,15 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
           `전사 중 ${state.percent}%`,
           `파일 ${i + 1}/${files.length} · 화면을 닫아도 계속됩니다`,
         );
-        await processRecording(rec, provider, (filePct) => {
+        await processRecording(rec, provider, (filePct, note) => {
           const overall = Math.round(((i + filePct / 100) / files.length) * 100);
-          if (overall !== state.percent) {
-            emit({ percent: overall });
+          if (overall !== state.percent || (note ?? null) !== state.note) {
+            emit({ percent: overall, note: note ?? null });
             void notifyProgress(
               NOTIF_ID,
               overall,
               `전사 중 ${overall}%`,
-              `파일 ${i + 1}/${files.length} · 화면을 닫아도 계속됩니다`,
+              note ?? `파일 ${i + 1}/${files.length} · 화면을 닫아도 계속됩니다`,
             );
           }
         });
@@ -123,6 +127,7 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
       emit({
         running: false,
         percent: 100,
+        note: null,
         error: missing > 0 ? `${missing}건은 파일이 저장 공간 정리로 사라져 건너뛰었습니다.` : null,
         completedAt: Date.now(),
       });
@@ -130,7 +135,7 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
     } catch (e) {
       const msg = e instanceof Error ? e.message : "전사에 실패했습니다.";
       void logDebug(`전사 실패: ${msg}`);
-      emit({ running: false, error: msg, completedAt: Date.now() });
+      emit({ running: false, note: null, error: msg, completedAt: Date.now() });
       await notifyDone(NOTIF_ID, "전사 중단", msg);
     }
   })();
