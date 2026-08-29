@@ -23,11 +23,9 @@ describe("서버 모델 목록", () => {
     }
   });
 
-  it("무료 콜랩 목록에 램을 넘기는 float32 원본이 없다", () => {
-    // 실사용에서 3.2GB float32 적재가 세션을 죽였다 — pc 전용으로 밀어냈다.
-    for (const m of serverModelsFor("colab")) {
-      expect(m.where, m.id).not.toBe("pc");
-    }
+  it("float32 원본은 램 조건을 요약에 밝힌다 — 무료 콜랩에서 세션이 죽은 실사고", () => {
+    const original = getServerModel("ghost613/faster-whisper-large-v3-turbo-korean");
+    expect(original?.summary).toContain("램");
   });
 
   it("요약은 화면 규칙대로 딱 한 문장이다", () => {

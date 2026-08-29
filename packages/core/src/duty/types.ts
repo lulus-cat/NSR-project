@@ -165,8 +165,12 @@ export interface DutySchedule {
   entries: DutyEntry[];
 }
 
-export function createSchedule(entries: DutyEntry[] = []): DutySchedule {
-  return { templates: { ...DEFAULT_TEMPLATES }, entries };
+export function createSchedule(
+  entries: DutyEntry[] = [],
+  /** 코드별 사용자 시간(근무 시작·끝, 인계 앞뒤) 덮어쓰기. */
+  templates?: Partial<Record<ShiftCode, ShiftTemplate>>,
+): DutySchedule {
+  return { templates: { ...DEFAULT_TEMPLATES, ...templates }, entries };
 }
 
 /** 실제 시각으로 확정된 근무 한 건. */

@@ -5,7 +5,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
-  createSchedule,
   dueStates,
   newCardState,
   resolveAll,
@@ -20,6 +19,7 @@ import {
 import { Badge, Body, Button, Card, ChipRow, Divider, Small } from "../../src/components/ui";
 import { CONTENT_MAX, TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import { getNoteByTitle, getShiftReportMarkdown, saveNote } from "../../src/db";
+import { buildSchedule } from "../../src/services/scheduler";
 import {
   listCards,
   listDutyEntries,
@@ -88,7 +88,7 @@ export default function Study() {
     setTranscripts(allTranscripts);
 
     // 나이트 근무일은 복습을 걸어봐야 못 한다. 그날은 예정일에서 비켜준다.
-    const shifts = resolveAll(createSchedule(dutyEntries));
+    const shifts = resolveAll(await buildSchedule(dutyEntries));
     const nights = new Set<number>();
     for (const s of shifts) {
       if (s.code !== "N") continue;

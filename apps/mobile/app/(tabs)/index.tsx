@@ -12,7 +12,6 @@ import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps, ReactNode } from "react";
 import {
-  createSchedule,
   dailyQuote,
   dueStates,
   laborStats,
@@ -41,7 +40,7 @@ import {
   listTaeumScores,
   pendingTranscriptions,
 } from "../../src/db";
-import { SETTINGS_KEYS, startManual, stopManual } from "../../src/services/scheduler";
+import { SETTINGS_KEYS, buildSchedule, startManual, stopManual } from "../../src/services/scheduler";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
 import { importAudioFile } from "../../src/services/import-audio";
 
@@ -313,7 +312,7 @@ export default function Home() {
   const load = useCallback(async () => {
     const today = toDateString(Date.now());
     const entries = await listDutyEntries();
-    const shifts = resolveAll(createSchedule(entries));
+    const shifts = resolveAll(await buildSchedule(entries));
     setTodayShift(shifts.find((s) => s.date === today) ?? null);
 
     const weekStart = Date.now() - 3 * 24 * 3600_000;
@@ -413,7 +412,7 @@ export default function Home() {
           <DashedDivider />
           <BriefRow
             icon="time-outline"
-            label="오늘 근무표 밖"
+            label="오늘 인계 체류 (설정 기준 추정)"
             value={overtimeToday > 0 ? `+${overtimeToday}시간` : "없음"}
             valueColor={overtimeToday > 0 ? t.warn : undefined}
           />
@@ -435,7 +434,7 @@ export default function Home() {
         <>
           <BriefRow
             icon="albums-outline"
-            label="이번 주 근무표 밖"
+            label="이번 주 인계 체류 (추정)"
             value={`${stats.offTheBooksHours}시간`}
             valueColor={stats.offTheBooksHours > 0 ? t.warn : undefined}
           />
@@ -607,7 +606,7 @@ export default function Home() {
       rows={[
         { label: "이번 주 근무", value: `${stats.onSiteHours}시간` },
         {
-          label: "근무표 밖 · 주 40시간 초과",
+          label: "인계 체류 · 주 40시간 초과",
           value: `${stats.offTheBooksHours} · ${stats.overtimeHours}시간`,
           tone: stats.offTheBooksHours + stats.overtimeHours > 0 ? "alert" : "default",
         },

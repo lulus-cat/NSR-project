@@ -23,7 +23,7 @@ import {
   type PlaceHit,
   type Workplace,
 } from "../../src/services/geofence";
-import { getApiKey, getCustomServer, getProvider, setApiKey, setCustomServer, setProvider, testConnection, type LlmProvider } from "../../src/services/llm";
+import { MODEL_CHOICES, getApiKey, getCustomServer, getModelFor, getProvider, setApiKey, setCustomServer, setModelFor, setProvider, testConnection, type LlmProvider } from "../../src/services/llm";
 import {
   MASKABLE_KINDS,
   loadPrivacySettings,
@@ -185,6 +185,7 @@ export default function Settings() {
   const [apiKeyInput, setApiKeyInput] = useState("");
   const [hasKey, setHasKey] = useState(false);
   const [llmProvider, setLlmProvider] = useState<LlmProvider>("anthropic");
+  const [llmModel, setLlmModel] = useState("");
   const [serverUrl, setServerUrl] = useState("");
   const [serverModel, setServerModel] = useState("");
   const [connectionMsg, setConnectionMsg] = useState<string | null>(null);
@@ -216,6 +217,7 @@ export default function Settings() {
       setServerModel(custom.model);
     }
     setLlmProvider(provider);
+    setLlmModel(await getModelFor(provider));
     setHasKey((await getApiKey(provider)) !== null);
     setStorageMb(Math.round(((await totalStorageBytes()) / (1024 * 1024)) * 10) / 10);
     setPrivacy(await loadPrivacySettings());
@@ -485,23 +487,12 @@ export default function Settings() {
             </View>
             <Small>듀티표에 해당 코드가 있는 날만 자동으로 기록합니다.</Small>
             <Divider />
-            <PresetRow
-              label="근무 시작 전 기록 시작"
-              value={policy.leadMinutes}
-              unit="분"
-              options={[10, 20, 30, 45, 60, 90, 120]}
-              onSelect={(v) => void app.updatePolicy({ ...policy, leadMinutes: v })}
-              hint="인계는 근무표 시각보다 일찍 시작합니다. 인계를 덮을 만큼 잡으십시오. (최대 2시간)"
-            />
-            <Divider />
-            <PresetRow
-              label="근무 종료 후 기록 유지"
-              value={policy.trailMinutes}
-              unit="분"
-              options={[10, 20, 30, 45, 60, 90, 120]}
-              onSelect={(v) => void app.updatePolicy({ ...policy, trailMinutes: v })}
-              hint="퇴근 인계와 늦어지는 마무리가 여기 남습니다. 이 시간이 오버타임의 증거가 됩니다. (최대 2시간)"
-            />
+            <Small>
+              근무 시각·인계 앞뒤·기록 시작/유지 여유는{" "}
+              <Text style={{ fontWeight: "700" }}>듀티표 화면의 &lsquo;근무·기록 시간
+              설정&rsquo;</Text>에서 한 번에 바꿉니다 — 여기와 거기에 나뉘어 있던 것을
+              합쳤습니다.
+            </Small>
           </>
         ) : null}
 
@@ -865,7 +856,7 @@ export default function Settings() {
                   ["anthropic", "Claude"],
                   ["openai", "GPT"],
                   ["kimi", "Kimi"],
-                  ["custom", "내 서버"],
+                  ["custom", "Ollama"],
                 ] as [LlmProvider, string][]
               ).map(([p, label]) => (
                 <View key={p} style={{ flex: 1 }}>
@@ -875,6 +866,7 @@ export default function Settings() {
                     onPress={async () => {
                       setLlmProvider(p);
                       await setProvider(p);
+                      setLlmModel(await getModelFor(p));
                       setHasKey((await getApiKey(p)) !== null);
                       setConnectionMsg(null);
                     }}
@@ -884,10 +876,65 @@ export default function Settings() {
             </View>
             <Small>
               Claude·GPT·Kimi 는 API 키 방식입니다 — Kimi 키는 platform.moonshot.ai
-              에서 발급하며 가장 저렴한 축입니다. &lsquo;내 서버&rsquo;는 VPS 나 집
+              에서 발급하며 가장 저렴한 축입니다. &lsquo;Ollama&rsquo;는 VPS 나 집
               컴퓨터의 Ollama·vLLM 같은 OpenAI 호환 서버로 보냅니다 — 유료 API 없이
               보조 기능을 쓸 수 있고, 전사본이 내 서버 밖으로 나가지 않습니다.
             </Small>
+            {llmProvider !== "custom" ? (
+              <>
+                <Small muted={false}>모델</Small>
+                <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
+                  {MODEL_CHOICES[llmProvider].map((m) => {
+                    const on = llmModel === m.id;
+                    return (
+                      <Pressable
+                        key={m.id}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: on }}
+                        onPress={async () => {
+                          setLlmModel(m.id);
+                          await setModelFor(llmProvider, m.id);
+                        }}
+                        style={{
+                          paddingVertical: space.xs,
+                          paddingHorizontal: space.md,
+                          borderRadius: radius.sm,
+                          backgroundColor: on ? t.accent : t.surfaceAlt,
+                          minHeight: 36,
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text
+                          style={[type.caption, { color: on ? "#FFFFFF" : t.text }]}
+                        >
+                          {m.id} · {m.hint}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <TextInput
+                  value={llmModel}
+                  onChangeText={setLlmModel}
+                  onEndEditing={() => void setModelFor(llmProvider, llmModel)}
+                  placeholder="모델 id 직접 입력 (목록에 없는 새 모델)"
+                  placeholderTextColor={t.textMuted}
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    color: t.text,
+                    backgroundColor: t.surfaceAlt,
+                    borderRadius: radius.md,
+                    padding: space.md,
+                    fontSize: 14,
+                  }}
+                />
+                <Small>
+                  모델 이름은 몇 달마다 바뀝니다 — 목록은 추천일 뿐이고, 새 모델 id 를
+                  직접 넣으면 그대로 씁니다. 저장 후 연결 테스트로 확인하십시오.
+                </Small>
+              </>
+            ) : null}
             {llmProvider === "custom" ? (
               <>
                 <TextInput

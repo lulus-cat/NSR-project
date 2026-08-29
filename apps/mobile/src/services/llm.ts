@@ -132,12 +132,51 @@ async function callAnthropic(body: unknown): Promise<{
   return res.json();
 }
 
-const MODEL = "claude-opus-5";
-const OPENAI_MODEL = "gpt-5-mini";
 // Kimi(Moonshot)는 OpenAI 호환이라 callOpenAi 를 그대로 탄다.
 // k2.6 은 response_format json_schema 까지 지원한다 (2026-08 조사).
 const KIMI_BASE = "https://api.moonshot.ai/v1";
-const KIMI_MODEL = "kimi-k2.6";
+
+/**
+ * 공급자별 모델 선택.
+ *
+ * 기본값은 "다듬기·요약에 충분하면서 싼" 쪽으로 골랐다. 목록은 화면의
+ * 추천 칩일 뿐이고 저장은 자유 문자열이다 — 모델 이름은 몇 달마다 바뀌므로
+ * 목록에 없는 id 를 직접 넣을 수 있어야 오래간다.
+ * (Anthropic 모델 id 는 2026-06 기준 공식 문서에서 확인한 값이다.)
+ */
+export const MODEL_CHOICES: Record<Exclude<LlmProvider, "custom">, { id: string; hint: string }[]> = {
+  anthropic: [
+    { id: "claude-opus-5", hint: "가장 정확 (기본)" },
+    { id: "claude-sonnet-5", hint: "균형 — 절반 가격" },
+    { id: "claude-haiku-4-5", hint: "빠르고 가장 저렴" },
+  ],
+  openai: [
+    { id: "gpt-5-mini", hint: "균형 (기본)" },
+    { id: "gpt-5", hint: "가장 정확" },
+    { id: "gpt-5-nano", hint: "가장 저렴" },
+  ],
+  kimi: [
+    { id: "kimi-k2.6", hint: "기본" },
+    { id: "kimi-k2-turbo-preview", hint: "빠름" },
+  ],
+};
+
+const DEFAULT_MODELS: Record<Exclude<LlmProvider, "custom">, string> = {
+  anthropic: "claude-opus-5",
+  openai: "gpt-5-mini",
+  kimi: "kimi-k2.6",
+};
+
+export async function getModelFor(provider: LlmProvider): Promise<string> {
+  if (provider === "custom") return (await getCustomServer())?.model ?? "";
+  const saved = await getSetting<string>(`llm.model.${provider}`, "");
+  return saved.trim() || DEFAULT_MODELS[provider];
+}
+
+export async function setModelFor(provider: LlmProvider, model: string): Promise<void> {
+  if (provider === "custom") return; // Ollama 는 서버 설정의 모델 칸을 쓴다.
+  await setSetting(`llm.model.${provider}`, model.trim());
+}
 
 /**
  * OpenAI 호출. Anthropic 과 같은 이유로 SDK 없이 fetch 다.
@@ -175,7 +214,7 @@ async function callOpenAi(input: {
       ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     },
     body: JSON.stringify({
-      model: custom ? custom.model : provider === "kimi" ? KIMI_MODEL : OPENAI_MODEL,
+      model: custom ? custom.model : await getModelFor(provider === "anthropic" ? "openai" : provider),
       max_completion_tokens: input.maxTokens,
       messages: [{ role: "system", content: input.system }, ...input.messages],
       ...(input.schema
@@ -240,7 +279,7 @@ export async function postEditTranscript(
   }
 
   const response = await callAnthropic({
-    model: MODEL,
+    model: await getModelFor("anthropic"),
     max_tokens: 16000,
     system: [
       { type: "text", text: POST_EDIT_SYSTEM },
@@ -373,7 +412,7 @@ export async function summarizeShift(
   }
 
   const response = await callAnthropic({
-    model: MODEL,
+    model: await getModelFor("anthropic"),
     max_tokens: 8000,
     system: [
       { type: "text", text: INSIGHT_SYSTEM },
@@ -467,7 +506,7 @@ export async function careChat(
     return callOpenAi({ system, messages, maxTokens: 700 });
   }
   const response = await callAnthropic({
-    model: MODEL,
+    model: await getModelFor("anthropic"),
     max_tokens: 700,
     system: [{ type: "text", text: system }],
     messages: messages.map((m) => ({ role: m.role, content: m.content })),
@@ -503,7 +542,7 @@ export async function testConnection(): Promise<{ ok: boolean; message: string }
       });
     } else {
       await callAnthropic({
-        model: MODEL,
+        model: await getModelFor("anthropic"),
         max_tokens: 16,
         messages: [{ role: "user", content: "ping" }],
       });

@@ -26,10 +26,10 @@
  */
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import { createSchedule, resolveAll, toDateString } from "@nsr/core";
+import { resolveAll, toDateString } from "@nsr/core";
 import { getSetting, listDutyEntries, setSetting } from "../db";
 import { searchHospitalsHira, searchPlacesKakao } from "./publicdata";
-import { currentSession, startManual, stopManual } from "./scheduler";
+import { buildSchedule, currentSession, startManual, stopManual } from "./scheduler";
 
 export const GEOFENCE_TASK = "nsr-workplace-geofence";
 
@@ -48,8 +48,7 @@ export interface Workplace {
 
 /** 오늘(또는 자정을 넘긴 어제 나이트) 근무가 있는가. */
 async function isWorkingDay(now = Date.now()): Promise<{ working: boolean; shiftId: string }> {
-  const entries = await listDutyEntries();
-  const shifts = resolveAll(createSchedule(entries));
+  const shifts = resolveAll(await buildSchedule());
   const today = toDateString(now);
   const yesterday = toDateString(now - 24 * 3600_000);
   const hit = shifts.find(

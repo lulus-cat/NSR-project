@@ -13,7 +13,8 @@
 // (requestCalendarPermissionsAsync 등)는 기본 경로에서 부르면 **거부**된다 —
 // 실기기에서 '불러오기'가 deprecated 오류로 죽던 원인. legacy 경로가 옛 API 다.
 import * as Calendar from "expo-calendar/legacy";
-import { createSchedule, parseDutyString, resolveAll, toDateString, type DutyEntry } from "@nsr/core";
+import { parseDutyString, resolveAll, toDateString, type DutyEntry } from "@nsr/core";
+import { buildSchedule } from "./scheduler";
 
 const CAL_NAME = "NSR 듀티";
 
@@ -59,7 +60,7 @@ export async function exportMonthToCalendar(
   const old = await Calendar.getEventsAsync([calId], monthStart, monthEnd);
   for (const e of old) await Calendar.deleteEventAsync(e.id);
 
-  const shifts = resolveAll(createSchedule(entries)).filter(
+  const shifts = resolveAll(await buildSchedule(entries)).filter(
     (s) => s.startAt >= monthStart.getTime() && s.startAt < monthEnd.getTime(),
   );
   for (const s of shifts) {

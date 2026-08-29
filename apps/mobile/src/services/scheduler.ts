@@ -28,13 +28,17 @@
 import { Platform } from "react-native";
 import {
   DEFAULT_RECORDING_POLICY,
+  DEFAULT_TEMPLATES,
   activeWindowAt,
   createSchedule,
   nextWindowAfter,
   recordingWindows,
+  type DutyEntry,
   type DutySchedule,
   type RecordingPolicy,
   type RecordingWindow,
+  type ShiftCode,
+  type ShiftTemplate,
 } from "@nsr/core";
 import {
   createRecording,
@@ -59,7 +63,49 @@ export const SETTINGS_KEYS = {
   discardWithoutSelf: "privacy.discardSegmentsWithoutSelf",
   iosContinuousSession: "recording.iosContinuousSession",
   lastTickAt: "recording.lastTickAt",
+  dutyTemplates: "duty.templateOverrides",
 } as const;
+
+/** 듀티 화면에서 편집하는 코드별 근무 시간 덮어쓰기. */
+export type DutyTemplateOverride = Partial<
+  Pick<ShiftTemplate, "startTime" | "endTime" | "preHandoverMin" | "postHandoverMin">
+>;
+
+export async function loadDutyTemplates(): Promise<Record<ShiftCode, ShiftTemplate>> {
+  const overrides = await getSetting<Partial<Record<ShiftCode, DutyTemplateOverride>>>(
+    SETTINGS_KEYS.dutyTemplates,
+    {},
+  );
+  const merged = { ...DEFAULT_TEMPLATES };
+  for (const [code, o] of Object.entries(overrides)) {
+    const base = merged[code as ShiftCode];
+    if (base && o) merged[code as ShiftCode] = { ...base, ...o };
+  }
+  return merged;
+}
+
+export async function saveDutyTemplateOverride(
+  code: ShiftCode,
+  override: DutyTemplateOverride,
+): Promise<void> {
+  const overrides = await getSetting<Partial<Record<ShiftCode, DutyTemplateOverride>>>(
+    SETTINGS_KEYS.dutyTemplates,
+    {},
+  );
+  await setSetting(SETTINGS_KEYS.dutyTemplates, {
+    ...overrides,
+    [code]: { ...overrides[code], ...override },
+  });
+}
+
+/**
+ * 사용자 근무 시간이 반영된 듀티표를 만든다. **화면과 판정이 같은 시간을
+ * 봐야 하므로**, 앱에서 createSchedule 을 직접 부르지 말고 이걸 쓴다.
+ */
+export async function buildSchedule(entries?: DutyEntry[]): Promise<DutySchedule> {
+  const list = entries ?? (await listDutyEntries());
+  return createSchedule(list, await loadDutyTemplates());
+}
 
 export async function loadPolicy(): Promise<RecordingPolicy> {
   return getSetting<RecordingPolicy>(SETTINGS_KEYS.policy, DEFAULT_RECORDING_POLICY);
@@ -70,8 +116,7 @@ export async function savePolicy(policy: RecordingPolicy): Promise<void> {
 }
 
 export async function loadSchedule(): Promise<DutySchedule> {
-  const entries = await listDutyEntries();
-  return createSchedule(entries);
+  return buildSchedule();
 }
 
 /** 앞으로 2주치 기록 구간. 화면 표시와 틱 판정에 함께 쓴다. */

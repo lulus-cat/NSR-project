@@ -65,10 +65,10 @@ export const SERVER_MODELS: ServerAsrModel[] = [
   },
   {
     id: "ghost613/faster-whisper-large-v3-turbo-korean",
-    name: "한국어 Large v3 Turbo (원본)",
+    name: "한국어 Large v3 Turbo (float32 원본)",
     summary:
-      "위와 같은 모델의 float32 원본으로, 무료 콜랩 램(12.7GB)을 넘길 수 있어 내 컴퓨터 전용입니다.",
-    where: "pc",
+      "위와 같은 모델의 float32 원판이라 무료 콜랩 램(12.7GB)은 넘길 수 있고, 유료 고용량 램이나 내 컴퓨터에 맞습니다.",
+    where: "any",
     approxGb: 3.2,
   },
   {
