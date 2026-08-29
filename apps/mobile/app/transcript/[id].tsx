@@ -13,7 +13,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, FlatList, Pressable, TextInput, View } from "react-native";
 import { Text } from "react-native";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import {
@@ -29,6 +29,8 @@ import {
 import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
+  deleteShiftRecordings,
+  deleteTranscript,
   getSetting,
   listRecordings,
   listSegments,
@@ -190,8 +192,74 @@ const SentenceRow = memo(function SentenceRow({
   );
 });
 
+/**
+ * 재생 진행바 — 누르거나 끌어서 그 위치로 간다.
+ * 네이티브 슬라이더 의존성을 안 쓰는 이유: 빌드가 깨질 물건을 하나 덜
+ * 들이는 쪽이 낫고, 필요한 동작(탭·드래그 탐색)은 responder 로 충분하다.
+ */
+function SeekBar({
+  positionSec,
+  durationSec,
+  onSeek,
+}: {
+  positionSec: number;
+  durationSec: number;
+  onSeek: (sec: number) => void;
+}) {
+  const t = useTheme();
+  const [width, setWidth] = useState(0);
+  // 끌고 있는 동안은 손가락 위치를 보여준다 — 틱이 되돌려 놓으면 조작감이 죽는다.
+  const [scrubSec, setScrubSec] = useState<number | null>(null);
+  const toSec = (x: number) =>
+    durationSec > 0 && width > 0 ? Math.min(1, Math.max(0, x / width)) * durationSec : 0;
+  const shownSec = scrubSec ?? positionSec;
+  const ratio = durationSec > 0 ? Math.min(1, Math.max(0, shownSec / durationSec)) : 0;
+  return (
+    <View
+      accessibilityRole="adjustable"
+      accessibilityLabel="재생 위치"
+      onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
+      onStartShouldSetResponder={() => durationSec > 0}
+      onMoveShouldSetResponder={() => durationSec > 0}
+      onResponderGrant={(e) => setScrubSec(toSec(e.nativeEvent.locationX))}
+      onResponderMove={(e) => setScrubSec(toSec(e.nativeEvent.locationX))}
+      onResponderRelease={(e) => {
+        setScrubSec(null);
+        onSeek(toSec(e.nativeEvent.locationX));
+      }}
+      onResponderTerminate={() => setScrubSec(null)}
+      style={{ height: 32, justifyContent: "center" }}
+    >
+      <View
+        style={{ height: 4, borderRadius: 2, backgroundColor: t.surfaceAlt, overflow: "hidden" }}
+      >
+        <View
+          style={{ width: `${ratio * 100}%`, height: 4, backgroundColor: t.accent }}
+        />
+      </View>
+      {width > 0 ? (
+        <View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: Math.min(Math.max(ratio * width - 7, 0), width - 14),
+            width: 14,
+            height: 14,
+            borderRadius: 7,
+            backgroundColor: t.accent,
+          }}
+        />
+      ) : null}
+    </View>
+  );
+}
+
+/** 배속 순환 목록 — 인계 복기는 빨리 듣기가 기본이라 2.0 까지 둔다. */
+const RATES = [1.0, 1.25, 1.5, 2.0];
+
 export default function TranscriptView() {
   const t = useTheme();
+  const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const shiftId = decodeURIComponent(params.id ?? "");
   const [date, code] = shiftId.split(":");
@@ -242,8 +310,16 @@ export default function TranscriptView() {
   const playerRef = useRef<AudioPlayer | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
   const [playback, setPlayback] = useState<
-    { recordingId: string; positionSec: number; playing: boolean } | null
+    { recordingId: string; positionSec: number; durationSec: number; playing: boolean } | null
   >(null);
+  // 배속은 화면을 나가도 기억한다 — 복기 습관은 기록마다 같다.
+  const [rate, setRate] = useState(1.0);
+  useEffect(() => {
+    void (async () => {
+      const saved = await getSetting<number>("transcript.playbackRate", 1.0);
+      if (RATES.includes(saved)) setRate(saved);
+    })();
+  }, []);
 
   useEffect(() => {
     const timer = setInterval(() => {
@@ -259,11 +335,17 @@ export default function TranscriptView() {
           if (!prev) return prev;
           if (
             Math.floor(prev.positionSec) === Math.floor(p.currentTime) &&
-            prev.playing === p.playing
+            prev.playing === p.playing &&
+            Math.floor(prev.durationSec) === Math.floor(p.duration)
           ) {
             return prev;
           }
-          return { ...prev, positionSec: p.currentTime, playing: p.playing };
+          return {
+            ...prev,
+            positionSec: p.currentTime,
+            durationSec: p.duration,
+            playing: p.playing,
+          };
         });
       } catch {
         // 플레이어가 해제된 직후의 틱.
@@ -294,18 +376,17 @@ export default function TranscriptView() {
     setPlayback(null);
   }, []);
 
-  const playFrom = useCallback(
-    (segment: TranscriptSegment) => {
-      const recId = recordingIdOf(segment);
+  const playRecording = useCallback(
+    (recId: string, atSec: number) => {
       const rec = recordings.find((r) => r.id === recId);
       if (!rec?.file_uri) {
-        setNotice("이 문장의 기록 파일이 기기에 없어 재생할 수 없습니다.");
+        setNotice("이 기록의 음성 파일이 기기에 없어 재생할 수 없습니다.");
         return;
       }
       try {
         if (playerRef.current && playback?.recordingId === recId) {
           pendingSeekRef.current = null;
-          void playerRef.current.seekTo(segment.startSec);
+          void playerRef.current.seekTo(atSec);
           playerRef.current.play();
         } else {
           try {
@@ -315,17 +396,60 @@ export default function TranscriptView() {
           }
           const player = createAudioPlayer({ uri: rec.file_uri });
           playerRef.current = player;
-          pendingSeekRef.current = segment.startSec;
-          void player.seekTo(segment.startSec);
+          try {
+            player.setPlaybackRate(rate, "high");
+          } catch {
+            // 배속 미지원 기기 — 1배속으로 계속한다.
+          }
+          pendingSeekRef.current = atSec;
+          void player.seekTo(atSec);
           player.play();
         }
-        setPlayback({ recordingId: recId, positionSec: segment.startSec, playing: true });
+        setPlayback((prev) => ({
+          recordingId: recId,
+          positionSec: atSec,
+          durationSec:
+            prev?.recordingId === recId ? prev.durationSec : rec.duration_sec || 0,
+          playing: true,
+        }));
       } catch (e) {
         setError(e instanceof Error ? e.message : "재생하지 못했습니다.");
       }
     },
-    [playback?.recordingId, recordings],
+    [playback?.recordingId, rate, recordings],
   );
+
+  const playFrom = useCallback(
+    (segment: TranscriptSegment) => {
+      playRecording(recordingIdOf(segment), segment.startSec);
+    },
+    [playRecording],
+  );
+
+  /** 진행바 탐색 — 재생 중인 기록 안에서 그 시각으로 간다. */
+  const seekTo = useCallback((sec: number) => {
+    const p = playerRef.current;
+    if (!p) return;
+    try {
+      pendingSeekRef.current = null;
+      void p.seekTo(sec);
+      setPlayback((prev) => (prev ? { ...prev, positionSec: sec } : prev));
+    } catch {
+      // 해제 직후 — 다음 틱이 맞춘다.
+    }
+  }, []);
+
+  /** 배속 순환: 1.0 → 1.25 → 1.5 → 2.0 → 1.0 */
+  const cycleRate = useCallback(() => {
+    const next = RATES[(RATES.indexOf(rate) + 1) % RATES.length];
+    setRate(next);
+    void setSetting("transcript.playbackRate", next);
+    try {
+      playerRef.current?.setPlaybackRate(next, "high");
+    } catch {
+      // 배속 미지원 — 표시만 바뀌고 소리는 그대로다.
+    }
+  }, [rate]);
 
   const togglePause = useCallback(() => {
     const p = playerRef.current;
@@ -470,6 +594,47 @@ export default function TranscriptView() {
     );
   }, [segments]);
 
+  // ── 삭제 — 전사만 지울지, 녹음까지 지울지 그 자리에서 고른다 ──
+  const runDelete = useCallback(() => {
+    Alert.alert(
+      "전사 기록 삭제",
+      "전사만 삭제 — 문장을 지우고 녹음은 남깁니다. 그 녹음은 다시 '전사할 기록'으로 돌아갑니다.\n" +
+        "녹음까지 삭제 — 음성 파일과 전사를 모두 지웁니다.\n지운 내용은 되돌릴 수 없습니다.",
+      [
+        { text: "취소", style: "cancel" },
+        {
+          text: "전사만 삭제",
+          onPress: () => {
+            void (async () => {
+              stopPlayback();
+              await deleteTranscript(shiftId);
+              router.back();
+            })();
+          },
+        },
+        {
+          text: "녹음까지 삭제",
+          style: "destructive",
+          onPress: () => {
+            void (async () => {
+              stopPlayback();
+              const uris = await deleteShiftRecordings(shiftId);
+              const FileSystem = await import("expo-file-system/legacy");
+              for (const uri of uris) {
+                try {
+                  await FileSystem.deleteAsync(uri, { idempotent: true });
+                } catch {
+                  // 파일이 이미 없어도 기록 삭제는 끝났다.
+                }
+              }
+              router.back();
+            })();
+          },
+        },
+      ],
+    );
+  }, [router, shiftId, stopPlayback]);
+
   const listHeader = (
     <View style={{ padding: space.lg, paddingBottom: 0, gap: space.md }}>
       <Card>
@@ -486,6 +651,24 @@ export default function TranscriptView() {
             disabled={busy !== null}
             onPress={() => void runPolish()}
           />
+        ) : null}
+        {segments.length > 0 || recordings.length > 0 ? (
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            {recordings.some((r) => r.file_uri) ? (
+              <View style={{ flex: 1 }}>
+                <Button
+                  label="처음부터 재생"
+                  onPress={() => {
+                    const rec = recordings.find((r) => r.file_uri);
+                    if (rec) playRecording(rec.id, 0);
+                  }}
+                />
+              </View>
+            ) : null}
+            <View style={{ flex: 1 }}>
+              <Button label="기록 삭제" tone="danger" onPress={runDelete} />
+            </View>
+          </View>
         ) : null}
         {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
         {notice ? <Small muted={false}>{notice}</Small> : null}
@@ -629,34 +812,58 @@ export default function TranscriptView() {
         {playback ? (
           <View
             style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: space.md,
               backgroundColor: t.surfaceRaised,
               borderRadius: radius.lg,
               paddingHorizontal: space.lg,
-              minHeight: TOUCH_MIN + 8,
+              paddingVertical: space.sm,
+              gap: 2,
             }}
           >
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={playback.playing ? "일시정지" : "재생"}
-              onPress={togglePause}
-              style={{ minWidth: 40, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
-            >
-              <Ionicons name={playback.playing ? "pause" : "play"} size={22} color={t.accent} />
-            </Pressable>
-            <Text style={[type.small, TABULAR, { color: t.text, fontWeight: "600", flex: 1 }]}>
-              {formatTime(playback.positionSec)} · 기록 재생 중
-            </Text>
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="재생 종료"
-              onPress={stopPlayback}
-              style={{ minWidth: 40, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
-            >
-              <Ionicons name="close" size={20} color={t.textMuted} />
-            </Pressable>
+            <SeekBar
+              positionSec={playback.positionSec}
+              durationSec={playback.durationSec}
+              onSeek={seekTo}
+            />
+            <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={playback.playing ? "일시정지" : "재생"}
+                onPress={togglePause}
+                style={{ minWidth: TOUCH_MIN, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
+              >
+                <Ionicons name={playback.playing ? "pause" : "play"} size={24} color={t.accent} />
+              </Pressable>
+              <Text style={[type.small, TABULAR, { color: t.text, fontWeight: "600", flex: 1 }]}>
+                {formatTime(playback.positionSec)}
+                {playback.durationSec > 0 ? ` / ${formatTime(playback.durationSec)}` : ""}
+              </Text>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`배속 ${rate}배 — 누르면 바뀝니다`}
+                onPress={cycleRate}
+                style={{
+                  minWidth: TOUCH_MIN,
+                  minHeight: TOUCH_MIN,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  borderRadius: radius.md,
+                  backgroundColor: t.surfaceAlt,
+                  paddingHorizontal: space.sm,
+                }}
+              >
+                <Text style={[type.small, TABULAR, { color: t.accent, fontWeight: "700" }]}>
+                  {String(rate)}×
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="재생 종료"
+                onPress={stopPlayback}
+                style={{ minWidth: TOUCH_MIN, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
+              >
+                <Ionicons name="close" size={20} color={t.textMuted} />
+              </Pressable>
+            </View>
           </View>
         ) : null}
 

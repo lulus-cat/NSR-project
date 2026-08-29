@@ -245,6 +245,31 @@ export async function expireRecordings(olderThan: number): Promise<string[]> {
   return rows.map((r) => r.file_uri).filter((u): u is string => !!u);
 }
 
+/**
+ * 전사만 지운다 — 문장(과 딸린 편집·주석)이 지워지고, 녹음은 '녹음됨'으로
+ * 돌아가 다시 전사할 수 있다. 음성 파일은 건드리지 않는다.
+ */
+export async function deleteTranscript(shiftId: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM segments WHERE shift_id = ?", [shiftId]);
+  await db.runAsync(
+    "UPDATE recordings SET state = 'recorded' WHERE shift_id = ? AND state = 'transcribed'",
+    [shiftId],
+  );
+}
+
+/** 전사와 녹음을 함께 지운다. 지울 파일 경로를 돌려준다 — 파일 삭제는 호출부가 한다. */
+export async function deleteShiftRecordings(shiftId: string): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ file_uri: string | null }>(
+    "SELECT file_uri FROM recordings WHERE shift_id = ?",
+    [shiftId],
+  );
+  await db.runAsync("DELETE FROM segments WHERE shift_id = ?", [shiftId]);
+  await db.runAsync("DELETE FROM recordings WHERE shift_id = ?", [shiftId]);
+  return rows.map((r) => r.file_uri).filter((u): u is string => !!u);
+}
+
 export async function totalStorageBytes(): Promise<number> {
   const db = await getDb();
   const row = await db.getFirstAsync<{ total: number | null }>(

@@ -1,8 +1,8 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   dueStates,
@@ -62,7 +62,8 @@ function setTitle(shiftId: string | undefined): string {
 export default function Study() {
   const t = useTheme();
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("review");
+  // 첫 칩이 전사 기록이므로 처음 열리는 화면도 전사 기록이다 — 칩과 화면이 어긋나면 헷갈린다.
+  const [mode, setMode] = useState<Mode>("transcripts");
   const [cards, setCards] = useState<StudyCard[]>([]);
   const [states, setStates] = useState<ReviewState[]>([]);
   const [queue, setQueue] = useState<string[]>([]);
@@ -103,9 +104,12 @@ export default function Study() {
     setRevealed(false);
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // 화면에 돌아올 때마다 다시 읽는다 — 전사 기록을 지우고 돌아오면 목록이 낡아 있다.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const cardById = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards]);
   const stateById = useMemo(() => new Map(states.map((s) => [s.cardId, s])), [states]);
@@ -164,9 +168,9 @@ export default function Study() {
         <Text style={{ fontSize: 28, lineHeight: 36, fontWeight: "700", color: t.text }}>학습</Text>
         <ChipRow
           items={[
+            { key: "transcripts", label: "전사 기록" },
             { key: "review", label: queue.length > 0 ? `복습 ${queue.length}` : "복습" },
             { key: "sets", label: "카드 세트" },
-            { key: "transcripts", label: "전사 기록" },
             { key: "reports", label: "근무 보고서" },
             { key: "notes", label: "노트" },
           ]}

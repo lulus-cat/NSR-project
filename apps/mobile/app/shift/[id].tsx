@@ -5,17 +5,19 @@
  * 분리했다 — 결과와 실행이 한 화면에 있으면 전사가 끝나는 순간 수천
  * 문장이 이 화면에 쏟아져 모든 것이 무거워진다. 여기는 가볍게 남는다.
  */
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import {
   DEFAULT_TEMPLATES,
   type TaeumScore,
   type ShiftCode,
 } from "@nsr/core";
 import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
-import { radius, space, type, useTheme } from "../../src/theme";
+import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   countSegments,
   getShiftReportMarkdown,
@@ -36,6 +38,22 @@ function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+}
+
+/** 녹음 상태를 사람이 읽는 배지로. */
+function stateBadge(state: string): { text: string; tone: "ok" | "muted" | "warn" } {
+  switch (state) {
+    case "recorded":
+      return { text: "미전사", tone: "warn" };
+    case "transcribing":
+      return { text: "전사 중", tone: "muted" };
+    case "transcribed":
+      return { text: "전사됨", tone: "ok" };
+    case "discarded":
+      return { text: "버림", tone: "muted" };
+    default:
+      return { text: "녹음 중", tone: "muted" };
+  }
 }
 
 type Tab = "report" | "environment";
@@ -69,9 +87,12 @@ export default function ShiftDetail() {
     setReportMd(md);
   }, [shiftId]);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // 전사 결과 화면에서 지우고 돌아오는 길 — 문장 수·상태가 낡지 않게 다시 읽는다.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const pending = recordings.filter((r) => r.state === "recorded");
   const durationSec = recordings.reduce((sum, r) => sum + r.duration_sec, 0);
@@ -115,6 +136,61 @@ export default function ShiftDetail() {
       setBusy(null);
     }
   }, [date, durationSec, dutyLabel, load, shiftId]);
+
+  // ── 미리 듣기 — 전사 전에 어떤 녹음인지 귀로 확인한다 ──
+  const previewRef = useRef<AudioPlayer | null>(null);
+  const [previewId, setPreviewId] = useState<string | null>(null);
+  useEffect(
+    () => () => {
+      try {
+        previewRef.current?.remove();
+      } catch {
+        // 이미 해제됐으면 그만이다.
+      }
+    },
+    [],
+  );
+  // 파일이 끝까지 재생되면 정지 아이콘을 되돌린다.
+  useEffect(() => {
+    if (!previewId) return;
+    const timer = setInterval(() => {
+      const p = previewRef.current;
+      if (!p) return;
+      try {
+        if (p.duration > 0 && !p.playing && p.currentTime >= p.duration - 0.3) {
+          setPreviewId(null);
+        }
+      } catch {
+        setPreviewId(null);
+      }
+    }, 700);
+    return () => clearInterval(timer);
+  }, [previewId]);
+
+  const togglePreview = useCallback(
+    (rec: RecordingRow) => {
+      try {
+        previewRef.current?.remove();
+      } catch {
+        // 이전 플레이어 해제 실패는 무시한다.
+      }
+      previewRef.current = null;
+      if (previewId === rec.id) {
+        setPreviewId(null);
+        return;
+      }
+      if (!rec.file_uri) return;
+      try {
+        const player = createAudioPlayer({ uri: rec.file_uri });
+        previewRef.current = player;
+        player.play();
+        setPreviewId(rec.id);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "재생하지 못했습니다.");
+      }
+    },
+    [previewId],
+  );
 
   const prepareExport = useCallback(async () => {
     if (!reportMd) return;
@@ -168,6 +244,66 @@ export default function ShiftDetail() {
         {busy ? <Small muted={false}>{busy}…</Small> : null}
         {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
       </Card>
+
+      {/* ── 음성 파일 — 건수 뒤에 숨어 있던 녹음이 파일별로 보인다 ── */}
+      {recordings.length > 0 ? (
+        <Card>
+          <Heading>음성 파일</Heading>
+          <Small>
+            이 근무에서 녹음된 파일입니다. 재생 단추로 전사 전에 미리 들어볼 수 있습니다.
+          </Small>
+          {recordings.map((r, i) => {
+            const badge = stateBadge(r.state);
+            const started = new Date(r.started_at);
+            const clock = `${String(started.getHours()).padStart(2, "0")}:${String(started.getMinutes()).padStart(2, "0")}`;
+            const mins = Math.round(r.duration_sec / 60);
+            const mb = r.size_bytes > 0 ? (r.size_bytes / (1024 * 1024)).toFixed(1) : null;
+            const playingThis = previewId === r.id;
+            return (
+              <View key={r.id}>
+                {i > 0 ? <Divider /> : null}
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: space.md,
+                    minHeight: TOUCH_MIN,
+                  }}
+                >
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={playingThis ? "미리 듣기 정지" : "미리 듣기"}
+                    disabled={!r.file_uri}
+                    onPress={() => togglePreview(r)}
+                    style={({ pressed }) => ({
+                      width: TOUCH_MIN,
+                      height: TOUCH_MIN,
+                      borderRadius: radius.full,
+                      backgroundColor: playingThis ? t.accentSoft : t.surfaceAlt,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      opacity: r.file_uri ? 1 : 0.4,
+                      transform: [{ scale: pressed ? 0.94 : 1 }],
+                    })}
+                  >
+                    <Ionicons name={playingThis ? "stop" : "play"} size={18} color={t.accent} />
+                  </Pressable>
+                  <View style={{ flex: 1, gap: 2 }}>
+                    <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>
+                      {clock} 시작{mins > 0 ? ` · ${mins}분` : ""}
+                    </Text>
+                    <Text style={[type.small, TABULAR, { color: t.textMuted, fontWeight: "600" }]}>
+                      {mb ? `${mb}MB` : "크기 미확인"}
+                      {r.file_uri ? "" : " · 파일 없음"}
+                    </Text>
+                  </View>
+                  <Badge text={badge.text} tone={badge.tone} />
+                </View>
+              </View>
+            );
+          })}
+        </Card>
+      ) : null}
 
       {/* 전사 결과로 가는 문 — 결과는 전용 화면에서 본다 */}
       {sentenceCount > 0 ? (

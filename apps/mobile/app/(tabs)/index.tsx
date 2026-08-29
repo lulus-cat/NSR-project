@@ -301,6 +301,10 @@ export default function Home() {
   const [dueCount, setDueCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingShiftId, setPendingShiftId] = useState<string | null>(null);
+  // 미전사 녹음 파일들 — 건수만이 아니라 어떤 녹음인지 보여준다.
+  const [pendingRows, setPendingRows] = useState<
+    { id: string; shift_id: string | null; started_at: number; duration_sec: number }[]
+  >([]);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [needsServer, setNeedsServer] = useState(false);
   const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
@@ -336,6 +340,7 @@ export default function Home() {
     setDueCount(dueStates(await listReviewStates(), Date.now(), 9999).length);
     const pending = await pendingTranscriptions();
     setPendingCount(pending.length);
+    setPendingRows(pending);
     // 전사 실행 화면으로 가는 문 — 미전사 기록이 실제로 있는 근무를 가리킨다.
     setPendingShiftId(pending[0]?.shift_id ?? null);
     const scores = await listTaeumScores(30);
@@ -523,7 +528,7 @@ export default function Home() {
           <BriefRow
             icon="document-text-outline"
             label="전사할 기록"
-            value={pendingCount > 0 ? `${pendingCount}건 · 전사하기` : "없음"}
+            value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
             valueColor={pendingCount > 0 ? t.warn : undefined}
             // 미전사 기록이 있는 근무로 바로 간다 — 거기 '전사하기' 버튼이 있다.
             // 기록이 없으면 눌리지 않는다: 예전엔 듀티표로 보내서, 전사하러
@@ -534,6 +539,28 @@ export default function Home() {
                 : undefined
             }
           />
+          {/* 건수 뒤에 실제 녹음 파일이 보인다 — 무엇이 전사를 기다리는지 세지 않아도 안다. */}
+          {pendingRows.slice(0, 3).map((r) => {
+            const d = new Date(r.started_at);
+            const mins = Math.round(r.duration_sec / 60);
+            return (
+              <BriefRow
+                key={r.id}
+                icon="mic-outline"
+                label={`${d.getMonth() + 1}월 ${d.getDate()}일 ${formatClock(r.started_at)} 녹음`}
+                value={mins > 0 ? `${mins}분 · 전사` : "전사"}
+                valueColor={t.accent}
+                onPress={
+                  r.shift_id
+                    ? () => router.push(`/shift/${encodeURIComponent(r.shift_id!)}`)
+                    : undefined
+                }
+              />
+            );
+          })}
+          {pendingCount > 3 ? (
+            <Small>외 {pendingCount - 3}건 — 근무 화면에서 파일별로 보입니다.</Small>
+          ) : null}
           {needsServer ? (
             <>
               <DashedDivider />
