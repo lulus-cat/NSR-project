@@ -14,6 +14,7 @@ import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, FlatList, Pressable, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import {
@@ -259,6 +260,7 @@ const RATES = [1.0, 1.25, 1.5, 2.0];
 
 export default function TranscriptView() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const shiftId = decodeURIComponent(params.id ?? "");
@@ -775,7 +777,8 @@ export default function TranscriptView() {
         keyExtractor={(s) => s.id}
         ListHeaderComponent={listHeader}
         contentContainerStyle={{
-          paddingBottom: space.bottom + (playback || wordTarget ? 180 : 0),
+          // 안전영역 + 바닥 패널 높이 — 내비게이션 바와 패널이 마지막 문장을 가리지 않게.
+          paddingBottom: space.bottom + insets.bottom + (playback || wordTarget ? 200 : 0),
         }}
         initialNumToRender={20}
         windowSize={11}
@@ -808,7 +811,17 @@ export default function TranscriptView() {
 
       {/* ── 바닥 패널: 재생 막대와 단어 고치기 ── */}
       {playback || wordTarget ? (
-      <View style={{ position: "absolute", left: 0, right: 0, bottom: 0, padding: space.md, gap: space.sm }}>
+      <View
+        style={{
+          position: "absolute",
+          left: 0,
+          right: 0,
+          // 내비게이션 바 위에 뜬다 — 0 이면 재생 버튼이 바에 깔린다.
+          bottom: insets.bottom,
+          padding: space.md,
+          gap: space.sm,
+        }}
+      >
         {playback ? (
           <View
             style={{

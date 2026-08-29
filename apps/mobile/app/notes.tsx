@@ -3,6 +3,7 @@ import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Button, Card, Small } from "../src/components/ui";
 import { extractTags } from "../src/components/markdown";
@@ -16,6 +17,7 @@ function fmt(ms: number): string {
 
 export default function Notes() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ q?: string }>();
   const [query, setQuery] = useState(params.q ? String(params.q) : "");
@@ -41,7 +43,8 @@ export default function Notes() {
       style={{ flex: 1, backgroundColor: t.bg }}
       contentContainerStyle={{
         padding: space.lg,
-        paddingBottom: space.bottom,
+        // 스택 화면이라 탭 바가 없다 — 내비게이션 바 안전영역만 비켜 준다.
+        paddingBottom: space.lg + insets.bottom,
         gap: space.md,
         width: "100%",
         maxWidth: CONTENT_MAX,

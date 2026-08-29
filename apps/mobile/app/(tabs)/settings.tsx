@@ -234,7 +234,7 @@ export default function Settings() {
     if (asr.mode === "gemini") {
       const hasKey = await getApiKey("gemini");
       setModelSummary(
-        hasKey ? `Gemini · ${asr.geminiModel || "gemini-2.5-flash"}` : "Gemini · 키 없음",
+        hasKey ? `Gemini · ${asr.geminiModel || "gemini-3.7-flash"}` : "Gemini · 키 없음",
       );
     } else if (!asr.endpoint) setModelSummary("연결 안 됨");
     else {

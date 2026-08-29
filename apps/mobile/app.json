@@ -43,7 +43,8 @@
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1B302A"
+        "backgroundColor": "#1B302A",
+        "monochromeImage": "./assets/adaptive-icon-mono.png"
       }
     },
     "plugins": [

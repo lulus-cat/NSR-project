@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Alert, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { Text } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   addTermToPack,
   createWardPack,
@@ -36,6 +37,7 @@ import { loadLexicon } from "../src/services/asr";
 
 export default function WardDict() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const [packs, setPacks] = useState<StoredPack[]>([]);
   const [pending, setPending] = useState<PendingCorrection[]>([]);
   const [suggestions, setSuggestions] = useState<PackTermSuggestion[]>([]);
@@ -144,7 +146,14 @@ export default function WardDict() {
   );
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: space.lg,
+        // 내비게이션 바가 마지막 카드를 가리지 않게 안전영역만큼 띄운다.
+        paddingBottom: space.lg + insets.bottom,
+        gap: space.md,
+      }}
+    >
       <Card>
         <Heading>병동 사전</Heading>
         <Body muted>

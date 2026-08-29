@@ -689,7 +689,12 @@ export async function resolveProvider(): Promise<AsrProvider> {
         "Gemini API 키가 없습니다. 설정 → 전사의 Gemini 카드에서 키를 넣어 주십시오.",
       );
     }
-    return createGeminiProvider(key, cloud.geminiModel?.trim() || "gemini-2.5-flash");
+    // 2.5 계열은 2026 상반기에 폐기 예고됐다 — 옛 저장값도 현행 모델로 옮겨 쓴다.
+    const { migrateRetiredModel } = await import("./llm");
+    return createGeminiProvider(
+      key,
+      migrateRetiredModel(cloud.geminiModel?.trim() ?? "") || "gemini-3.7-flash",
+    );
   }
 
   if (!cloud.endpoint) {

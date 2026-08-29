@@ -9,6 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import {
@@ -60,6 +61,7 @@ type Tab = "report" | "environment";
 
 export default function ShiftDetail() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string }>();
   const shiftId = decodeURIComponent(params.id ?? "");
@@ -217,7 +219,14 @@ export default function ShiftDetail() {
   }, [code, date, dutyLabel, preview]);
 
   return (
-    <ScrollView contentContainerStyle={{ padding: space.lg, gap: space.md }}>
+    <ScrollView
+      contentContainerStyle={{
+        padding: space.lg,
+        // 내비게이션 바가 마지막 카드를 가리지 않게 안전영역만큼 띄운다.
+        paddingBottom: space.lg + insets.bottom,
+        gap: space.md,
+      }}
+    >
       <Card>
         <Heading>
           {date} · {dutyLabel}

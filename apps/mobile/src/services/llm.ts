@@ -146,41 +146,59 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
  * 기본값은 "다듬기·요약에 충분하면서 싼" 쪽으로 골랐다. 목록은 화면의
  * 추천 칩일 뿐이고 저장은 자유 문자열이다 — 모델 이름은 몇 달마다 바뀌므로
  * 목록에 없는 id 를 직접 넣을 수 있어야 오래간다.
- * (Anthropic 모델 id 는 2026-06 기준 공식 문서에서 확인한 값이다.)
+ * (모델 id 는 2026-08 기준 각 공식 문서에서 확인한 값이다. Kimi k2 계열은
+ * 2026-05 에, Gemini 2.5 계열과 GPT-5.1 은 2026 상반기에 단종·폐기됐다.)
  */
 export const MODEL_CHOICES: Record<Exclude<LlmProvider, "custom">, { id: string; hint: string }[]> = {
   anthropic: [
     { id: "claude-opus-5", hint: "가장 정확 (기본)" },
+    { id: "claude-fable-5", hint: "최상위 — 가장 비쌈" },
     { id: "claude-sonnet-5", hint: "균형 — 절반 가격" },
     { id: "claude-haiku-4-5", hint: "빠르고 가장 저렴" },
   ],
   openai: [
-    { id: "gpt-5-mini", hint: "균형 (기본)" },
-    { id: "gpt-5", hint: "가장 정확" },
-    { id: "gpt-5-nano", hint: "가장 저렴" },
+    { id: "gpt-5.6-terra", hint: "균형 (기본)" },
+    { id: "gpt-5.6-sol", hint: "가장 정확" },
+    { id: "gpt-5.6-luna", hint: "가장 저렴" },
   ],
   kimi: [
-    { id: "kimi-k2.6", hint: "기본" },
-    { id: "kimi-k2-turbo-preview", hint: "빠름" },
+    { id: "kimi-k3", hint: "기본 — 최신" },
+    { id: "kimi-k2.6", hint: "구형 — 기존 계정만" },
   ],
   gemini: [
-    { id: "gemini-2.5-flash", hint: "기본 — 무료 티어 넉넉" },
-    { id: "gemini-2.5-pro", hint: "가장 정확" },
-    { id: "gemini-2.5-flash-lite", hint: "가장 저렴" },
+    { id: "gemini-3.7-flash", hint: "기본 — 무료 티어 넉넉" },
+    { id: "gemini-3.1-pro-preview", hint: "가장 정확" },
+    { id: "gemini-3.5-flash-lite", hint: "가장 저렴" },
   ],
 };
 
 const DEFAULT_MODELS: Record<Exclude<LlmProvider, "custom">, string> = {
   anthropic: "claude-opus-5",
-  openai: "gpt-5-mini",
-  kimi: "kimi-k2.6",
-  gemini: "gemini-2.5-flash",
+  openai: "gpt-5.6-terra",
+  kimi: "kimi-k3",
+  gemini: "gemini-3.7-flash",
 };
+
+/**
+ * 단종된 모델 id 를 후속 모델로 옮긴다. 옛 설정이 저장돼 있으면 언젠가
+ * 요청이 통째로 실패한다 — 조용히 같은 급의 현행 모델로 보낸다.
+ */
+const RETIRED_MODELS: Record<string, string> = {
+  "gemini-2.5-flash": "gemini-3.7-flash",
+  "gemini-2.5-pro": "gemini-3.1-pro-preview",
+  "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
+  "kimi-k2-turbo-preview": "kimi-k3",
+  "kimi-latest": "kimi-k3",
+};
+
+export function migrateRetiredModel(id: string): string {
+  return RETIRED_MODELS[id] ?? id;
+}
 
 export async function getModelFor(provider: LlmProvider): Promise<string> {
   if (provider === "custom") return (await getCustomServer())?.model ?? "";
   const saved = await getSetting<string>(`llm.model.${provider}`, "");
-  return saved.trim() || DEFAULT_MODELS[provider];
+  return migrateRetiredModel(saved.trim()) || DEFAULT_MODELS[provider];
 }
 
 export async function setModelFor(provider: LlmProvider, model: string): Promise<void> {

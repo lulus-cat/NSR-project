@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { Text } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps } from "react";
 import {
@@ -25,7 +26,7 @@ import {
 import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/ui";
 import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
-import { getApiKey, setApiKey } from "../src/services/llm";
+import { getApiKey, migrateRetiredModel, setApiKey } from "../src/services/llm";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 
 type ServerMode = "colab" | "pc" | "gemini";
@@ -144,6 +145,7 @@ function ModelRow({
 
 export default function TranscriptionSetup() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const [server, setServer] = useState<ServerAsr>({ enabled: false, endpoint: "" });
   const [check, setCheck] = useState<
     { state: "idle" } | { state: "checking" } | { state: "done"; ok: boolean; message: string }
@@ -161,7 +163,11 @@ export default function TranscriptionSetup() {
       const m = inferMode(saved);
       const endpoints = { ...saved.endpoints };
       if (saved.endpoint && !endpoints[m]) endpoints[m] = saved.endpoint;
-      setServer({ ...saved, mode: m, endpoints });
+      // 단종된 Gemini 모델이 저장돼 있으면 화면에서도 현행 모델로 바꿔 보여준다.
+      const geminiModel = saved.geminiModel
+        ? migrateRetiredModel(saved.geminiModel.trim())
+        : saved.geminiModel;
+      setServer({ ...saved, mode: m, endpoints, geminiModel });
       setHasGeminiKey((await getApiKey("gemini")) !== null);
     })();
   }, []);
@@ -296,6 +302,8 @@ export default function TranscriptionSetup() {
     <ScrollView
       contentContainerStyle={{
         padding: space.lg,
+        // 안드로이드 내비게이션 바가 마지막 카드를 가리지 않게 안전영역만큼 띄운다.
+        paddingBottom: space.lg + insets.bottom,
         gap: space.md,
         width: "100%",
         maxWidth: CONTENT_MAX,
@@ -462,10 +470,10 @@ export default function TranscriptionSetup() {
           <Small muted={false}>2. 모델</Small>
           <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
             {[
-              ["gemini-2.5-flash", "기본 — 무료 한도 넉넉"],
-              ["gemini-2.5-pro", "가장 정확"],
+              ["gemini-3.7-flash", "기본 — 무료 한도 넉넉"],
+              ["gemini-3.1-pro-preview", "가장 정확"],
             ].map(([id, hint]) => {
-              const on = (server.geminiModel?.trim() || "gemini-2.5-flash") === id;
+              const on = (server.geminiModel?.trim() || "gemini-3.7-flash") === id;
               return (
                 <Pressable
                   key={id}
