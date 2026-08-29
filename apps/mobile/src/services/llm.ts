@@ -30,7 +30,7 @@ import { redactForNetwork } from "./export";
  * 베타이고, Anthropic 은 서드파티 앱용 OAuth 자체가 없다. 그래서 양쪽 다
  * API 키 방식이다. 키는 기기 보안 저장소에만 있다.
  */
-export type LlmProvider = "anthropic" | "openai" | "kimi" | "custom";
+export type LlmProvider = "anthropic" | "openai" | "kimi" | "gemini" | "custom";
 
 /** 내 서버(VPS 의 Ollama·vLLM·LM Studio 등 OpenAI 호환 API) 설정. */
 export interface CustomServer {
@@ -55,6 +55,8 @@ const SECURE_KEYS: Record<LlmProvider, string> = {
   anthropic: "anthropic.apiKey",
   openai: "openai.apiKey",
   kimi: "kimi.apiKey",
+  // 전사(Gemini 모드)와 같은 키를 쓴다 — 구글 AI 키는 하나면 된다.
+  gemini: "gemini.apiKey",
   custom: "custom.apiKey",
 };
 
@@ -135,6 +137,8 @@ async function callAnthropic(body: unknown): Promise<{
 // Kimi(Moonshot)는 OpenAI 호환이라 callOpenAi 를 그대로 탄다.
 // k2.6 은 response_format json_schema 까지 지원한다 (2026-08 조사).
 const KIMI_BASE = "https://api.moonshot.ai/v1";
+// Gemini 는 OpenAI 호환 게이트웨이를 제공한다 — callOpenAi 를 그대로 탄다.
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
 
 /**
  * 공급자별 모델 선택.
@@ -159,12 +163,18 @@ export const MODEL_CHOICES: Record<Exclude<LlmProvider, "custom">, { id: string;
     { id: "kimi-k2.6", hint: "기본" },
     { id: "kimi-k2-turbo-preview", hint: "빠름" },
   ],
+  gemini: [
+    { id: "gemini-2.5-flash", hint: "기본 — 무료 티어 넉넉" },
+    { id: "gemini-2.5-pro", hint: "가장 정확" },
+    { id: "gemini-2.5-flash-lite", hint: "가장 저렴" },
+  ],
 };
 
 const DEFAULT_MODELS: Record<Exclude<LlmProvider, "custom">, string> = {
   anthropic: "claude-opus-5",
   openai: "gpt-5-mini",
   kimi: "kimi-k2.6",
+  gemini: "gemini-2.5-flash",
 };
 
 export async function getModelFor(provider: LlmProvider): Promise<string> {
@@ -206,7 +216,9 @@ async function callOpenAi(input: {
     ? custom.baseUrl.replace(/\/+$/, "")
     : provider === "kimi"
       ? KIMI_BASE
-      : "https://api.openai.com/v1";
+      : provider === "gemini"
+        ? GEMINI_BASE
+        : "https://api.openai.com/v1";
   const res = await fetch(`${base}/chat/completions`, {
     method: "POST",
     headers: {
@@ -215,7 +227,10 @@ async function callOpenAi(input: {
     },
     body: JSON.stringify({
       model: custom ? custom.model : await getModelFor(provider === "anthropic" ? "openai" : provider),
-      max_completion_tokens: input.maxTokens,
+      // Gemini 호환 게이트웨이는 옛 이름(max_tokens)이 확실하게 통한다.
+      ...(provider === "gemini" && !custom
+        ? { max_tokens: input.maxTokens }
+        : { max_completion_tokens: input.maxTokens }),
       messages: [{ role: "system", content: input.system }, ...input.messages],
       ...(input.schema
         ? {

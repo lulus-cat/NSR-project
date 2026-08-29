@@ -225,11 +225,18 @@ export default function Settings() {
     setDebugEntries(await readDebugLog());
 
     // 전사는 서버가 한다 — 어디에 연결됐고 어떤 모델인지를 한 줄로.
-    const asr = await getSetting<{ endpoint?: string; model?: string; mode?: string }>(
-      SETTINGS_KEYS.cloudTranscription,
-      {},
-    );
-    if (!asr.endpoint) setModelSummary("연결 안 됨");
+    const asr = await getSetting<{
+      endpoint?: string;
+      model?: string;
+      mode?: string;
+      geminiModel?: string;
+    }>(SETTINGS_KEYS.cloudTranscription, {});
+    if (asr.mode === "gemini") {
+      const hasKey = await getApiKey("gemini");
+      setModelSummary(
+        hasKey ? `Gemini · ${asr.geminiModel || "gemini-2.5-flash"}` : "Gemini · 키 없음",
+      );
+    } else if (!asr.endpoint) setModelSummary("연결 안 됨");
     else {
       const where = asr.mode === "pc" ? "내 컴퓨터" : "콜랩";
       const model = asr.model ? (getServerModel(asr.model)?.name ?? asr.model) : "서버 기본 모델";
@@ -817,8 +824,8 @@ export default function Settings() {
       <Card>
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
         <Small>
-          전사는 폰이 아니라 콜랩(무료 GPU) 또는 내 컴퓨터가 합니다. 기록 음성이 그 서버로
-          전송됩니다 — 연결한 곳이 어디인지 아래 한 줄로 항상 보입니다.
+          전사는 폰이 아니라 콜랩·내 컴퓨터(휘스퍼) 또는 Gemini(구글 AI)가 합니다. 기록 음성이
+          그곳으로 전송됩니다 — 지금 어디로 보내는지 아래 한 줄로 항상 보입니다.
         </Small>
         <Divider />
         <Row
@@ -850,16 +857,17 @@ export default function Settings() {
         {llmEnabled ? (
           <>
             <Small muted={false}>모델 공급자</Small>
-            <View style={{ flexDirection: "row", gap: space.sm }}>
+            <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
               {(
                 [
                   ["anthropic", "Claude"],
                   ["openai", "GPT"],
                   ["kimi", "Kimi"],
+                  ["gemini", "Gemini"],
                   ["custom", "Ollama"],
                 ] as [LlmProvider, string][]
               ).map(([p, label]) => (
-                <View key={p} style={{ flex: 1 }}>
+                <View key={p} style={{ flexGrow: 1, flexBasis: "30%" }}>
                   <Button
                     label={label}
                     tone={llmProvider === p ? "primary" : "default"}
@@ -875,10 +883,12 @@ export default function Settings() {
               ))}
             </View>
             <Small>
-              Claude·GPT·Kimi 는 API 키 방식입니다 — Kimi 키는 platform.moonshot.ai
-              에서 발급하며 가장 저렴한 축입니다. &lsquo;Ollama&rsquo;는 VPS 나 집
-              컴퓨터의 Ollama·vLLM 같은 OpenAI 호환 서버로 보냅니다 — 유료 API 없이
-              보조 기능을 쓸 수 있고, 전사본이 내 서버 밖으로 나가지 않습니다.
+              Claude·GPT·Kimi·Gemini 는 API 키 방식입니다 — Kimi 키는
+              platform.moonshot.ai, Gemini 키는 aistudio.google.com 에서 발급하며,
+              Gemini 키는 전사의 Gemini 모드와 같은 키를 씁니다.
+              &lsquo;Ollama&rsquo;는 VPS 나 집 컴퓨터의 Ollama·vLLM 같은 OpenAI 호환
+              서버로 보냅니다 — 유료 API 없이 보조 기능을 쓸 수 있고, 전사본이 내
+              서버 밖으로 나가지 않습니다.
             </Small>
             {llmProvider !== "custom" ? (
               <>

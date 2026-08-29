@@ -144,9 +144,11 @@ export function createSelfHostedProvider(
       if (model) parameters.model = model;
       if (options.initialPrompt) parameters.prompt = options.initialPrompt;
       // 화자 분리 — 콜랩 노트만 이해한다. 다른 서버는 모르는 필드를 무시한다.
-      if (extras?.diarize && extras.hfToken) {
+      // 토큰은 보통 콜랩 '보안 비밀'(HF_TOKEN)에 있으므로 켜짐 신호만 보낸다.
+      // 기기에 남아 있는 옛 토큰이 있으면 예비로 함께 싣는다.
+      if (extras?.diarize) {
         parameters.diarize = "1";
-        parameters.hf_token = extras.hfToken;
+        if (extras.hfToken) parameters.hf_token = extras.hfToken;
       }
 
       const response = await FileSystem.uploadAsync(url, fileUri, {
@@ -289,9 +291,11 @@ export function createSelfHostedProvider(
               // %가 안 움직이는 구간의 이유를 말해 준다 — 모델 준비와 화자 분리.
               status.stage === "model"
                 ? "서버가 모델을 준비 중입니다 (처음 한 번, 몇 분)"
-                : status.stage === "diarize"
-                  ? "서버가 화자를 나누는 중입니다 (몇 분)"
-                  : undefined,
+                : status.stage === "align"
+                  ? "단어 시각을 정렬하는 중입니다"
+                  : status.stage === "diarize"
+                    ? "서버가 화자를 나누는 중입니다 (몇 분)"
+                    : undefined,
             );
           }
         }
@@ -314,6 +318,186 @@ export function createSelfHostedProvider(
       return { segments, durationSec: json.duration ?? 0, partial: partialNote };
     },
   };
+}
+
+/**
+ * 구글 Gemini 직접 전사 — 서버도 노트도 없이 API 키 하나로.
+ *
+ * 휘스퍼 경로(콜랩·PC)와는 완전히 다른 물건이다: 전용 전사 모델이 아니라
+ * 멀티모달 LLM 에 음성을 통째로 주고 구조화된 전사(JSON)를 받아 낸다.
+ * 화자 라벨까지 같이 붙여 주는 대신, **시각은 모델의 추정치**라 재생 위치가
+ * 몇 초씩 어긋날 수 있다 — 화면에도 그렇게 적는다.
+ *
+ * 개인정보에 대해 정직하게: 기록 음성이 구글 Gemini 서버로 간다. 특히
+ * **무료 티어는 입력이 구글의 모델 개선에 쓰일 수 있다** — 병동 음성이면
+ * 유료(청구 연결) 계정을 권한다. 설정 화면이 이 말을 그대로 한다.
+ */
+const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
+
+export function createGeminiProvider(apiKey: string, model: string): AsrProvider {
+  return {
+    id: `gemini:${model}`,
+    // Gemini 는 화자 라벨을 함께 낸다. 단어 시각은 못 준다.
+    capabilities: { diarization: true, wordTimestamps: false },
+    async transcribe(fileUri, options, onProgress) {
+      const FileSystem = await import("expo-file-system/legacy");
+      const info = await FileSystem.getInfoAsync(fileUri);
+      const size = info.exists && "size" in info ? (info.size ?? 0) : 0;
+      if (size <= 0) throw new Error("기록 파일을 읽을 수 없습니다.");
+      const mime = /\.wav$/i.test(fileUri) ? "audio/wav" : "audio/mp4";
+
+      // 1) 재개형 업로드를 연다. 인라인(base64)은 20MB 상한이라 못 쓴다.
+      onProgress?.(2, "구글에 기록을 올리는 중");
+      const start = await fetch(`${GEMINI_API.replace("/v1beta", "/upload/v1beta")}/files?key=${apiKey}`, {
+        method: "POST",
+        headers: {
+          "x-goog-upload-protocol": "resumable",
+          "x-goog-upload-command": "start",
+          "x-goog-upload-header-content-length": String(size),
+          "x-goog-upload-header-content-type": mime,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ file: { display_name: `nsr-${Date.now()}` } }),
+      });
+      if (!start.ok) throw new Error(await geminiError(start, "업로드 시작"));
+      const uploadUrl = start.headers.get("x-goog-upload-url");
+      if (!uploadUrl) throw new Error("Gemini 업로드 주소를 받지 못했습니다.");
+
+      // 2) 파일 본문을 올린다. 진행률은 여기(0~40%)가 대부분이다.
+      const task = FileSystem.createUploadTask(
+        uploadUrl,
+        fileUri,
+        {
+          httpMethod: "POST",
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: {
+            "content-length": String(size),
+            "x-goog-upload-offset": "0",
+            "x-goog-upload-command": "upload, finalize",
+          },
+        },
+        (p) => {
+          if (p.totalBytesExpectedToSend > 0) {
+            const ratio = p.totalBytesSent / p.totalBytesExpectedToSend;
+            onProgress?.(Math.round(2 + ratio * 38), "구글에 기록을 올리는 중");
+          }
+        },
+      );
+      const uploaded = await task.uploadAsync();
+      if (!uploaded || uploaded.status < 200 || uploaded.status >= 300) {
+        throw new Error(`Gemini 업로드 실패 (${uploaded?.status ?? "?"}).`);
+      }
+      const fileMeta = (JSON.parse(uploaded.body) as {
+        file?: { name?: string; uri?: string; state?: string };
+      }).file;
+      if (!fileMeta?.uri || !fileMeta.name) throw new Error("Gemini 가 업로드를 접수하지 않았습니다.");
+
+      try {
+        // 3) 파일 처리 완료 대기.
+        onProgress?.(45, "구글이 파일을 준비하는 중");
+        let state = fileMeta.state ?? "PROCESSING";
+        const stateDeadline = Date.now() + 5 * 60 * 1000;
+        while (state === "PROCESSING") {
+          if (Date.now() > stateDeadline) throw new Error("Gemini 파일 준비가 5분을 넘겼습니다.");
+          await new Promise((r) => setTimeout(r, 2000));
+          const check = await fetch(`${GEMINI_API}/${fileMeta.name}?key=${apiKey}`);
+          if (!check.ok) throw new Error(await geminiError(check, "파일 상태 확인"));
+          state = ((await check.json()) as { state?: string }).state ?? "ACTIVE";
+        }
+        if (state !== "ACTIVE") throw new Error("Gemini 가 이 오디오 형식을 처리하지 못했습니다.");
+
+        // 4) 전사 요청 — 구조화 출력(JSON 배열)으로 강제한다.
+        onProgress?.(55, "Gemini가 전사 중입니다 — 진행률 없이 몇 분 걸립니다");
+        const prompt =
+          "이 음성은 한국 병원 병동의 근무 중 대화 기록이다. 전체를 한국어로 전사하라.\n" +
+          "- 문장 단위로 나누고, 각 항목에 시작(start)·끝(end) 시각을 초 단위 숫자로 붙여라.\n" +
+          '- 목소리가 다른 사람마다 화자 라벨(speaker)을 "S1", "S2" 식으로 일관되게 붙여라.\n' +
+          "- 들리는 그대로 적어라. 요약하거나 문장을 다듬거나 빼놓지 마라.\n" +
+          (options.initialPrompt ? `- 자주 나오는 용어: ${options.initialPrompt}\n` : "");
+        const gen = await fetch(`${GEMINI_API}/models/${model}:generateContent?key=${apiKey}`, {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({
+            contents: [
+              {
+                role: "user",
+                parts: [
+                  { file_data: { file_uri: fileMeta.uri, mime_type: mime } },
+                  { text: prompt },
+                ],
+              },
+            ],
+            generationConfig: {
+              temperature: options.temperature,
+              response_mime_type: "application/json",
+              response_schema: {
+                type: "ARRAY",
+                items: {
+                  type: "OBJECT",
+                  properties: {
+                    start: { type: "NUMBER" },
+                    end: { type: "NUMBER" },
+                    speaker: { type: "STRING" },
+                    text: { type: "STRING" },
+                  },
+                  required: ["start", "end", "text"],
+                },
+              },
+              max_output_tokens: 65536,
+            },
+          }),
+        });
+        if (!gen.ok) throw new Error(await geminiError(gen, "전사"));
+        const data = (await gen.json()) as {
+          candidates?: {
+            content?: { parts?: { text?: string }[] };
+            finishReason?: string;
+          }[];
+        };
+        const cand = data.candidates?.[0];
+        const raw = (cand?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+        let parsed: { start: number; end: number; speaker?: string; text: string }[];
+        try {
+          parsed = JSON.parse(raw) as typeof parsed;
+        } catch {
+          throw new Error(
+            cand?.finishReason === "MAX_TOKENS"
+              ? "기록이 너무 길어 Gemini 응답이 잘렸습니다. 30분 분할 기록을 쓰거나 콜랩으로 전사하십시오."
+              : "Gemini 응답을 해석하지 못했습니다. 다시 시도해 보십시오.",
+          );
+        }
+        const segments = parsed
+          .filter((s) => s.text?.trim())
+          .map((s) => ({
+            startSec: Math.max(0, Number(s.start) || 0),
+            endSec: Math.max(0, Number(s.end) || 0),
+            text: s.text.trim(),
+            speakerId: s.speaker?.trim() || undefined,
+          }));
+        if (segments.length === 0) throw new Error("Gemini 가 전사 내용을 돌려주지 않았습니다.");
+        onProgress?.(100);
+        return { segments, durationSec: segments[segments.length - 1].endSec };
+      } finally {
+        // 올린 파일은 48시간 뒤 자동 삭제되지만, 병동 음성은 바로 지운다.
+        try {
+          await fetch(`${GEMINI_API}/${fileMeta.name}?key=${apiKey}`, { method: "DELETE" });
+        } catch {
+          // 삭제 실패는 결과에 영향이 없다 — 48시간 자동 삭제가 받쳐 준다.
+        }
+      }
+    },
+  };
+}
+
+async function geminiError(res: Response, doing: string): Promise<string> {
+  const detail = await res.text().catch(() => "");
+  if (res.status === 400 && detail.includes("API_KEY")) {
+    return "Gemini API 키가 올바르지 않습니다. 설정 → 전사의 Gemini 카드에서 확인하십시오.";
+  }
+  if (res.status === 429) {
+    return "Gemini 무료 한도를 넘었습니다. 잠시 뒤 다시 하거나, 결제를 연결하거나, 콜랩으로 전사하십시오.";
+  }
+  return `Gemini ${doing} 오류 ${res.status}: ${detail.slice(0, 200)}`;
 }
 
 /**
@@ -492,11 +676,25 @@ export async function resolveProvider(): Promise<AsrProvider> {
     endpoint: string;
     apiKey?: string;
     model?: string;
+    mode?: string;
+    geminiModel?: string;
     diarize?: boolean;
   }>(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" });
+
+  if (cloud.mode === "gemini") {
+    const { getApiKey } = await import("./llm");
+    const key = await getApiKey("gemini");
+    if (!key) {
+      throw new Error(
+        "Gemini API 키가 없습니다. 설정 → 전사의 Gemini 카드에서 키를 넣어 주십시오.",
+      );
+    }
+    return createGeminiProvider(key, cloud.geminiModel?.trim() || "gemini-2.5-flash");
+  }
+
   if (!cloud.endpoint) {
     throw new Error(
-      "전사 서버가 연결되어 있지 않습니다. 설정 → 전사에서 콜랩(무료 GPU) 또는 내 컴퓨터를 연결하십시오.",
+      "전사 서버가 연결되어 있지 않습니다. 설정 → 전사에서 콜랩(무료 GPU)·내 컴퓨터·Gemini 중 하나를 연결하십시오.",
     );
   }
   const hfToken = cloud.diarize ? await getHfToken() : null;

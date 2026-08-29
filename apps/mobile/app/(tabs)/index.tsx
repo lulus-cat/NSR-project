@@ -345,9 +345,17 @@ export default function Home() {
       if (!map.has(date)) map.set(date, taeumTemperature(sc.score));
     }
     setTemps(map);
-    // 전사는 서버(콜랩·내 컴퓨터)가 한다. 주소가 없으면 연결부터 안내한다.
-    const server = await getSetting<{ endpoint?: string }>(SETTINGS_KEYS.cloudTranscription, {});
-    setNeedsServer(!server.endpoint);
+    // 전사는 서버(콜랩·내 컴퓨터)나 Gemini가 한다. 준비가 안 됐으면 연결부터 안내한다.
+    const server = await getSetting<{ endpoint?: string; mode?: string }>(
+      SETTINGS_KEYS.cloudTranscription,
+      {},
+    );
+    if (server.mode === "gemini") {
+      const { getApiKey } = await import("../../src/services/llm");
+      setNeedsServer(!(await getApiKey("gemini")));
+    } else {
+      setNeedsServer(!server.endpoint);
+    }
     // 마지막 전사가 끝났는데 아직 결과를 안 열어봤으면 알려 준다.
     const last = await getSetting<{ shiftId?: string; sentences?: number; seen?: boolean }>(
       "transcribe.lastResult",
@@ -531,7 +539,7 @@ export default function Home() {
               <DashedDivider />
               <BriefRow
                 icon="cloud-outline"
-                label="전사 서버를 연결해 주십시오."
+                label="전사 방법을 설정해 주십시오."
                 value="연결"
                 valueColor={t.warn}
                 onPress={() => router.push("/models")}

@@ -29,7 +29,7 @@ const PARTS = [
 ];
 
 /**
- * 전사 방식 — 설정 → 전사 화면과 같은 두 갈래다. 온보딩과 설정이 다른 말을
+ * 전사 방식 — 설정 → 전사 화면과 같은 갈래다. 온보딩과 설정이 다른 말을
  * 하면 사용자는 둘 다 못 믿는다. 여기서 고른 모드가 그 화면의 기본값이 된다.
  */
 const METHOD_CHOICES = [
@@ -42,6 +42,11 @@ const METHOD_CHOICES = [
     key: "pc",
     title: "내 컴퓨터 (PC·노트북)",
     body: "같은 Wi-Fi의 내 컴퓨터가 전사합니다. 기록 음성이 집 밖으로 나가지 않습니다.",
+  },
+  {
+    key: "gemini",
+    title: "Gemini (구글 AI, 서버 없이)",
+    body: "API 키 하나면 콜랩도 컴퓨터도 필요 없습니다. 키 발급은 설정 → 전사에서 안내합니다.",
   },
   {
     key: "later",
@@ -279,8 +284,9 @@ export default function Onboarding() {
   어디서 전사할지 선택하십시오.
 </Text>
             <Small>
-              전사는 폰이 아니라 콜랩(무료 GPU) 또는 내 컴퓨터가 합니다. 기록 음성이
-              선택한 곳으로 전송됩니다. 여기서 고르면 설정 → 전사에 기본으로 잡힙니다.
+              전사는 폰이 아니라 콜랩(무료 GPU)·내 컴퓨터 또는 Gemini(구글 AI)가
+              합니다. 기록 음성이 선택한 곳으로 전송됩니다. 여기서 고르면 설정 →
+              전사에 기본으로 잡힙니다.
             </Small>
             {METHOD_CHOICES.map((m) => {
               const on = model === m.key;
@@ -297,7 +303,7 @@ export default function Onboarding() {
               label="다음"
               tone="primary"
               onPress={async () => {
-                if (model === "colab" || model === "pc") {
+                if (model === "colab" || model === "pc" || model === "gemini") {
                   // 설정 → 전사 화면이 이 모드로 열린다. 주소는 거기서 잇는다.
                   await setSetting(SETTINGS_KEYS.cloudTranscription, {
                     enabled: false,

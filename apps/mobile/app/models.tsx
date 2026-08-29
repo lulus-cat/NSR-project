@@ -1,11 +1,12 @@
 /**
- * 전사 설정 — 어디서(콜랩/내 컴퓨터), 어떤 모델로 전사할지 고르는 화면.
+ * 전사 설정 — 어디서(콜랩/내 컴퓨터/Gemini), 어떤 모델로 전사할지 고르는 화면.
  *
  * 폰 전사는 없앴다. 8시간 근무 기록을 폰이 삭이려면 몇 시간씩 걸리고
- * 뜨거워지는데, 그 시간을 견딜 만큼 정확하지도 않았다. 남은 경로는 둘이고,
- * 이 화면의 첫 번째 일은 **그 둘을 헷갈리지 않게 가르는 것**이다 —
+ * 뜨거워지는데, 그 시간을 견딜 만큼 정확하지도 않았다. 남은 경로는 셋이고,
+ * 이 화면의 첫 번째 일은 **서로 헷갈리지 않게 가르는 것**이다 —
  * 예전엔 한 카드에 도커·콜랩·모델 버튼이 뒤섞여 있어서, 콜랩을 쓰는
- * 사람이 PC 용 버튼을 누르고 왜 안 바뀌는지 알 수 없었다.
+ * 사람이 PC 용 버튼을 누르고 왜 안 바뀌는지 알 수 없었다. Gemini 는
+ * 휘스퍼 서버와 아예 다른 물건이라 카드 자체를 따로 두었다.
  *
  * 모델 선택은 모드와 무관하게 같은 문법이다: 목록에서 누르면 그 모델이
  * 선택되고, 다음 전사 요청에 model 파라미터로 실려 간다. 콜랩 노트는
@@ -24,10 +25,10 @@ import {
 import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/ui";
 import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
-import { getHfToken, setHfToken } from "../src/services/asr";
+import { getApiKey, setApiKey } from "../src/services/llm";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 
-type ServerMode = "colab" | "pc";
+type ServerMode = "colab" | "pc" | "gemini";
 
 interface ServerAsr {
   enabled: boolean;
@@ -37,6 +38,8 @@ interface ServerAsr {
   mode?: ServerMode;
   /** 모드별로 기억해 두는 주소 — 모드를 오가도 붙여넣은 주소가 안 날아간다. */
   endpoints?: Partial<Record<ServerMode, string>>;
+  /** Gemini 직접 전사에서 쓸 모델 id. 휘스퍼 모델(model)과는 다른 세계라 따로 둔다. */
+  geminiModel?: string;
   /** 화자 분리(pyannote) — 콜랩 노트만 지원한다. 토큰은 보안 저장소에 따로 둔다. */
   diarize?: boolean;
 }
@@ -145,11 +148,9 @@ export default function TranscriptionSetup() {
   const [check, setCheck] = useState<
     { state: "idle" } | { state: "checking" } | { state: "done"; ok: boolean; message: string }
   >({ state: "idle" });
-  // 화자 분리 토큰. 값은 보안 저장소에만 있고, 화면에는 있는지 여부만 띄운다.
-  const [hasHfToken, setHasHfToken] = useState(false);
-  const [tokenInput, setTokenInput] = useState("");
-  const [tokenNotice, setTokenNotice] = useState<string | null>(null);
-
+  // Gemini 키 — 보조 기능과 같은 보안 저장소 항목을 쓴다(구글 AI 키는 하나).
+  const [hasGeminiKey, setHasGeminiKey] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
   useEffect(() => {
     void (async () => {
       const saved = await getSetting<ServerAsr>(SETTINGS_KEYS.cloudTranscription, {
@@ -161,7 +162,7 @@ export default function TranscriptionSetup() {
       const endpoints = { ...saved.endpoints };
       if (saved.endpoint && !endpoints[m]) endpoints[m] = saved.endpoint;
       setServer({ ...saved, mode: m, endpoints });
-      setHasHfToken((await getHfToken()) !== null);
+      setHasGeminiKey((await getApiKey("gemini")) !== null);
     })();
   }, []);
 
@@ -172,21 +173,9 @@ export default function TranscriptionSetup() {
     await setSetting(SETTINGS_KEYS.cloudTranscription, stored);
   }, []);
 
-  const saveToken = useCallback(async () => {
-    await setHfToken(tokenInput);
-    const saved = tokenInput.trim().length > 0;
-    setHasHfToken(saved);
-    setTokenInput("");
-    setTokenNotice(
-      saved ? "토큰을 기기 보안 저장소에 넣었습니다." : "토큰을 지웠습니다. 화자 분리도 꺼집니다.",
-    );
-    if (!saved && server.diarize) {
-      await save({ ...server, diarize: false });
-    }
-  }, [save, server, tokenInput]);
 
   const mode = inferMode(server);
-  const models = serverModelsFor(mode);
+  const models = mode === "gemini" ? [] : serverModelsFor(mode);
   // 콜랩은 비워 둬도 노트 기본값이 같은 모델이라, 화면에서는 기본 모델이 선택된 것으로 보여준다.
   const selectedModelId =
     server.model ?? (mode === "colab" ? DEFAULT_COLAB_MODEL_ID : undefined);
@@ -210,7 +199,9 @@ export default function TranscriptionSetup() {
       // 전사를 시도하는 헛걸음이 없도록, 그 모드에서 마지막으로 쓰던 주소로
       // 갈아끼운다. 모델도 모드 목록에 없는 것이면 비운다.
       const keepModel =
-        server.model && serverModelsFor(nextMode).some((m) => m.id === server.model)
+        nextMode !== "gemini" &&
+        server.model &&
+        serverModelsFor(nextMode).some((m) => m.id === server.model)
           ? server.model
           : undefined;
       void save({
@@ -222,6 +213,43 @@ export default function TranscriptionSetup() {
     },
     [mode, save, server],
   );
+
+  const saveGeminiKey = useCallback(async () => {
+    const key = geminiKeyInput.trim();
+    await setApiKey(key || null, "gemini");
+    setHasGeminiKey(key.length > 0);
+    setGeminiKeyInput("");
+    setCheck({
+      state: "done",
+      ok: key.length > 0,
+      message: key ? "키를 기기 보안 저장소에 넣었습니다." : "키를 지웠습니다.",
+    });
+  }, [geminiKeyInput]);
+
+  const checkGemini = useCallback(async () => {
+    const key = await getApiKey("gemini");
+    if (!key) {
+      setCheck({ state: "done", ok: false, message: "키를 먼저 저장하십시오." });
+      return;
+    }
+    setCheck({ state: "checking" });
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${key}`,
+        { signal: controller.signal },
+      );
+      clearTimeout(timer);
+      setCheck(
+        res.ok
+          ? { state: "done", ok: true, message: "연결됐습니다. 이제 기록 화면에서 전사를 누르면 됩니다." }
+          : { state: "done", ok: false, message: `키가 거부됐습니다 (${res.status}). 키를 다시 확인하십시오.` },
+      );
+    } catch {
+      setCheck({ state: "done", ok: false, message: "구글에 연결하지 못했습니다. 네트워크를 확인하십시오." });
+    }
+  }, []);
 
   const checkConnection = useCallback(async () => {
     const base = server.endpoint.trim().replace(/\/+$/, "");
@@ -278,23 +306,31 @@ export default function TranscriptionSetup() {
       <Card>
         <Heading>어디서 전사합니까</Heading>
         <Small>
-          전사는 폰이 아니라 아래 둘 중 한 곳이 합니다. 기록 음성이 선택한 곳으로
-          전송됩니다 — 폰에서는 전송 외에 아무 일도 하지 않습니다.
+          전사는 폰이 아니라 아래 셋 중 한 곳이 합니다. 콜랩·내 컴퓨터는 휘스퍼
+          모델을 돌리는 서버 방식이고, Gemini 는 서버 없이 구글 AI 에 직접 보내는
+          다른 방식입니다. 기록 음성이 선택한 곳으로 전송됩니다.
         </Small>
         <View style={{ flexDirection: "row", gap: space.sm }}>
           <ModeTile
             icon="logo-google"
-            title="구글 콜랩"
-            caption="무료 GPU · 준비 3분 · 컴퓨터 없이"
+            title="콜랩"
+            caption="GPU 노트 · 휘스퍼"
             selected={mode === "colab"}
             onPress={() => switchMode("colab")}
           />
           <ModeTile
             icon="laptop-outline"
             title="내 컴퓨터"
-            caption="같은 Wi-Fi · 음성이 집 밖으로 안 나감"
+            caption="같은 Wi-Fi · 휘스퍼"
             selected={mode === "pc"}
             onPress={() => switchMode("pc")}
+          />
+          <ModeTile
+            icon="sparkles-outline"
+            title="Gemini"
+            caption="API 키 하나 · 서버 없이"
+            selected={mode === "gemini"}
+            onPress={() => switchMode("gemini")}
           />
         </View>
       </Card>
@@ -334,7 +370,7 @@ export default function TranscriptionSetup() {
             </Text>
           ) : null}
         </Card>
-      ) : (
+      ) : mode === "pc" ? (
         <Card tone="accent">
           <Heading>내 컴퓨터 연결</Heading>
           <Small>
@@ -373,52 +409,40 @@ export default function TranscriptionSetup() {
             </Text>
           ) : null}
         </Card>
-      )}
+      ) : null}
 
-      {/* ── 화자 분리 — 콜랩 전용 ── */}
-      {mode === "colab" ? (
-        <Card>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Heading>화자 분리</Heading>
-            {server.diarize && hasHfToken ? <Badge text="사용 중" tone="ok" /> : null}
-          </View>
+      {/* ── Gemini 직접 전사 — 휘스퍼와 다른 세계라 설정도 따로 논다 ── */}
+      {mode === "gemini" ? (
+        <Card tone="accent">
+          <Heading>Gemini 직접 전사</Heading>
           <Small>
-            전사와 함께 누가 말했는지(화자 1·2·3…)를 자동으로 나눕니다. 기록 화면에서
-            화자별로 역할을 한 번에 지정할 수 있습니다. 전사가 몇 분 더 걸립니다.
+            콜랩도 서버도 없습니다 — 구글 AI 키 하나면 폰이 기록을 Gemini 로 보내
+            전사와 화자 라벨까지 받아 옵니다. 휘스퍼와 다른 방식이라{" "}
+            <Text style={{ fontWeight: "700" }}>시각은 추정치</Text>입니다 — 문장 탭
+            재생 위치가 몇 초 어긋날 수 있습니다.
           </Small>
           <Divider />
-          {!hasHfToken ? (
-            <>
-              <Small muted={false}>준비 (한 번만, 무료 · 약 5분)</Small>
-              <Small>
-                분리 모델(pyannote)은 무료지만 허깅페이스 로그인이 필요합니다. 무료 계정을
-                만들고, 아래 두 모델 페이지에서 &lsquo;동의&rsquo;를 누른 뒤, 토큰을 만들어
-                붙여넣으십시오.
-              </Small>
-              <Button
-                label="1. 분리 모델 페이지 열기 (동의)"
-                onPress={() =>
-                  void Linking.openURL("https://huggingface.co/pyannote/speaker-diarization-3.1")
-                }
-              />
-              <Button
-                label="2. 구간 모델 페이지 열기 (동의)"
-                onPress={() =>
-                  void Linking.openURL("https://huggingface.co/pyannote/segmentation-3.0")
-                }
-              />
-              <Button
-                label="3. 토큰 만들기 (Read 권한)"
-                onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
-              />
-            </>
-          ) : (
-            <Small muted={false}>토큰이 보안 저장소에 있습니다. 바꾸려면 새로 붙여넣으십시오.</Small>
-          )}
+          <Small muted={false}>알고 쓰십시오</Small>
+          <Small>
+            기록 음성이 구글 Gemini 서버로 전송됩니다.{" "}
+            <Text style={{ fontWeight: "700" }}>
+              무료 티어는 입력이 구글의 모델 개선에 쓰일 수 있습니다
+            </Text>{" "}
+            — 병동 음성이라면 결제를 연결한(유료) 키를 권합니다. 올린 파일은 전사
+            직후 앱이 지웁니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>
+            1. API 키{hasGeminiKey ? " — 저장돼 있습니다" : ""}
+          </Small>
+          <Button
+            label="키 발급 열기 (aistudio.google.com)"
+            onPress={() => void Linking.openURL("https://aistudio.google.com/apikey")}
+          />
           <TextInput
-            value={tokenInput}
-            onChangeText={setTokenInput}
-            placeholder="hf_로 시작하는 토큰 붙여넣기"
+            value={geminiKeyInput}
+            onChangeText={setGeminiKeyInput}
+            placeholder="AIza… 키 붙여넣기"
             placeholderTextColor={t.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -426,12 +450,74 @@ export default function TranscriptionSetup() {
             style={input}
           />
           <Button
-            label={hasHfToken && tokenInput.trim().length === 0 ? "토큰 지우기" : "토큰 저장"}
-            tone={hasHfToken && tokenInput.trim().length === 0 ? "default" : "primary"}
-            onPress={() => void saveToken()}
+            label={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "키 지우기" : "키 저장"}
+            tone={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "default" : "primary"}
+            onPress={() => void saveGeminiKey()}
           />
-          {tokenNotice ? <Small muted={false}>{tokenNotice}</Small> : null}
+          <Small>
+            키는 기기 보안 저장소에만 보관되고, 설정 → 보조 기능의 Gemini 와 같은
+            키를 씁니다.
+          </Small>
           <Divider />
+          <Small muted={false}>2. 모델</Small>
+          <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
+            {[
+              ["gemini-2.5-flash", "기본 — 무료 한도 넉넉"],
+              ["gemini-2.5-pro", "가장 정확"],
+            ].map(([id, hint]) => {
+              const on = (server.geminiModel?.trim() || "gemini-2.5-flash") === id;
+              return (
+                <Pressable
+                  key={id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  onPress={() => void save({ ...server, geminiModel: id })}
+                  style={{
+                    paddingVertical: space.xs,
+                    paddingHorizontal: space.md,
+                    borderRadius: radius.sm,
+                    backgroundColor: on ? t.accent : t.surfaceAlt,
+                    minHeight: 36,
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={[type.caption, { color: on ? "#FFFFFF" : t.text }]}>
+                    {id} · {hint}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextInput
+            value={server.geminiModel ?? ""}
+            onChangeText={(geminiModel) => void save({ ...server, geminiModel })}
+            placeholder="모델 id 직접 입력 (새 모델이 나오면)"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={input}
+          />
+          <Divider />
+          <Button
+            label={check.state === "checking" ? "확인 중" : "연결 확인"}
+            busy={check.state === "checking"}
+            onPress={() => void checkGemini()}
+          />
+          {check.state === "done" ? (
+            <Text style={[type.small, { color: check.ok ? t.ok : t.danger, fontWeight: "600" }]}>
+              {check.message}
+            </Text>
+          ) : null}
+          <Small>
+            2시간이 넘는 통짜 기록은 응답이 잘릴 수 있습니다 — 그런 기록은 콜랩이
+            안전합니다.
+          </Small>
+        </Card>
+      ) : null}
+
+      {/* ── 화자 분리 — 콜랩 전용. 준비는 앱이 아니라 콜랩 쪽에서 한 번만 ── */}
+      {mode === "colab" ? (
+        <Card>
           <View
             style={{
               flexDirection: "row",
@@ -442,19 +528,48 @@ export default function TranscriptionSetup() {
           >
             <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>화자 분리 사용</Text>
             <Switch
-              value={!!server.diarize && hasHfToken}
-              disabled={!hasHfToken}
+              value={!!server.diarize}
               onValueChange={(v) => void save({ ...server, diarize: v })}
             />
           </View>
           <Small>
-            토큰과 기록 음성은 <Text style={{ fontWeight: "700" }}>내가 띄운 콜랩 서버로만</Text>{" "}
-            전송됩니다. 토큰은 기기 보안 저장소(키체인)에 보관되고 설정·로그에 남지 않습니다.
+            전사와 함께 누가 말했는지(화자 1·2·3…)를 자동으로 나눕니다 — 문장 중간에
+            화자가 바뀌어도 단어 단위로 경계를 맞춥니다. 기록 화면에서 화자별 역할을
+            한 번에 지정할 수 있고, 전사가 몇 분 더 걸립니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>준비는 콜랩 쪽에서 한 번만 (무료 · 약 5분)</Small>
+          <Small>
+            앱에는 넣을 것이 없습니다. 허깅페이스 토큰을{" "}
+            <Text style={{ fontWeight: "700" }}>콜랩 왼쪽 열쇠 아이콘(보안 비밀)</Text>에
+            &lsquo;HF_TOKEN&rsquo;으로 한 번 저장해 두면 노트가 세션마다 알아서
+            읽습니다. 아래 순서대로 — 노트를 실행하면 같은 안내가 출력됩니다.
+          </Small>
+          <Button
+            label="1. 분리 모델 동의 (huggingface)"
+            onPress={() =>
+              void Linking.openURL("https://huggingface.co/pyannote/speaker-diarization-3.1")
+            }
+          />
+          <Button
+            label="2. 구간 모델 동의 (huggingface)"
+            onPress={() =>
+              void Linking.openURL("https://huggingface.co/pyannote/segmentation-3.0")
+            }
+          />
+          <Button
+            label="3. 토큰 발급 (Read) → 콜랩 보안 비밀에 저장"
+            onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
+          />
+          <Small>
+            준비가 안 된 채 켜면 그 전사는 화자 없이 전사만 돌아옵니다 — 실패하지
+            않습니다.
           </Small>
         </Card>
       ) : null}
 
-      {/* ── 모델 선택: 모드가 무엇이든 같은 문법 ── */}
+      {/* ── 모델 선택(휘스퍼 경로): 콜랩·PC 는 같은 문법, Gemini 는 자기 카드에서 ── */}
+      {mode !== "gemini" ? (
       <Card>
         <Heading>전사 모델</Heading>
         <Small>
@@ -506,6 +621,8 @@ export default function TranscriptionSetup() {
           </>
         ) : null}
       </Card>
+
+      ) : null}
 
       <Card>
         <Small>
