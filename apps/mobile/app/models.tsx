@@ -354,7 +354,11 @@ export default function TranscriptionSetup() {
           <Divider />
           <Small muted={false}>1. 콜랩 노트를 열고 &lsquo;런타임 → 모두 실행&rsquo;</Small>
           <Button label="콜랩 노트 열기" tone="primary" onPress={() => void Linking.openURL(COLAB_NOTEBOOK_URL)} />
-          <Small muted={false}>2. 마지막 셀에 나온 주소를 통째로 붙여넣기</Small>
+          <Small muted={false}>
+            2. 마지막 셀의 &lsquo;NSR 앱에 연결&rsquo; 버튼(컴퓨터라면 QR 스캔)을 누르면
+            주소가 자동으로 저장됩니다
+          </Small>
+          <Small>버튼이 안 되면 그때만 주소를 복사해 아래에 붙여넣으십시오.</Small>
           <TextInput
             value={server.endpoint}
             onChangeText={setEndpoint}
