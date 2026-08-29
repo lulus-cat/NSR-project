@@ -23,6 +23,13 @@ describe("서버 모델 목록", () => {
     }
   });
 
+  it("무료 콜랩 목록에 램을 넘기는 float32 원본이 없다", () => {
+    // 실사용에서 3.2GB float32 적재가 세션을 죽였다 — pc 전용으로 밀어냈다.
+    for (const m of serverModelsFor("colab")) {
+      expect(m.where, m.id).not.toBe("pc");
+    }
+  });
+
   it("요약은 화면 규칙대로 딱 한 문장이다", () => {
     for (const m of SERVER_MODELS) {
       // 마침표로 끝나는 문장이 하나뿐이어야 한다.
@@ -33,13 +40,12 @@ describe("서버 모델 목록", () => {
 
   it("PC 목록에는 콜랩 전용(릴리스 미러) 모델이 없다", () => {
     const pc = serverModelsFor("pc");
-    expect(pc.every((m) => m.where === "any")).toBe(true);
+    expect(pc.every((m) => m.where !== "colab")).toBe(true);
     expect(pc.length).toBeGreaterThan(0);
   });
 
-  it("콜랩 목록에는 전부 있고 기본 모델이 맨 위다", () => {
+  it("콜랩 목록의 맨 위는 기본 모델이다", () => {
     const colab = serverModelsFor("colab");
-    expect(colab.length).toBe(SERVER_MODELS.length);
     expect(colab[0].id).toBe(DEFAULT_COLAB_MODEL_ID);
   });
 

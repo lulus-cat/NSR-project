@@ -226,16 +226,36 @@ describe("기피 듀티 패턴", () => {
 });
 
 describe("기피 듀티 확장", () => {
-  it("데데데나·나이트 연속·샌드위치 오프를 센다", async () => {
+  it("연속 근무·나이트 연속·샌드위치 오프를 센다", async () => {
     const { dutyPatternStats } = await import("../src/duty/schedule.js");
     const e = (date: string, code: string) => ({ date, code }) as never;
     const stats = dutyPatternStats([
-      e("2026-09-01", "D"), e("2026-09-02", "D"), e("2026-09-03", "D"), e("2026-09-04", "N"), // 데데데나
-      e("2026-09-05", "N"), e("2026-09-06", "N"),                                              // 나이트 3연속
+      e("2026-09-01", "D"), e("2026-09-02", "D"), e("2026-09-03", "D"), e("2026-09-04", "D"), // 데데데데
+      e("2026-09-05", "N"), e("2026-09-06", "N"),                                              // 나이트 2연속
       e("2026-09-07", "OFF"), e("2026-09-08", "N"),                                            // 샌드위치 오프
     ]);
-    expect(stats.dayRunToNight).toBe(1);
-    expect(stats.longestNightRun).toBe(3);
+    expect(stats.sameShiftRun).toBe(1);
+    expect(stats.longestNightRun).toBe(2);
     expect(stats.sandwichOff).toBe(1);
+  });
+
+  it("같은 근무 3연속까지는 세지 않고, 5연속도 한 건이다", async () => {
+    const { dutyPatternStats } = await import("../src/duty/schedule.js");
+    const e = (date: string, code: string) => ({ date, code }) as never;
+    const three = dutyPatternStats([
+      e("2026-09-01", "E"), e("2026-09-02", "E"), e("2026-09-03", "E"), e("2026-09-04", "OFF"),
+    ]);
+    expect(three.sameShiftRun).toBe(0);
+    const five = dutyPatternStats([
+      e("2026-09-01", "E"), e("2026-09-02", "E"), e("2026-09-03", "E"),
+      e("2026-09-04", "E"), e("2026-09-05", "E"),
+    ]);
+    expect(five.sameShiftRun).toBe(1);
+    // 오프 연속은 기피가 아니다 — 쉬는 건 좋은 일이다.
+    const offs = dutyPatternStats([
+      e("2026-09-01", "OFF"), e("2026-09-02", "OFF"), e("2026-09-03", "OFF"),
+      e("2026-09-04", "OFF"), e("2026-09-05", "OFF"),
+    ]);
+    expect(offs.sameShiftRun).toBe(0);
   });
 });

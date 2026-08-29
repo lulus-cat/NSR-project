@@ -14,7 +14,7 @@
  * 그때 남은 파일은 '전사할 기록'으로 되돌아온다.
  */
 
-import { setRecordingState, type RecordingRow } from "../db";
+import { setRecordingState, setSetting, type RecordingRow } from "../db";
 import { processRecording, resolveProvider } from "./asr";
 import { logDebug } from "./debug";
 import { beginWork, notifyDone, notifyProgress } from "./progress-notify";
@@ -92,6 +92,7 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
     try {
       const { File } = await import("expo-file-system");
       const provider = await resolveProvider();
+      let sentenceTotal = 0;
       for (let i = 0; i < files.length; i++) {
         const rec = files[i];
         emit({ fileIndex: i + 1, percent: Math.round((i / files.length) * 100) });
@@ -106,7 +107,7 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
           `전사 중 ${state.percent}%`,
           `파일 ${i + 1}/${files.length} · 화면을 닫아도 계속됩니다`,
         );
-        await processRecording(rec, provider, (filePct, note) => {
+        sentenceTotal += await processRecording(rec, provider, (filePct, note) => {
           const overall = Math.round(((i + filePct / 100) / files.length) * 100);
           if (overall !== state.percent || (note ?? null) !== state.note) {
             emit({ percent: overall, note: note ?? null });
@@ -124,6 +125,14 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
         missing > 0
           ? `기록 ${doneCount}건 전사 완료 · ${missing}건은 파일이 사라져 건너뜀`
           : `기록 ${doneCount}건을 전사했습니다.`;
+      // 앱 안 알림 — 홈의 기록 폴더가 이 값을 읽어 '새 전사 결과'를 띄운다.
+      // 전사 결과 화면을 열면 seen 이 된다.
+      await setSetting("transcribe.lastResult", {
+        shiftId,
+        sentences: sentenceTotal,
+        at: Date.now(),
+        seen: false,
+      });
       emit({
         running: false,
         percent: 100,

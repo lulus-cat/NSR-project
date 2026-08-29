@@ -210,6 +210,30 @@ export async function pendingTranscriptions(): Promise<RecordingRow[]> {
   );
 }
 
+/** 학습 탭의 파일별 전사 목록 — 전사가 끝난 기록과 그 문장 수. */
+export interface TranscribedRecordingRow {
+  id: string;
+  shift_id: string | null;
+  started_at: number;
+  duration_sec: number;
+  sentences: number;
+}
+
+export async function listTranscribedRecordings(
+  limit = 100,
+): Promise<TranscribedRecordingRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<TranscribedRecordingRow>(
+    `SELECT r.id, r.shift_id, r.started_at, r.duration_sec,
+            (SELECT COUNT(*) FROM segments s WHERE s.recording_id = r.id) AS sentences
+       FROM recordings r
+      WHERE r.state = 'transcribed'
+      ORDER BY r.started_at DESC
+      LIMIT ?`,
+    [limit],
+  );
+}
+
 /** 보관기간이 지난 녹음의 파일 경로를 돌려주고 행을 지운다. 파일 삭제는 호출부가 한다. */
 export async function expireRecordings(olderThan: number): Promise<string[]> {
   const db = await getDb();
@@ -318,6 +342,16 @@ export async function saveSegments(
       }
     }
   });
+}
+
+/** 근무 화면의 요약용 — 수천 문장을 다 읽지 않고 개수만 센다. */
+export async function countSegments(shiftId: string): Promise<number> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM segments WHERE shift_id = ?",
+    [shiftId],
+  );
+  return row?.n ?? 0;
 }
 
 export async function listSegments(shiftId: string): Promise<TranscriptSegment[]> {

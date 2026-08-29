@@ -32,9 +32,10 @@ export interface ServerAsrModel {
   /**
    * 어디서 쓸 수 있는가.
    * "colab": 우리 콜랩 노트 전용(깃허브 릴리스 미러라서 허깅페이스에 없다).
+   * "pc": 내 컴퓨터 전용 — 무료 콜랩 램(12.7GB)에는 위험한 float32 원본.
    * "any": 허깅페이스 공개 저장소라 콜랩·speaches 등 어디서든 받아진다.
    */
-  where: "colab" | "any";
+  where: "colab" | "pc" | "any";
   /** 대략의 내려받기 크기(GB). 서버가 받는 것이지 폰이 받는 게 아니다. */
   approxGb: number;
 }
@@ -53,11 +54,21 @@ export const SERVER_MODELS: ServerAsrModel[] = [
     approxGb: 1.5,
   },
   {
-    id: "ghost613/faster-whisper-large-v3-turbo-korean",
-    name: "한국어 Large v3 Turbo",
+    // ghost613 원본은 float32(3.2GB)라 무료 콜랩 램을 넘겼다 — fp16 으로
+    // 변환해 우리 Releases 에 미러한 판이다. 같은 가중치, 절반 크기.
+    id: "nsr-korean-large-turbo",
+    name: "NSR 한국어 Large v3 Turbo",
     summary:
-      "한국어 낭독 음성으로 재학습된 대형 모델이라 또렷한 발음에 강하지만, 대화체 정확도 실측은 공개돼 있지 않습니다.",
-    where: "any",
+      "한국어 낭독 음성으로 재학습된 대형 모델이라 또렷한 발음에 강하며, fp16 축소판이라 무료 콜랩 램에서도 안전합니다.",
+    where: "colab",
+    approxGb: 1.5,
+  },
+  {
+    id: "ghost613/faster-whisper-large-v3-turbo-korean",
+    name: "한국어 Large v3 Turbo (원본)",
+    summary:
+      "위와 같은 모델의 float32 원본으로, 무료 콜랩 램(12.7GB)을 넘길 수 있어 내 컴퓨터 전용입니다.",
+    where: "pc",
     approxGb: 3.2,
   },
   {
@@ -95,5 +106,5 @@ export function getServerModel(id: string): ServerAsrModel | undefined {
 
 /** 이 모드에서 고를 수 있는 모델 목록. */
 export function serverModelsFor(mode: "colab" | "pc"): ServerAsrModel[] {
-  return mode === "colab" ? SERVER_MODELS : SERVER_MODELS.filter((m) => m.where === "any");
+  return SERVER_MODELS.filter((m) => m.where === "any" || m.where === mode);
 }

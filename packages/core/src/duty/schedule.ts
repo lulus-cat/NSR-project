@@ -93,8 +93,8 @@ export interface DutyPatternStats {
   evday: number;
   /** 근무-오프-근무-오프가 4일 이상 이어지는 구간 수. 리듬이 못 잡힌다. */
   pongdang: number;
-  /** 데이 3연속 이상 직후 나이트("데데데나"류). 아침 리듬에 맞춰 놓고 밤으로 뒤집는다. */
-  dayRunToNight: number;
+  /** 같은 근무가 4일 이상 연속("데데데데", "이이이이"). 쉼 없이 갈리는 배치다. */
+  sameShiftRun: number;
   /** 나이트 최장 연속 일수. 작성 원칙상 3일을 넘기지 않는 것이 통례다. */
   longestNightRun: number;
   /** 나이트-오프-나이트. 가운데 오프가 잠으로 증발하는 배치. */
@@ -115,9 +115,8 @@ export function dutyPatternStats(entries: DutyEntry[]): DutyPatternStats {
 
   let naode = 0;
   let evday = 0;
-  let dayRunToNight = 0;
+  let sameShiftRun = 0;
   let sandwichOff = 0;
-  let dayRun = 0;
   let nightRun = 0;
   let longestNightRun = 0;
   let prevDate: string | null = null;
@@ -129,28 +128,33 @@ export function dutyPatternStats(entries: DutyEntry[]): DutyPatternStats {
     if (e.code === "N" && byDate.get(d1) === "OFF" && byDate.get(d2) === "N") sandwichOff++;
 
     const consecutive = prevDate !== null && nextDay(prevDate) === e.date;
-    dayRun = e.code === "D" ? (consecutive ? dayRun + 1 : 1) : 0;
     nightRun = e.code === "N" ? (consecutive ? nightRun + 1 : 1) : 0;
     longestNightRun = Math.max(longestNightRun, nightRun);
-    if (dayRun === 0 && e.code === "N") {
-      // 어제까지 데이가 3일 이상 이어지다 오늘 나이트로 뒤집힌 경우
-      // (dayRun 은 위에서 이미 0 이 됐으므로 직전 값을 따로 본다)
-    }
     prevDate = e.date;
   }
-  // 데이 연속 뒤 나이트 — 한 번 더 훑는 편이 상태 꼬임 없이 단순하다.
+  // 같은 근무 연속("데데데데", "이이이이") — 4일 이상 이어지는 구간을 센다.
+  // 구간이 끝나는 순간 한 번만 세야 5연속이 2건으로 불지 않는다.
   {
     let run = 0;
+    let prevCode: string | null = null;
     let prev: string | null = null;
+    const isWorking = (code: string): boolean =>
+      (DEFAULT_TEMPLATES[code as ShiftCode] ?? DEFAULT_TEMPLATES.OTHER).isWorking;
+    const flush = (): void => {
+      if (run >= 4 && prevCode !== null && isWorking(prevCode)) sameShiftRun++;
+    };
     for (const e of sorted) {
       const consecutive = prev !== null && nextDay(prev) === e.date;
-      if (e.code === "D") run = consecutive ? run + 1 : 1;
-      else {
-        if (e.code === "N" && consecutive && run >= 3) dayRunToNight++;
-        run = 0;
+      if (consecutive && e.code === prevCode) {
+        run += 1;
+      } else {
+        flush();
+        run = 1;
+        prevCode = e.code;
       }
       prev = e.date;
     }
+    flush();
   }
 
   // 퐁당퐁당: 일-오프가 번갈아 4일 이상 이어지는 구간.
@@ -171,7 +175,7 @@ export function dutyPatternStats(entries: DutyEntry[]): DutyPatternStats {
   }
   if (run >= 4) pongdang++;
 
-  return { naode, evday, pongdang, dayRunToNight, longestNightRun, sandwichOff };
+  return { naode, evday, pongdang, sameShiftRun, longestNightRun, sandwichOff };
 }
 
 // ──────────────────────────────────────────────────────────

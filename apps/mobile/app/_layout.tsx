@@ -170,6 +170,7 @@ function Gate() {
       <Stack.Screen name="ward-dict" options={{ title: "병동 사전" }} />
       <Stack.Screen name="models" options={{ title: "전사 설정" }} />
       <Stack.Screen name="shift/[id]" options={{ title: "근무 기록" }} />
+      <Stack.Screen name="transcript/[id]" options={{ title: "전사 결과" }} />
     </Stack>
     <LaunchOverlay ready />
     </>

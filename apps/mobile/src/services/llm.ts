@@ -214,6 +214,8 @@ const POST_EDIT_SYSTEM = `당신은 한국 병원 병동의 간호 인계 대화
    - 문장 경계와 띄어쓰기
 4. 확신이 없으면 원문을 그대로 두세요. 추측해서 고치는 것이 안 고치는 것보다 나쁩니다.
 5. 개인정보가 [이름], [등록번호] 등으로 가려져 있으면 그대로 둡니다. 복원하려 하지 마세요.
+6. 입력이 여러 줄이면 **줄 수와 순서를 그대로** 유지하세요. 한 줄에 한 문장입니다.
+   줄을 합치거나 나누지 마세요.
 
 출력은 교정된 전사본 본문만. 설명이나 머리말을 붙이지 마세요.`;
 
@@ -263,6 +265,50 @@ export async function postEditTranscript(
     redactedCount: redacted.result.redactedCount,
     cacheHit: (response.usage?.cache_read_input_tokens ?? 0) > 0,
   };
+}
+
+/**
+ * 전사 문장들을 LLM 으로 다듬는다 — Whisper 만으로 감당이 안 되는 문맥 교정.
+ *
+ * 줄 단위 프로토콜: 한 줄에 한 문장을 보내고 같은 줄 수로 돌려받는다.
+ * 줄 수가 어긋난 덩어리는 통째로 버린다 — 어긋난 채 끼워 맞추면 문장이
+ * 밀려서 엉뚱한 자리에 저장된다.
+ *
+ * 개인정보가 든 줄은 다듬지 않는다: 가린 채로 보내고, 돌아온 결과도 버린다.
+ * LLM 출력에는 [이름] 같은 대체 표식이 남는데, 그걸 저장하면 **기기 안의
+ * 원본이 지워진다** — 전사본은 증거라 기기 내 원본은 가리지 않는 것이 규칙이다.
+ */
+export async function polishTranscriptSegments(
+  segments: { id: string; text: string }[],
+  lexicon: Lexicon,
+  onProgress?: (done: number, total: number) => void,
+): Promise<Map<string, string>> {
+  const changed = new Map<string, string>();
+  const CHUNK = 60;
+
+  for (let at = 0; at < segments.length; at += CHUNK) {
+    const part = segments.slice(at, at + CHUNK);
+    // 줄별로 먼저 가려 본다. 가려진 줄(개인정보 포함)은 잠근다.
+    const lines: string[] = [];
+    const locked: boolean[] = [];
+    for (const seg of part) {
+      const one = seg.text.replace(/\n/g, " ");
+      const red = await redactForNetwork(one);
+      lines.push(red.text);
+      locked.push(red.result.redactedCount > 0);
+    }
+
+    const { text } = await postEditTranscript(lines.join("\n"), lexicon);
+    const outLines = text.split("\n");
+    if (outLines.length === part.length) {
+      for (let i = 0; i < part.length; i++) {
+        const next = outLines[i].trim();
+        if (!locked[i] && next && next !== part[i].text) changed.set(part[i].id, next);
+      }
+    }
+    onProgress?.(Math.min(at + CHUNK, segments.length), segments.length);
+  }
+  return changed;
 }
 
 export interface ShiftInsight {

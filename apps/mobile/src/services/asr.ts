@@ -21,6 +21,7 @@ import {
   buildHotwords,
   buildInitialPrompt,
   buildLexicon,
+  collapseRepeatedSentences,
   correctTranscript,
   splitAllIntoSentences,
   generateCards,
@@ -370,7 +371,9 @@ export async function processRecording(
       speakerId: s.speakerId,
       asrConfidence: s.confidence,
     }));
-    const sentences = splitAllIntoSentences(rawSegments);
+    // 같은 문장이 세 번 이상 연달아 나오면 디코더 환각으로 보고 접는다
+    // ("네. 네. 네." 수십 줄이 1,600문장을 만든 실사례). 재생 구간은 넓혀 둔다.
+    const sentences = collapseRepeatedSentences(splitAllIntoSentences(rawSegments));
 
     // 2) 문장마다 교정한다.
     //

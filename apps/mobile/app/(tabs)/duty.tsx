@@ -473,7 +473,7 @@ export default function Duty() {
                   { label: "이브데이", value: patterns.evday, hint: "이브닝 뒤 바로 데이" },
                   { label: "퐁당퐁당", value: patterns.pongdang, hint: "하루걸러 출근" },
                 ], [
-                  { label: "데데데나", value: patterns.dayRunToNight, hint: "데이 연속 뒤 나이트" },
+                  { label: "연속 근무", value: patterns.sameShiftRun, hint: "같은 근무 4일 이상" },
                   { label: "나이트 연속", value: patterns.longestNightRun, hint: "최장 연속 일수" },
                   { label: "샌드위치 오프", value: patterns.sandwichOff, hint: "나이트-오프-나이트" },
                 ]].map((rowTiles, ri) => (
@@ -499,7 +499,7 @@ export default function Duty() {
                 ))}
               </View>
               ))}
-              {patterns.naode + patterns.evday + patterns.dayRunToNight + patterns.sandwichOff > 0 ||
+              {patterns.naode + patterns.evday + patterns.sameShiftRun + patterns.sandwichOff > 0 ||
               patterns.longestNightRun > 3 ? (
                 <Small>
                   연속 5일이나 나이트 3일을 넘는 일정입니다. 계속되면 근무표를 기록해 두십시오.

@@ -304,6 +304,7 @@ export default function Home() {
   const [pendingShiftId, setPendingShiftId] = useState<string | null>(null);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [needsServer, setNeedsServer] = useState(false);
+  const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [weekStrip, setWeekStrip] = useState<
     { date: string; day: number; code?: string; label?: string }[]
@@ -348,6 +349,16 @@ export default function Home() {
     // 전사는 서버(콜랩·내 컴퓨터)가 한다. 주소가 없으면 연결부터 안내한다.
     const server = await getSetting<{ endpoint?: string }>(SETTINGS_KEYS.cloudTranscription, {});
     setNeedsServer(!server.endpoint);
+    // 마지막 전사가 끝났는데 아직 결과를 안 열어봤으면 알려 준다.
+    const last = await getSetting<{ shiftId?: string; sentences?: number; seen?: boolean }>(
+      "transcribe.lastResult",
+      {},
+    );
+    setNewResult(
+      last.shiftId && !last.seen
+        ? { shiftId: last.shiftId, sentences: last.sentences ?? 0 }
+        : null,
+    );
   }, []);
 
   useEffect(() => {
@@ -485,9 +496,23 @@ export default function Home() {
     {
       key: "records",
       label: "기록",
-      alert: pendingCount > 0 || needsServer,
+      alert: pendingCount > 0 || needsServer || newResult !== null,
       body: (
         <>
+          {newResult ? (
+            <>
+              <BriefRow
+                icon="checkmark-circle-outline"
+                label="새 전사 결과가 나왔습니다."
+                value={`${newResult.sentences}문장 · 보기`}
+                valueColor={t.accent}
+                onPress={() =>
+                  router.push(`/transcript/${encodeURIComponent(newResult.shiftId)}`)
+                }
+              />
+              <DashedDivider />
+            </>
+          ) : null}
           <BriefRow
             icon="document-text-outline"
             label="전사할 기록"

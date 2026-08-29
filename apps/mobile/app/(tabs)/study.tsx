@@ -25,8 +25,10 @@ import {
   listDutyEntries,
   listReviewStates,
   listShiftReports,
+  listTranscribedRecordings,
   saveReviewState,
   type ShiftReportRow,
+  type TranscribedRecordingRow,
 } from "../../src/db";
 import { getSource } from "@nsr/core";
 
@@ -45,7 +47,7 @@ const GRADES: { grade: Grade; label: string; hint: string }[] = [
   { grade: 5, label: "쉬움", hint: "한참 뒤" },
 ];
 
-type Mode = "review" | "sets" | "reports";
+type Mode = "review" | "sets" | "reports" | "transcripts";
 
 /** "2026-08-24:D" → "8월 24일 · 데이" */
 function setTitle(shiftId: string | undefined): string {
@@ -68,19 +70,22 @@ export default function Study() {
   const [nightDays, setNightDays] = useState<Set<number>>(new Set());
   const [done, setDone] = useState(0);
   const [reports, setReports] = useState<ShiftReportRow[]>([]);
+  const [transcripts, setTranscripts] = useState<TranscribedRecordingRow[]>([]);
   const [search, setSearch] = useState("");
   const [openSet, setOpenSet] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [allCards, allStates, dutyEntries, allReports] = await Promise.all([
+    const [allCards, allStates, dutyEntries, allReports, allTranscripts] = await Promise.all([
       listCards(),
       listReviewStates(),
       listDutyEntries(),
       listShiftReports(),
+      listTranscribedRecordings(),
     ]);
     setCards(allCards);
     setStates(allStates);
     setReports(allReports);
+    setTranscripts(allTranscripts);
 
     // 나이트 근무일은 복습을 걸어봐야 못 한다. 그날은 예정일에서 비켜준다.
     const shifts = resolveAll(createSchedule(dutyEntries));
@@ -161,6 +166,7 @@ export default function Study() {
           items={[
             { key: "review", label: queue.length > 0 ? `복습 ${queue.length}` : "복습" },
             { key: "sets", label: "카드 세트" },
+            { key: "transcripts", label: "전사 기록" },
             { key: "reports", label: "근무 보고서" },
             { key: "notes", label: "노트" },
           ]}
@@ -258,6 +264,55 @@ export default function Study() {
         ) : null}
 
         {/* ── 카드 세트 (퀴즐렛 라이브러리) ── */}
+        {/* ── 전사 기록 — 파일별로, 눌러서 결과 화면으로 ── */}
+        {mode === "transcripts" ? (
+          transcripts.length === 0 ? (
+            <Card>
+              <Body muted>
+                전사가 끝난 기록이 아직 없습니다. 근무 기록에서 전사를 실행하면 여기 파일별로
+                쌓입니다.
+              </Body>
+            </Card>
+          ) : (
+            transcripts.map((r) => {
+              const started = new Date(r.started_at);
+              const clock = `${String(started.getHours()).padStart(2, "0")}:${String(started.getMinutes()).padStart(2, "0")}`;
+              return (
+                <Pressable
+                  key={r.id}
+                  accessibilityRole="button"
+                  disabled={!r.shift_id}
+                  onPress={() =>
+                    r.shift_id && router.push(`/transcript/${encodeURIComponent(r.shift_id)}`)
+                  }
+                  style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.98 : 1 }] })}
+                >
+                  <Card>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: space.sm,
+                      }}
+                    >
+                      <Text style={[type.cardTitle, { color: t.text, flexShrink: 1 }]}>
+                        {setTitle(r.shift_id ?? undefined)}
+                      </Text>
+                      <Badge text={`${r.sentences}문장`} tone="muted" />
+                    </View>
+                    <Small>
+                      {clock} 시작
+                      {r.duration_sec > 0 ? ` · ${Math.round(r.duration_sec / 60)}분` : ""} · 눌러서
+                      전사 확인·재생
+                    </Small>
+                  </Card>
+                </Pressable>
+              );
+            })
+          )
+        ) : null}
+
         {mode === "sets" ? (
           <>
             <View
