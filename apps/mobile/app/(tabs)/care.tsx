@@ -25,7 +25,15 @@ import {
   listTaeumScores,
   setSetting,
 } from "../../src/db";
-import { careChat, llmReady, type ChatTurn } from "../../src/services/llm";
+import {
+  buildDeepChatContext,
+  careChat,
+  clinicalChat,
+  llmReady,
+  type ChatTurn,
+} from "../../src/services/llm";
+import { pipelineReady } from "../../src/services/pipeline";
+import { redactForNetwork } from "../../src/services/export";
 
 /**
  * 채팅 — 학습과 마음 돌봄을 한 대화에서.
@@ -133,6 +141,12 @@ export default function Care() {
   const [err, setErr] = useState<string | null>(null);
   const [ready, setReady] = useState<{ ok: boolean; reason?: string } | null>(null);
   const [studyCtx, setStudyCtx] = useState<string | null>(null);
+  // 심층 파이프라인이 켜져 있으면(클로드+제미나이 키) 대화는 5단계 사양을 탄다.
+  const [deepOk, setDeepOk] = useState(false);
+  // 임상 판단 모드(5b) — 수동 버튼으로만 켠다. 자동 전환 없음(사양).
+  const [clinical, setClinical] = useState(false);
+  const [webSearch, setWebSearch] = useState(false);
+  const [reportShiftId, setReportShiftId] = useState<string | undefined>(undefined);
   const scrollRef = useRef<ScrollView>(null);
 
   const load = useCallback(async () => {
@@ -141,11 +155,19 @@ export default function Care() {
     setLatestTemp(scores[0] ? taeumTemperature(scores[0].score) : null);
     setMsgs(await getSetting<Msg[]>(CHAT_SETTING, []));
     setReady(await llmReady());
+    const gate = await pipelineReady();
+    setDeepOk(gate.ok);
 
-    // 학습 컨텍스트 — 최근 보고서 하나 + 암기카드 몇 장을 대화에 실어 둔다.
-    // '퀴즈 내줘'가 자료 없이 헛돌지 않게 하는 밑재료다.
-    let ctx = "";
     const reports = await listShiftReports(1);
+    setReportShiftId(reports[0]?.shiftId);
+
+    if (gate.ok) {
+      // 5단계 상시 컨텍스트 — 카드 전체·보고서 전체·확인 목록 (비식별화 포함).
+      setStudyCtx((await buildDeepChatContext()) || null);
+      return;
+    }
+    // 파이프라인이 꺼져 있으면 종전대로 가벼운 발췌만 싣는다.
+    let ctx = "";
     if (reports[0]) {
       const md = await getShiftReportMarkdown(reports[0].shiftId);
       if (md) ctx += `## 최근 근무 보고서 (${reports[0].shiftId.split(":")[0]})\n${md.slice(0, 2000)}\n`;
@@ -156,6 +178,25 @@ export default function Care() {
     }
     setStudyCtx(ctx.trim() || null);
   }, []);
+
+  /** 5b 컨텍스트 — 5단계 내용 + 배치 때의 판단근거·지식보강을 반드시 싣는다(사양). */
+  const clinicalContext = useCallback(async (): Promise<string> => {
+    let ctx = studyCtx ?? "";
+    const reports = await listShiftReports(1);
+    const payload = (reports[0]?.payload ?? {}) as {
+      stage3a?: { 교정목록?: { id?: string; 교정후?: string; 판단근거?: string }[] };
+      stage3b?: { 지식보강?: { 대상_id?: string; 내용?: string; 출처?: string[] }[] };
+    };
+    const 근거 = (payload.stage3a?.교정목록 ?? [])
+      .filter((c) => c.판단근거)
+      .map((c) => `- [${c.id}] ${c.교정후}: ${c.판단근거}`);
+    const 보강 = (payload.stage3b?.지식보강 ?? []).map(
+      (k) => `- [${k.대상_id}] ${k.내용} (출처: ${(k.출처 ?? []).join(", ")})`,
+    );
+    if (근거.length > 0) ctx += `\n\n## 배치 분석의 판단근거\n${근거.join("\n")}`;
+    if (보강.length > 0) ctx += `\n\n## 지식보강 (2차 조사)\n${보강.join("\n")}`;
+    return (await redactForNetwork(ctx)).text;
+  }, [studyCtx]);
 
   useEffect(() => {
     void load();
@@ -171,16 +212,33 @@ export default function Care() {
       setBusy(true);
       setErr(null);
       try {
-        const reply = await careChat(
-          next.map((m) => ({ role: m.role, text: m.text })),
-          {
-            temp: latestTemp ? `${latestTemp.celsius}°C (${latestTemp.label})` : undefined,
-            study: studyCtx ?? undefined,
-          },
-        );
+        const history = next.map((m) => ({ role: m.role, text: m.text }));
+        let reply: string;
+        if (clinical && deepOk) {
+          // 5b — 수정 도구가 열린 유일한 경로. 수정 내역을 답 아래에 그대로 보여준다.
+          const out = await clinicalChat(history, {
+            context: await clinicalContext(),
+            reportShiftId,
+            webSearch,
+          });
+          reply = out.text;
+          if (out.actions.length > 0) {
+            reply += `\n\n[수정 내역]\n${out.actions.map((a) => `· ${a}`).join("\n")}`;
+            void load(); // 카드·확인 목록이 바뀌었으니 컨텍스트를 새로 읽는다.
+          }
+        } else {
+          reply = await careChat(
+            history,
+            {
+              temp: latestTemp ? `${latestTemp.celsius}°C (${latestTemp.label})` : undefined,
+              study: studyCtx ?? undefined,
+            },
+            { pipeline: deepOk },
+          );
+        }
         const done: Msg[] = [...next, { role: "assistant", text: reply, at: Date.now() }];
         setMsgs(done);
-        await setSetting(CHAT_SETTING, done.slice(-40));
+        await setSetting(CHAT_SETTING, done.slice(deepOk ? -200 : -40));
       } catch (e) {
         setErr(e instanceof Error ? e.message : "답을 받지 못했습니다. 다시 시도해 보십시오.");
         await setSetting(CHAT_SETTING, next.slice(-40));
@@ -188,7 +246,7 @@ export default function Care() {
         setBusy(false);
       }
     },
-    [busy, input, latestTemp, msgs],
+    [busy, clinical, clinicalContext, deepOk, input, latestTemp, load, msgs, reportShiftId, studyCtx, webSearch],
   );
 
   const canSend = input.trim().length > 0 && !busy && (ready?.ok ?? false);
@@ -213,7 +271,51 @@ export default function Care() {
             채팅
           </Text>
           <View style={{ flex: 1 }} />
-          {ready?.ok && studyCtx ? (
+          {deepOk ? (
+            // 5b 승격 — 수동 버튼(사양). 켜면 카드·보고서 수정 도구가 열린다.
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: clinical }}
+              onPress={() => {
+                const next = !clinical;
+                setClinical(next);
+                setErr(null);
+                if (!next) setWebSearch(false);
+              }}
+              style={({ pressed }) => ({
+                paddingHorizontal: space.md,
+                paddingVertical: space.sm,
+                borderRadius: radius.full,
+                backgroundColor: clinical ? t.warn : t.surfaceAlt,
+                opacity: pressed ? 0.8 : 1,
+                marginRight: space.xs,
+              })}
+            >
+              <Text style={[type.small, { color: clinical ? "#FFFFFF" : t.text, fontWeight: "700" }]}>
+                임상 판단{clinical ? " 중" : ""}
+              </Text>
+            </Pressable>
+          ) : null}
+          {clinical ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityState={{ selected: webSearch }}
+              onPress={() => setWebSearch((v) => !v)}
+              style={({ pressed }) => ({
+                paddingHorizontal: space.md,
+                paddingVertical: space.sm,
+                borderRadius: radius.full,
+                backgroundColor: webSearch ? t.accent : t.surfaceAlt,
+                opacity: pressed ? 0.8 : 1,
+                marginRight: space.xs,
+              })}
+            >
+              <Text style={[type.small, { color: webSearch ? "#FFFFFF" : t.text, fontWeight: "700" }]}>
+                검색{webSearch ? " 켬" : ""}
+              </Text>
+            </Pressable>
+          ) : null}
+          {ready?.ok && studyCtx && !clinical ? (
             <Pressable
               accessibilityRole="button"
               onPress={() => void send(QUIZ_PROMPT)}
@@ -245,6 +347,16 @@ export default function Care() {
             </Pressable>
           ) : null}
         </View>
+
+        {clinical ? (
+          <View style={{ paddingHorizontal: space.lg, paddingBottom: space.xs }}>
+            <Text style={[type.small, { color: t.warn, fontWeight: "600" }]}>
+              임상 판단 모드 — Claude Opus 5. 카드·보고서·확인 목록을 수정할 수 있고, 모든
+              수정은 이유와 함께 이력에 남습니다.
+              {webSearch ? " 검색으로 얻은 내용은 카드로 만들지 않습니다." : ""}
+            </Text>
+          </View>
+        ) : null}
 
         {/* 대화 */}
         <ScrollView

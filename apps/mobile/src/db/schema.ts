@@ -195,6 +195,48 @@ CREATE TABLE IF NOT EXISTS notes (
 );
 CREATE INDEX IF NOT EXISTS idx_notes_updated ON notes(updated_at);
 
+-- 심층 분석 파이프라인 작업 — 배치 제출·폴링 상태가 앱 재시작을 견딘다.
+CREATE TABLE IF NOT EXISTS pipeline_jobs (
+  shift_id    TEXT PRIMARY KEY,
+  stage       TEXT NOT NULL,                 -- 3a | 3b | 4 | done | error
+  batch_id    TEXT,                          -- 진행 중인 Anthropic 배치 id
+  stage3a     TEXT,                          -- 3a 결과 JSON
+  stage3b     TEXT,                          -- 3b 결과 JSON
+  error       TEXT,
+  usage_log   TEXT NOT NULL DEFAULT '[]',    -- 단계별 usage 기록 JSON 배열
+  updated_at  INTEGER NOT NULL
+);
+
+-- 확인 목록 — 웹 추정 등 '선배에게 확인할 것'. 카드로 굳히지 않는다.
+CREATE TABLE IF NOT EXISTS confirmations (
+  id             TEXT PRIMARY KEY,
+  shift_id       TEXT NOT NULL,
+  source_id      TEXT,                       -- U001 등 유래 항목 id
+  question       TEXT NOT NULL,
+  candidate      TEXT,                       -- 웹 추정 후보 (확정 아님)
+  sources        TEXT NOT NULL DEFAULT '[]', -- 출처 URL JSON 배열
+  resolved       INTEGER NOT NULL DEFAULT 0,
+  result         TEXT,                       -- 해소 결과
+  resolve_reason TEXT,
+  created_at     INTEGER NOT NULL,
+  resolved_at    INTEGER
+);
+CREATE INDEX IF NOT EXISTS idx_confirmations_shift ON confirmations(shift_id);
+
+-- 카드·보고서 변경 이력 — 임상 판단 모드의 모든 수정은 이유와 이전 판을 남긴다.
+-- 원본을 덮어쓰지 않는다: before_json 이 이전 버전 그대로다.
+CREATE TABLE IF NOT EXISTS change_history (
+  id          TEXT PRIMARY KEY,
+  target      TEXT NOT NULL,                 -- card | report | confirmation
+  target_id   TEXT NOT NULL,
+  action      TEXT NOT NULL,                 -- add | update | delete | resolve
+  before_json TEXT,
+  after_json  TEXT,
+  reason      TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_history_target ON change_history(target, target_id);
+
 -- 키-값 설정
 CREATE TABLE IF NOT EXISTS settings (
   key   TEXT PRIMARY KEY,

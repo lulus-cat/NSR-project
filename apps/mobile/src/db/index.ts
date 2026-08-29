@@ -1018,3 +1018,301 @@ export async function rejectPendingCorrection(key: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM pending_corrections WHERE key = ?", [key]);
 }
+
+// ── 심층 분석 파이프라인 ────────────────────────────────
+//
+// 배치 제출·폴링 상태를 DB에 남긴다 — 폰 앱은 언제든 죽을 수 있고,
+// Anthropic 배치는 몇 분에서 몇 시간 걸린다. 다시 열면 이어받는다.
+
+export interface PipelineJobRow {
+  shift_id: string;
+  stage: string; // 3a | 3b | 4 | done | error
+  batch_id: string | null;
+  stage3a: string | null;
+  stage3b: string | null;
+  error: string | null;
+  usage_log: string;
+  updated_at: number;
+}
+
+export async function getPipelineJob(shiftId: string): Promise<PipelineJobRow | null> {
+  const db = await getDb();
+  return db.getFirstAsync<PipelineJobRow>(
+    "SELECT * FROM pipeline_jobs WHERE shift_id = ?",
+    [shiftId],
+  );
+}
+
+export async function savePipelineJob(job: {
+  shiftId: string;
+  stage: string;
+  batchId?: string | null;
+  stage3a?: string | null;
+  stage3b?: string | null;
+  error?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO pipeline_jobs (shift_id, stage, batch_id, stage3a, stage3b, error, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(shift_id) DO UPDATE SET
+       stage = excluded.stage,
+       batch_id = excluded.batch_id,
+       stage3a = COALESCE(excluded.stage3a, pipeline_jobs.stage3a),
+       stage3b = COALESCE(excluded.stage3b, pipeline_jobs.stage3b),
+       error = excluded.error,
+       updated_at = excluded.updated_at`,
+    [
+      job.shiftId,
+      job.stage,
+      job.batchId ?? null,
+      job.stage3a ?? null,
+      job.stage3b ?? null,
+      job.error ?? null,
+      Date.now(),
+    ],
+  );
+}
+
+/** 단계별 usage 를 누적 기록한다 — 나중에 "실제로 얼마 들었나"가 여기서 나온다. */
+export async function appendPipelineUsage(shiftId: string, entry: unknown): Promise<void> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ usage_log: string }>(
+    "SELECT usage_log FROM pipeline_jobs WHERE shift_id = ?",
+    [shiftId],
+  );
+  const log = row ? (JSON.parse(row.usage_log) as unknown[]) : [];
+  log.push(entry);
+  await db.runAsync("UPDATE pipeline_jobs SET usage_log = ? WHERE shift_id = ?", [
+    JSON.stringify(log),
+    shiftId,
+  ]);
+}
+
+// ── 확인 목록 — 웹 추정은 카드가 아니라 여기로 ─────────
+
+export interface ConfirmationRow {
+  id: string;
+  shift_id: string;
+  source_id: string | null;
+  question: string;
+  candidate: string | null;
+  sources: string;
+  resolved: number;
+  result: string | null;
+  resolve_reason: string | null;
+  created_at: number;
+  resolved_at: number | null;
+}
+
+export async function addConfirmation(input: {
+  shiftId: string;
+  sourceId?: string;
+  question: string;
+  candidate?: string;
+  sources?: string[];
+}): Promise<string> {
+  const db = await getDb();
+  const id = `cf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  await db.runAsync(
+    `INSERT INTO confirmations (id, shift_id, source_id, question, candidate, sources, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.shiftId,
+      input.sourceId ?? null,
+      input.question,
+      input.candidate ?? null,
+      JSON.stringify(input.sources ?? []),
+      Date.now(),
+    ],
+  );
+  return id;
+}
+
+export async function listConfirmations(shiftId?: string): Promise<ConfirmationRow[]> {
+  const db = await getDb();
+  return shiftId
+    ? db.getAllAsync<ConfirmationRow>(
+        "SELECT * FROM confirmations WHERE shift_id = ? ORDER BY created_at",
+        [shiftId],
+      )
+    : db.getAllAsync<ConfirmationRow>(
+        "SELECT * FROM confirmations WHERE resolved = 0 ORDER BY created_at DESC LIMIT 200",
+      );
+}
+
+// ── 변경 이력 — 임상 판단 모드의 수정은 전부 이유와 함께 남는다 ──
+
+async function recordChange(input: {
+  target: "card" | "report" | "confirmation";
+  targetId: string;
+  action: "add" | "update" | "delete" | "resolve";
+  before?: unknown;
+  after?: unknown;
+  reason: string;
+}): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO change_history (id, target, target_id, action, before_json, after_json, reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      `ch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      input.target,
+      input.targetId,
+      input.action,
+      input.before === undefined ? null : JSON.stringify(input.before),
+      input.after === undefined ? null : JSON.stringify(input.after),
+      input.reason,
+      Date.now(),
+    ],
+  );
+}
+
+export async function listChangeHistory(
+  target?: string,
+  targetId?: string,
+): Promise<{ id: string; target: string; target_id: string; action: string; reason: string; created_at: number }[]> {
+  const db = await getDb();
+  if (target && targetId) {
+    return db.getAllAsync(
+      "SELECT id, target, target_id, action, reason, created_at FROM change_history WHERE target = ? AND target_id = ? ORDER BY created_at DESC",
+      [target, targetId],
+    );
+  }
+  return db.getAllAsync(
+    "SELECT id, target, target_id, action, reason, created_at FROM change_history ORDER BY created_at DESC LIMIT 100",
+  );
+}
+
+/** 임상 판단 모드 도구: 카드 수정 (이유 필수, 이전 판 보관). */
+export async function clinicalUpdateCard(
+  cardId: string,
+  front: string,
+  back: string,
+  reason: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const before = await db.getFirstAsync<{ front: string; back: string }>(
+    "SELECT front, back FROM cards WHERE id = ?",
+    [cardId],
+  );
+  if (!before) return false;
+  await db.runAsync("UPDATE cards SET front = ?, back = ? WHERE id = ?", [front, back, cardId]);
+  await recordChange({
+    target: "card",
+    targetId: cardId,
+    action: "update",
+    before,
+    after: { front, back },
+    reason,
+  });
+  return true;
+}
+
+/** 임상 판단 모드 도구: 카드 삭제 — 실제로는 suspended 로 물려 두고 이력을 남긴다. */
+export async function clinicalDeleteCard(cardId: string, reason: string): Promise<boolean> {
+  const db = await getDb();
+  const before = await db.getFirstAsync<{ front: string; back: string; suspended: number }>(
+    "SELECT front, back, suspended FROM cards WHERE id = ?",
+    [cardId],
+  );
+  if (!before) return false;
+  await db.runAsync("UPDATE cards SET suspended = 1 WHERE id = ?", [cardId]);
+  await recordChange({ target: "card", targetId: cardId, action: "delete", before, reason });
+  return true;
+}
+
+/** 임상 판단 모드 도구: 카드 추가. */
+export async function clinicalAddCard(input: {
+  front: string;
+  back: string;
+  sourceId?: string;
+  shiftId?: string;
+  reason: string;
+}): Promise<string> {
+  const db = await getDb();
+  const id = `card_cl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const now = Date.now();
+  await db.runAsync(
+    `INSERT INTO cards (id, kind, front, back, entry_id, shift_id, source_ids, created_at)
+     VALUES (?, 'definition', ?, ?, '', ?, ?, ?)`,
+    [id, input.front, input.back, input.shiftId ?? null, JSON.stringify(input.sourceId ? [input.sourceId] : []), now],
+  );
+  await db.runAsync(
+    `INSERT INTO review_states (card_id, due_at) VALUES (?, ?)
+     ON CONFLICT(card_id) DO NOTHING`,
+    [id, now],
+  );
+  await recordChange({
+    target: "card",
+    targetId: id,
+    action: "add",
+    after: { front: input.front, back: input.back, sourceId: input.sourceId },
+    reason: input.reason,
+  });
+  return id;
+}
+
+/** 임상 판단 모드 도구: 보고서 구절 교체 — 이전 마크다운 전체를 이력에 보관한다. */
+export async function clinicalUpdateReportSection(
+  shiftId: string,
+  section: string,
+  content: string,
+  reason: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ markdown: string }>(
+    "SELECT markdown FROM shift_reports WHERE shift_id = ?",
+    [shiftId],
+  );
+  if (!row) return false;
+  const heading = `## ${section}`;
+  let next: string;
+  if (row.markdown.includes(heading)) {
+    // 해당 섹션 머리부터 다음 섹션 머리 직전까지 교체한다.
+    const start = row.markdown.indexOf(heading);
+    const rest = row.markdown.indexOf("\n## ", start + heading.length);
+    const tail = rest >= 0 ? row.markdown.slice(rest) : "";
+    next = `${row.markdown.slice(0, start)}${heading}\n\n${content.trim()}\n${tail}`;
+  } else {
+    next = `${row.markdown.trimEnd()}\n\n${heading}\n\n${content.trim()}\n`;
+  }
+  await db.runAsync("UPDATE shift_reports SET markdown = ? WHERE shift_id = ?", [next, shiftId]);
+  await recordChange({
+    target: "report",
+    targetId: shiftId,
+    action: "update",
+    before: { markdown: row.markdown },
+    after: { section, content },
+    reason,
+  });
+  return true;
+}
+
+/** 임상 판단 모드 도구: 확인 목록 해소. */
+export async function resolveConfirmation(
+  id: string,
+  result: string,
+  reason: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const before = await db.getFirstAsync<ConfirmationRow>(
+    "SELECT * FROM confirmations WHERE id = ?",
+    [id],
+  );
+  if (!before) return false;
+  await db.runAsync(
+    "UPDATE confirmations SET resolved = 1, result = ?, resolve_reason = ?, resolved_at = ? WHERE id = ?",
+    [result, reason, Date.now(), id],
+  );
+  await recordChange({
+    target: "confirmation",
+    targetId: id,
+    action: "resolve",
+    before: { question: before.question, candidate: before.candidate },
+    after: { result },
+    reason,
+  });
+  return true;
+}

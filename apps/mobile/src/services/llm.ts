@@ -91,6 +91,8 @@ interface AnthropicBlock {
   type: string;
   text?: string;
   input?: unknown;
+  id?: string;
+  name?: string;
 }
 
 /**
@@ -102,7 +104,8 @@ interface AnthropicBlock {
  */
 async function callAnthropic(body: unknown): Promise<{
   content: AnthropicBlock[];
-  usage?: { cache_read_input_tokens?: number };
+  stop_reason?: string;
+  usage?: { cache_read_input_tokens?: number; input_tokens?: number; output_tokens?: number };
 }> {
   const apiKey = await getApiKey("anthropic");
   if (!apiKey) {
@@ -215,10 +218,12 @@ async function callOpenAi(input: {
   messages: { role: "user" | "assistant"; content: string }[];
   maxTokens: number;
   schema?: { name: string; schema: unknown };
+  /** 단계별 고정 모델(심층 파이프라인 5단계 등) — 공급자 선택을 무시하고 이걸 쓴다. */
+  override?: { provider: "openai" | "kimi" | "gemini"; model: string };
 }): Promise<string> {
   // "custom" 이면 내 서버(OpenAI 호환)로 간다. Ollama 는 키가 없어도 되므로
   // 키는 있을 때만 붙인다. 이 경로 덕에 유료 API 없이도 보조 기능이 돈다.
-  const provider = await getProvider();
+  const provider = input.override?.provider ?? (await getProvider());
   const custom = provider === "custom" ? await getCustomServer() : null;
   if (provider === "custom" && !custom) {
     throw new Error("내 서버 주소가 없습니다. 설정 > 보조 기능에서 서버 주소와 모델을 입력해 주세요.");
@@ -244,7 +249,9 @@ async function callOpenAi(input: {
       ...(apiKey ? { authorization: `Bearer ${apiKey}` } : {}),
     },
     body: JSON.stringify({
-      model: custom ? custom.model : await getModelFor(provider === "anthropic" ? "openai" : provider),
+      model:
+        input.override?.model ??
+        (custom ? custom.model : await getModelFor(provider === "anthropic" ? "openai" : provider)),
       // Gemini 호환 게이트웨이는 옛 이름(max_tokens)이 확실하게 통한다.
       ...(provider === "gemini" && !custom
         ? { max_tokens: input.maxTokens }
@@ -271,7 +278,15 @@ async function callOpenAi(input: {
   }
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
+    usage?: { prompt_tokens?: number; completion_tokens?: number };
   };
+  if (data.usage) {
+    // 사용량은 디버그 로그로 남긴다 — "이번 달 얼마 썼나"의 원천 기록.
+    const { logDebug } = await import("./debug");
+    void logDebug(
+      `LLM usage(${provider}): in ${data.usage.prompt_tokens ?? "?"} / out ${data.usage.completion_tokens ?? "?"}`,
+    );
+  }
   return (data.choices?.[0]?.message?.content ?? "").trim();
 }
 
@@ -512,9 +527,18 @@ const CARE_SYSTEM = `당신은 신규간호사의 다정한 선배 간호사입�
 export async function careChat(
   history: ChatTurn[],
   context: { temp?: string; study?: string },
+  opts?: {
+    /**
+     * 심층 파이프라인 5단계(일상 대화) — gemini-3.7-flash 고정, 읽기 전용,
+     * 세션 대화 전체와 카드·보고서 전체가 상시 컨텍스트로 실린다.
+     * 3.7-flash 는 1M 컨텍스트에 긴 입력 할증이 없어 자르지 않는다.
+     */
+    pipeline?: boolean;
+  },
 ): Promise<string> {
+  // 파이프라인 모드는 대화 전체를 유지한다(사양). 아니면 최근 12턴.
+  const trimmed = opts?.pipeline ? [...history] : history.slice(-12);
   // 첫 턴은 user 여야 한다 (잘린 히스토리가 assistant 로 시작할 수 있다).
-  const trimmed = history.slice(-12);
   while (trimmed.length > 0 && trimmed[0].role !== "user") trimmed.shift();
 
   const messages = await Promise.all(
@@ -535,6 +559,21 @@ export async function careChat(
       `복습이나 퀴즈를 요청하면 이 자료를 근거로 문제를 내고, 답을 확인해 주고, 틀린 것은 짧게 설명합니다. 자료에 없는 내용은 지어내지 않습니다.\n${red.text}`;
   }
 
+  // 파이프라인 5단계: 모델 고정 + 읽기 전용 규칙. 수정 도구는 아예 노출되지
+  // 않으므로 구조적으로 수정이 불가능하고, 이 규칙은 안내 문구용이다.
+  if (opts?.pipeline) {
+    system +=
+      "\n\n[권한 — 읽기 전용]\n" +
+      "당신은 카드·보고서·공부 목록을 수정할 수 없습니다. 수정이 필요한 요청이 오면 " +
+      "\"화면 위의 '임상 판단' 버튼으로 임상 판단 모드로 전환해야 합니다\"라고 안내하십시오.";
+    return callOpenAi({
+      system,
+      messages,
+      maxTokens: 1500,
+      override: { provider: "gemini", model: "gemini-3.7-flash" },
+    });
+  }
+
   if ((await getProvider()) !== "anthropic") {
     return callOpenAi({ system, messages, maxTokens: 700 });
   }
@@ -549,6 +588,243 @@ export async function careChat(
     .map((b) => b.text ?? "")
     .join("")
     .trim();
+}
+
+/* ── 심층 파이프라인 5·5b — 상시 컨텍스트와 임상 판단 승격 ── */
+
+/**
+ * 5단계 상시 컨텍스트 — 카드 전체 + 최신 보고서 전체 + 열린 확인 목록.
+ * 남의 서버로 가므로 여기서 통째로 비식별화한다.
+ */
+export async function buildDeepChatContext(): Promise<string> {
+  const { listCards, listShiftReports, getShiftReportMarkdown, listConfirmations } = await import(
+    "../db"
+  );
+  let ctx = "";
+  const reports = await listShiftReports(1);
+  if (reports[0]) {
+    const md = await getShiftReportMarkdown(reports[0].shiftId);
+    if (md) ctx += `## 최근 근무 보고서 (${reports[0].shiftId.split(":")[0]})\n${md}\n`;
+  }
+  const cards = await listCards(1000);
+  if (cards.length > 0) {
+    ctx += `\n## 암기카드 전체 (${cards.length}장)\n${cards
+      .map((c) => `- [${c.id}] 앞: ${c.front} / 뒤: ${c.back}`)
+      .join("\n")}`;
+  }
+  const open = await listConfirmations();
+  if (open.length > 0) {
+    ctx += `\n\n## 확인 목록 (선배에게 확인할 것 — 아직 확정 아님)\n${open
+      .map((c) => `- [${c.id}] ${c.question}${c.candidate ? ` (후보: ${c.candidate})` : ""}`)
+      .join("\n")}`;
+  }
+  const red = await redactForNetwork(ctx);
+  return red.text;
+}
+
+const CLINICAL_SYSTEM = `당신은 신규간호사의 학습 자료를 함께 다듬는 선배 간호사입니다(임상 판단 모드).
+카드·보고서·확인 목록을 도구로 수정할 수 있습니다.
+
+규칙:
+- 모든 수정에는 reason(왜 바꾸는지)을 반드시 채우십시오. 이력에 남습니다.
+- 배치 분석 때 내린 판단(교정목록의 판단근거, 지식보강)이 컨텍스트에 있습니다 — 그 위에서 설명하십시오.
+- 웹 검색으로 얻은 내용은 카드로 만들지 마십시오. 후보로 말하고 '선배에게 확인'을 권하십시오.
+- 의학적 확신이 없는 내용을 카드로 굳히지 마십시오. 애매하면 resolve 하지 말고 그대로 두십시오.
+- 합니다체로, 짧고 명확하게. 수정했으면 무엇을 왜 바꿨는지 말로도 알려 주십시오.`;
+
+const CLINICAL_TOOLS = [
+  {
+    name: "update_card",
+    description: "암기카드의 앞면/뒷면을 고친다.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        card_id: { type: "string" },
+        front: { type: "string" },
+        back: { type: "string" },
+        reason: { type: "string", description: "왜 바꾸는지 — 이력에 남는다" },
+      },
+      required: ["card_id", "front", "back", "reason"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "delete_card",
+    description: "잘못 만들어진 카드를 삭제(정지)한다.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: { card_id: { type: "string" }, reason: { type: "string" } },
+      required: ["card_id", "reason"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "add_card",
+    description: "새 암기카드를 만든다. 웹 검색으로 얻은 내용은 만들지 않는다.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        front: { type: "string", description: "자연스러운 한국어 의문문" },
+        back: { type: "string" },
+        source_id: { type: "string", description: "근거 항목 id (C001 등). 없으면 빈 문자열" },
+        reason: { type: "string" },
+      },
+      required: ["front", "back", "source_id", "reason"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "update_report_section",
+    description: "최근 근무 보고서의 한 섹션을 교체한다. section 은 '사실 정리'|'해석·교육 포인트'|'근무환경 분석'.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        section: { type: "string" },
+        content: { type: "string" },
+        reason: { type: "string" },
+      },
+      required: ["section", "content", "reason"],
+      additionalProperties: false,
+    },
+  },
+  {
+    name: "resolve_confirmation",
+    description: "확인 목록 항목을 해소한다 — 선배에게 확인한 결과를 적는다.",
+    strict: true,
+    input_schema: {
+      type: "object",
+      properties: {
+        item_id: { type: "string" },
+        result: { type: "string", description: "확인된 사실" },
+        reason: { type: "string" },
+      },
+      required: ["item_id", "result", "reason"],
+      additionalProperties: false,
+    },
+  },
+];
+
+export interface ClinicalReply {
+  text: string;
+  /** 실제로 실행된 수정 — 화면이 "무엇이 바뀌었나"를 보여줄 재료. */
+  actions: string[];
+}
+
+/**
+ * 5b — 임상 판단 승격. 수동 버튼으로만 들어온다(자동 라우팅 없음).
+ * claude-opus-5 (effort high) + 수정 도구. 검색은 토글로만 켠다.
+ */
+export async function clinicalChat(
+  history: ChatTurn[],
+  input: {
+    /** 5단계 컨텍스트 + 관련 판단근거·지식보강. 호출부가 비식별화해 넘긴다. */
+    context: string;
+    reportShiftId?: string;
+    webSearch?: boolean;
+  },
+): Promise<ClinicalReply> {
+  const db = await import("../db");
+  const trimmed = [...history];
+  while (trimmed.length > 0 && trimmed[0].role !== "user") trimmed.shift();
+  const messages: unknown[] = await Promise.all(
+    trimmed.map(async (m) => ({
+      role: m.role,
+      content: m.role === "user" ? (await redactForNetwork(m.text)).text : m.text,
+    })),
+  );
+
+  const tools: unknown[] = [...CLINICAL_TOOLS];
+  if (input.webSearch) {
+    tools.push({ type: "web_search_20260209", name: "web_search", max_uses: 5 });
+  }
+
+  const actions: string[] = [];
+  const texts: string[] = [];
+
+  // 도구 루프 — stop_reason 이 tool_use 인 동안 실행하고 결과를 돌려준다.
+  for (let round = 0; round < 8; round++) {
+    const response = await callAnthropic({
+      model: "claude-opus-5",
+      max_tokens: 8000,
+      output_config: { effort: "high" },
+      system: [
+        { type: "text", text: CLINICAL_SYSTEM },
+        { type: "text", text: `[학습 자료·배치 판단 컨텍스트]\n${input.context}` },
+      ],
+      tools,
+      messages,
+    });
+    const { logDebug } = await import("./debug");
+    await logDebug(
+      `임상 판단 usage: in ${response.usage?.input_tokens ?? "?"} / out ${response.usage?.output_tokens ?? "?"}`,
+    );
+    for (const b of response.content) {
+      if (b.type === "text" && b.text) texts.push(b.text);
+    }
+    if (response.stop_reason !== "tool_use") break;
+
+    const toolResults: unknown[] = [];
+    for (const b of response.content) {
+      if (b.type !== "tool_use" || !b.id || !b.name) continue;
+      // 이스케이프가 모델마다 달라 항상 파서를 거친다.
+      const args = (typeof b.input === "string" ? JSON.parse(b.input) : b.input) as Record<
+        string,
+        string
+      >;
+      let result = "";
+      try {
+        if (b.name === "update_card") {
+          const ok = await db.clinicalUpdateCard(args.card_id, args.front, args.back, args.reason);
+          result = ok ? "수정했습니다." : "그 id 의 카드가 없습니다.";
+          if (ok) actions.push(`카드 수정(${args.card_id}) — ${args.reason}`);
+        } else if (b.name === "delete_card") {
+          const ok = await db.clinicalDeleteCard(args.card_id, args.reason);
+          result = ok ? "삭제했습니다." : "그 id 의 카드가 없습니다.";
+          if (ok) actions.push(`카드 삭제(${args.card_id}) — ${args.reason}`);
+        } else if (b.name === "add_card") {
+          const id = await db.clinicalAddCard({
+            front: args.front,
+            back: args.back,
+            sourceId: args.source_id || undefined,
+            reason: args.reason,
+          });
+          result = `추가했습니다 (id: ${id}).`;
+          actions.push(`카드 추가 — ${args.reason}`);
+        } else if (b.name === "update_report_section") {
+          if (!input.reportShiftId) {
+            result = "수정할 보고서가 없습니다.";
+          } else {
+            const ok = await db.clinicalUpdateReportSection(
+              input.reportShiftId,
+              args.section,
+              args.content,
+              args.reason,
+            );
+            result = ok ? "보고서를 고쳤습니다." : "보고서가 없습니다.";
+            if (ok) actions.push(`보고서 '${args.section}' 수정 — ${args.reason}`);
+          }
+        } else if (b.name === "resolve_confirmation") {
+          const ok = await db.resolveConfirmation(args.item_id, args.result, args.reason);
+          result = ok ? "확인 목록에서 해소했습니다." : "그 id 의 항목이 없습니다.";
+          if (ok) actions.push(`확인 해소(${args.item_id}) — ${args.result}`);
+        } else {
+          continue; // 서버 도구(web_search)는 서버가 처리한다.
+        }
+      } catch (e) {
+        result = `실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`;
+      }
+      toolResults.push({ type: "tool_result", tool_use_id: b.id, content: result });
+    }
+    if (toolResults.length === 0) break;
+    messages.push({ role: "assistant", content: response.content });
+    messages.push({ role: "user", content: toolResults });
+  }
+
+  return { text: texts.join("\n").trim() || "(수정을 마쳤습니다.)", actions };
 }
 
 /** 대화를 시작할 수 있는 상태인가 — 공급자 설정이 되어 있는가. */

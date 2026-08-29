@@ -21,12 +21,22 @@ import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/co
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   countSegments,
+  getPipelineJob,
   getShiftReportMarkdown,
   getTaeumScore,
+  listConfirmations,
   listRecordings,
+  type ConfirmationRow,
   type RecordingRow,
 } from "../../src/db";
 import { finalizeShift } from "../../src/services/asr";
+import {
+  checkDeepAnalysis,
+  describeStage,
+  pipelineReady,
+  startDeepAnalysis,
+  type PipelineState,
+} from "../../src/services/pipeline";
 import {
   runnerState,
   startTranscription,
@@ -76,18 +86,66 @@ export default function ShiftDetail() {
   const [error, setError] = useState<string | null>(null);
   const [preview, setPreview] = useState<RedactedText | null>(null);
 
+  // ── 심층 분석 (3a→3b→4 파이프라인) ──
+  const [deep, setDeep] = useState<PipelineState | null>(null);
+  const [deepGate, setDeepGate] = useState<{ ok: boolean; reason?: string } | null>(null);
+  const [deepBusy, setDeepBusy] = useState(false);
+  const [confirmations, setConfirmations] = useState<ConfirmationRow[]>([]);
+
   const load = useCallback(async () => {
-    const [count, recs, score, md] = await Promise.all([
+    const [count, recs, score, md, job, gate, cfs] = await Promise.all([
       countSegments(shiftId),
       listRecordings(shiftId),
       getTaeumScore(shiftId),
       getShiftReportMarkdown(shiftId),
+      getPipelineJob(shiftId),
+      pipelineReady(),
+      listConfirmations(shiftId),
     ]);
     setSentenceCount(count);
     setRecordings(recs);
     setTaeum(score);
     setReportMd(md);
+    setDeep(describeStage(job));
+    setDeepGate(gate);
+    setConfirmations(cfs);
   }, [shiftId]);
+
+  // 배치가 도는 동안 화면이 열려 있으면 30초마다 한 걸음씩 민다.
+  useEffect(() => {
+    if (!deep || !["3a", "3b", "4"].includes(deep.stage)) return;
+    const timer = setInterval(() => {
+      void (async () => {
+        const next = await checkDeepAnalysis(shiftId);
+        setDeep(next);
+        if (next.stage === "done") void load();
+      })();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [deep, load, shiftId]);
+
+  const runDeep = useCallback(async () => {
+    setDeepBusy(true);
+    setError(null);
+    try {
+      setDeep(await startDeepAnalysis(shiftId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "심층 분석을 시작하지 못했습니다.");
+    } finally {
+      setDeepBusy(false);
+    }
+  }, [shiftId]);
+
+  const pokeDeep = useCallback(async () => {
+    setDeepBusy(true);
+    try {
+      const next = await checkDeepAnalysis(shiftId);
+      setDeep(next);
+      if (next.stage === "done") await load();
+    } finally {
+      setDeepBusy(false);
+    }
+  }, [load, shiftId]);
 
   // 전사 결과 화면에서 지우고 돌아오는 길 — 문장 수·상태가 낡지 않게 다시 읽는다.
   useFocusEffect(
@@ -335,6 +393,52 @@ export default function ShiftDetail() {
         </Card>
       ) : null}
 
+      {/* ── 심층 분석 — Claude 추출·조사 + Gemini 보고서. 배치라 몇 분~몇 십 분 ── */}
+      {sentenceCount > 0 ? (
+        <Card>
+          <Heading>심층 분석 (AI 3단)</Heading>
+          <Small>
+            Claude Opus 5 가 교정·판독불가·교육포인트를 추출하고, Claude Fable 5 가 웹
+            검색으로 검증하고, Gemini 가 보고서·카드로 정리합니다. 배치 처리라 몇 분에서
+            몇 십 분 걸립니다 — 화면을 닫아도 진행되고, 다시 열어 이어받습니다.
+          </Small>
+          {deepGate && !deepGate.ok ? (
+            <Body muted>{deepGate.reason}</Body>
+          ) : deep && deep.stage !== "idle" ? (
+            <>
+              <Badge
+                text={
+                  deep.stage === "done"
+                    ? "완료"
+                    : deep.stage === "error"
+                      ? "실패"
+                      : `진행 중 · ${deep.stage} 단계`
+                }
+                tone={deep.stage === "done" ? "ok" : deep.stage === "error" ? "danger" : "warn"}
+              />
+              <Small muted={false}>{deep.detail}</Small>
+              {deep.error ? <Text style={[type.small, { color: t.danger }]}>{deep.error}</Text> : null}
+              {["3a", "3b", "4"].includes(deep.stage) ? (
+                <Button label="진행 확인" busy={deepBusy} onPress={() => void pokeDeep()} />
+              ) : (
+                <Button
+                  label={deep.stage === "error" ? "다시 시작" : "다시 분석"}
+                  busy={deepBusy}
+                  onPress={() => void runDeep()}
+                />
+              )}
+            </>
+          ) : (
+            <Button
+              label="심층 분석 시작"
+              tone="primary"
+              busy={deepBusy}
+              onPress={() => void runDeep()}
+            />
+          )}
+        </Card>
+      ) : null}
+
       {/* 탭 — 보고서와 근무 환경 */}
       <View style={{ flexDirection: "row", gap: space.sm }}>
         {(
@@ -377,6 +481,29 @@ export default function ShiftDetail() {
 </Body>
             )}
           </Card>
+
+          {/* 확인 목록 — 웹 추정은 카드가 아니라 여기 남는다. 해소는 채팅의 임상 판단 모드에서. */}
+          {confirmations.length > 0 ? (
+            <Card tone="warn">
+              <Heading>확인 목록</Heading>
+              <Small>
+                안 들렸거나 웹 추정만 있는 항목입니다. 카드로 만들지 않았습니다 — 선배에게
+                확인한 뒤, 채팅의 &lsquo;임상 판단&rsquo; 모드에서 해소하십시오.
+              </Small>
+              {confirmations.map((c) => (
+                <View key={c.id} style={{ gap: 2, paddingVertical: space.sm }}>
+                  <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
+                    <Badge text={c.resolved ? "해소됨" : "미확인"} tone={c.resolved ? "ok" : "warn"} />
+                    {c.source_id ? <Small>{c.source_id}</Small> : null}
+                  </View>
+                  <Body>{c.question}</Body>
+                  {c.candidate ? <Small>후보: {c.candidate} (확정 아님)</Small> : null}
+                  {c.resolved && c.result ? <Small muted={false}>확인 결과: {c.result}</Small> : null}
+                  <Divider />
+                </View>
+              ))}
+            </Card>
+          ) : null}
 
           {reportMd && !preview ? (
             <Card>
