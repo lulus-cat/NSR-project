@@ -334,11 +334,17 @@ export function createSelfHostedProvider(
  */
 const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
 
+/** 전용 전사 모델(gemini-3.5-transcribe 등)인가 — 호출 경로가 다르다. */
+function isGeminiTranscribeModel(model: string): boolean {
+  return /transcribe/i.test(model);
+}
+
 export function createGeminiProvider(apiKey: string, model: string): AsrProvider {
   return {
     id: `gemini:${model}`,
-    // Gemini 는 화자 라벨을 함께 낸다. 단어 시각은 못 준다.
-    capabilities: { diarization: true, wordTimestamps: false },
+    // 일반 Gemini 는 화자 라벨만 주고 시각은 추정이다. 전용 전사 모델은
+    // 단어 단위 실측 시각까지 준다.
+    capabilities: { diarization: true, wordTimestamps: isGeminiTranscribeModel(model) },
     async transcribe(fileUri, options, onProgress) {
       const FileSystem = await import("expo-file-system/legacy");
       const info = await FileSystem.getInfoAsync(fileUri);
@@ -405,6 +411,21 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
           state = ((await check.json()) as { state?: string }).state ?? "ACTIVE";
         }
         if (state !== "ACTIVE") throw new Error("Gemini 가 이 오디오 형식을 처리하지 못했습니다.");
+
+        // 4a) 전용 전사 모델 — Interactions API. 화자·단어 시각이 실측이다.
+        if (isGeminiTranscribeModel(model)) {
+          onProgress?.(55, "전문 전사 모델이 받아 적는 중입니다");
+          const out = await geminiTranscribeInteraction({
+            apiKey,
+            model,
+            fileUri: fileMeta.uri,
+            mime,
+            vocab: options.hotwords ?? [],
+            onProgress,
+          });
+          onProgress?.(100);
+          return out;
+        }
 
         // 4) 전사 요청 — 구조화 출력(JSON 배열)으로 강제한다.
         onProgress?.(55, "Gemini가 전사 중입니다 — 진행률 없이 몇 분 걸립니다");
@@ -489,15 +510,143 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
   };
 }
 
-async function geminiError(res: Response, doing: string): Promise<string> {
-  const detail = await res.text().catch(() => "");
-  if (res.status === 400 && detail.includes("API_KEY")) {
+/**
+ * gemini-3.5-transcribe — 구글의 전용 전사 모델. generateContent 가 아니라
+ * Interactions API 를 쓴다. 화자 분리와 단어 단위 시각이 **실측**으로 오는
+ * 대신, 화자 분리를 켠 요청은 30분(끄면 1시간) 한도가 있다 — 화면에도 적었다.
+ */
+async function geminiTranscribeInteraction(input: {
+  apiKey: string;
+  model: string;
+  fileUri: string;
+  mime: string;
+  vocab: string[];
+  onProgress?: (pct: number, note?: string) => void;
+}): Promise<{
+  segments: { startSec: number; endSec: number; text: string; speakerId?: string }[];
+  durationSec: number;
+}> {
+  const headers = { "content-type": "application/json", "x-goog-api-key": input.apiKey };
+  const res = await fetch(`${GEMINI_API}/interactions`, {
+    method: "POST",
+    headers,
+    body: JSON.stringify({
+      model: input.model,
+      input: [{ type: "audio", uri: input.fileUri, mime_type: input.mime }],
+      generation_config: {
+        transcription_config: {
+          language_codes: ["ko-KR"],
+          // 사전 용어를 키워드 부스팅으로 넣는다. 문서 권장 상한(100개 내외)을 따른다.
+          ...(input.vocab.length > 0 ? { custom_vocabulary: input.vocab.slice(0, 100) } : {}),
+          mode: {
+            type: "verbatim",
+            diarization_mode: "speaker",
+            timestamp_granularities: ["word"],
+          },
+        },
+      },
+    }),
+  });
+  if (!res.ok) {
+    const detail = await res.text().catch(() => "");
+    if (res.status === 400 && /duration|length|too.?long|minute|hour/i.test(detail)) {
+      throw new Error(
+        "전문 전사 모델의 한도(화자 분리 시 30분)를 넘는 기록입니다. " +
+          "30분 이하 기록에만 쓰거나, 모델을 gemini-3.7-flash 로 바꾸거나, 콜랩으로 전사하십시오.",
+      );
+    }
+    throw new Error(await geminiErrorText(res.status, detail, "전문 전사"));
+  }
+
+  interface WordInfo {
+    type?: string;
+    text?: string;
+    speaker?: string;
+    start_offset?: string;
+    end_offset?: string;
+  }
+  interface InteractionData {
+    id?: string;
+    status?: string;
+    steps?: { content?: { type?: string; text?: string; annotations?: WordInfo[] }[] }[];
+  }
+  let data = (await res.json()) as InteractionData;
+
+  // 긴 파일은 바로 안 끝날 수 있다 — 완료될 때까지 상태를 묻는다.
+  const deadline = Date.now() + 20 * 60 * 1000;
+  while (data.status && data.status !== "completed" && data.id) {
+    if (data.status === "failed" || data.status === "cancelled") {
+      throw new Error("Gemini 전문 전사가 실패했습니다. 잠시 뒤 다시 시도해 보십시오.");
+    }
+    if (Date.now() > deadline) throw new Error("Gemini 전문 전사가 20분을 넘겨 중단했습니다.");
+    await new Promise((r) => setTimeout(r, 3000));
+    const check = await fetch(`${GEMINI_API}/${data.id}`, { headers });
+    if (!check.ok) throw new Error(await geminiError(check, "전사 상태 확인"));
+    data = (await check.json()) as InteractionData;
+  }
+
+  const contents = (data.steps ?? []).flatMap((s) => s.content ?? []);
+  const words: WordInfo[] = contents
+    .flatMap((c) => c.annotations ?? [])
+    .filter((a) => (a.type ?? "word_info") === "word_info" && (a.text ?? "").trim());
+  const sec = (v?: string) => Number.parseFloat((v ?? "0").replace(/s$/i, "")) || 0;
+
+  if (words.length === 0) {
+    // 시각 주석이 없으면 본문이라도 살린다 — 실패보다 낫다.
+    const text = contents.map((c) => c.text ?? "").join(" ").trim();
+    if (!text) throw new Error("Gemini 가 전사 내용을 돌려주지 않았습니다.");
+    return { segments: [{ startSec: 0, endSec: 0, text }], durationSec: 0 };
+  }
+
+  // 단어를 문장으로 묶는다: 화자가 바뀌거나, 1.2초 이상 쉬거나, 문장부호로
+  // 끝났거나, 한 덩어리가 18초를 넘으면 끊는다.
+  const segments: { startSec: number; endSec: number; text: string; speakerId?: string }[] = [];
+  let buf: string[] = [];
+  let segStart = sec(words[0].start_offset);
+  let segEnd = segStart;
+  let segSpeaker = words[0].speaker;
+  const flush = () => {
+    const text = buf.join(" ").trim();
+    if (text) segments.push({ startSec: segStart, endSec: segEnd, text, speakerId: segSpeaker });
+    buf = [];
+  };
+  for (const w of words) {
+    const start = sec(w.start_offset);
+    const end = sec(w.end_offset);
+    const sentenceEnded = buf.length > 0 && /[.?!…]$/.test(buf[buf.length - 1]);
+    if (
+      buf.length > 0 &&
+      (w.speaker !== segSpeaker || start - segEnd > 1.2 || sentenceEnded || end - segStart > 18)
+    ) {
+      flush();
+      segStart = start;
+      segSpeaker = w.speaker;
+    }
+    if (buf.length === 0) {
+      segStart = start;
+      segSpeaker = w.speaker;
+    }
+    buf.push((w.text ?? "").trim());
+    segEnd = Math.max(segEnd, end);
+  }
+  flush();
+
+  return { segments, durationSec: segments[segments.length - 1]?.endSec ?? 0 };
+}
+
+function geminiErrorText(status: number, detail: string, doing: string): string {
+  if (status === 400 && detail.includes("API_KEY")) {
     return "Gemini API 키가 올바르지 않습니다. 설정 → 전사의 Gemini 카드에서 확인하십시오.";
   }
-  if (res.status === 429) {
+  if (status === 429) {
     return "Gemini 무료 한도를 넘었습니다. 잠시 뒤 다시 하거나, 결제를 연결하거나, 콜랩으로 전사하십시오.";
   }
-  return `Gemini ${doing} 오류 ${res.status}: ${detail.slice(0, 200)}`;
+  return `Gemini ${doing} 오류 ${status}: ${detail.slice(0, 200)}`;
+}
+
+async function geminiError(res: Response, doing: string): Promise<string> {
+  const detail = await res.text().catch(() => "");
+  return geminiErrorText(res.status, detail, doing);
 }
 
 /**

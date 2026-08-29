@@ -425,9 +425,10 @@ export default function TranscriptionSetup() {
           <Heading>Gemini 직접 전사</Heading>
           <Small>
             콜랩도 서버도 없습니다 — 구글 AI 키 하나면 폰이 기록을 Gemini 로 보내
-            전사와 화자 라벨까지 받아 옵니다. 휘스퍼와 다른 방식이라{" "}
-            <Text style={{ fontWeight: "700" }}>시각은 추정치</Text>입니다 — 문장 탭
-            재생 위치가 몇 초 어긋날 수 있습니다.
+            전사와 화자 라벨까지 받아 옵니다. 일반 모델(3.7-flash 등)의{" "}
+            <Text style={{ fontWeight: "700" }}>시각은 추정치</Text>라 문장 탭 재생이 몇 초
+            어긋날 수 있고, 전문 전사 모델(3.5-transcribe)은 단어 단위 실측이라
+            정확합니다.
           </Small>
           <Divider />
           <Small muted={false}>알고 쓰십시오</Small>
@@ -470,8 +471,9 @@ export default function TranscriptionSetup() {
           <Small muted={false}>2. 모델</Small>
           <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
             {[
-              ["gemini-3.7-flash", "기본 — 무료 한도 넉넉"],
-              ["gemini-3.1-pro-preview", "가장 정확"],
+              ["gemini-3.7-flash", "기본 — 긴 기록도 통짜로"],
+              ["gemini-3.5-transcribe", "전문 전사 — 30분 이하"],
+              ["gemini-3.1-pro-preview", "가장 정확 — 유료 키 전용"],
             ].map(([id, hint]) => {
               const on = (server.geminiModel?.trim() || "gemini-3.7-flash") === id;
               return (
@@ -517,8 +519,11 @@ export default function TranscriptionSetup() {
             </Text>
           ) : null}
           <Small>
-            2시간이 넘는 통짜 기록은 응답이 잘릴 수 있습니다 — 그런 기록은 콜랩이
-            안전합니다.
+            모델마다 성격이 다릅니다. <Text style={{ fontWeight: "700" }}>3.5-transcribe</Text> 는
+            받아쓰기 전용 모델이라 화자와 단어 시각이 실측으로 정확하지만, 화자 분리를 켠
+            요청은 30분 한도가 있습니다 — 30분 분할 기록과 짝입니다. 긴 통짜 기록은
+            3.7-flash(시각은 추정치)나 콜랩이 안전하고, 3.1-pro 는 무료 티어가 없어 결제
+            연결 키에서만 돕니다.
           </Small>
         </Card>
       ) : null}
