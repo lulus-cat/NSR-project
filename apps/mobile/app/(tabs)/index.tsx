@@ -307,6 +307,7 @@ export default function Home() {
   >([]);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [needsServer, setNeedsServer] = useState(false);
+  const [needsAi, setNeedsAi] = useState(false);
   const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [weekStrip, setWeekStrip] = useState<
@@ -361,6 +362,9 @@ export default function Home() {
     } else {
       setNeedsServer(!server.endpoint);
     }
+    // AI 필수 설정 — 기존 사용자(온보딩을 이미 지난)는 여기서 안내받는다.
+    const { pipelineReady } = await import("../../src/services/pipeline");
+    setNeedsAi(!(await pipelineReady()).ok);
     // 마지막 전사가 끝났는데 아직 결과를 안 열어봤으면 알려 준다.
     const last = await getSetting<{ shiftId?: string; sentences?: number; seen?: boolean }>(
       "transcribe.lastResult",
@@ -508,7 +512,7 @@ export default function Home() {
     {
       key: "records",
       label: "기록",
-      alert: pendingCount > 0 || needsServer || newResult !== null,
+      alert: pendingCount > 0 || needsServer || needsAi || newResult !== null,
       body: (
         <>
           {newResult ? (
@@ -570,6 +574,18 @@ export default function Home() {
                 value="연결"
                 valueColor={t.warn}
                 onPress={() => router.push("/models")}
+              />
+            </>
+          ) : null}
+          {needsAi ? (
+            <>
+              <DashedDivider />
+              <BriefRow
+                icon="sparkles-outline"
+                label="AI 필수 설정이 아직 없습니다."
+                value="설정"
+                valueColor={t.warn}
+                onPress={() => router.push("/settings")}
               />
             </>
           ) : null}

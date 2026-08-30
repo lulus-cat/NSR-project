@@ -32,6 +32,7 @@ import { getApiKey } from "./llm";
 import { logDebug } from "./debug";
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1";
+const OPENAI_API = "https://api.openai.com/v1";
 const GEMINI_API = "https://generativelanguage.googleapis.com/v1beta";
 
 export type PipelineStage = "idle" | "3a" | "3b" | "4" | "done" | "error";
@@ -42,23 +43,86 @@ export interface PipelineState {
   error?: string;
 }
 
-/** 이 파이프라인이 돌 수 있는 상태인가 — Claude 와 Gemini 키가 둘 다 필요하다. */
-export async function pipelineReady(): Promise<{ ok: boolean; reason?: string }> {
-  const [anthropic, gemini] = await Promise.all([getApiKey("anthropic"), getApiKey("gemini")]);
-  if (!anthropic) {
+/* ── AI 경로 — 앱의 필수 설정. 정확히 두 갈래다 ────────── */
+
+export type AiPath = "claude" | "hybrid";
+
+export const AI_PATH_KEY = "ai.path";
+
+/** 경로별 사람이 읽는 설명 — 온보딩·설정 화면이 같은 문장을 쓴다. */
+export const AI_PATHS: {
+  path: AiPath;
+  title: string;
+  models: string;
+  why: string;
+  keys: ("anthropic" | "openai")[];
+}[] = [
+  {
+    path: "claude",
+    title: "Claude + Gemini",
+    models:
+      "추출·임상 판단: Claude Opus 5 · 웹 검증 조사: Claude Fable 5 · 보고서·대화: Gemini 3.7 Flash",
+    why: "Fable 5 는 환각률이 가장 낮아 웹 조사를 맡고, Opus 5 는 긴 전사본 종합에 가장 강합니다. 품질 최우선 — 월 약 $15~22.",
+    keys: ["anthropic"],
+  },
+  {
+    path: "hybrid",
+    title: "GPT + Gemini",
+    models:
+      "추출: GPT-5.6 Sol · 검증·조사·임상 판단: Gemini 3.1 Pro / 3.7 Flash · 보고서·대화: Gemini 3.7 Flash",
+    why: "GPT 는 기권하지 않아 빠짐없이 긁고(재현율), Gemini 는 기권을 잘해 걸러냅니다(정밀도) — 약점이 반대라 서로를 보완합니다. 검증 패스 포함 — 월 약 $9~13.",
+    keys: ["openai"],
+  },
+];
+
+export async function getAiPath(): Promise<AiPath | null> {
+  const { getSetting } = await import("../db");
+  const v = await getSetting<string>(AI_PATH_KEY, "");
+  return v === "claude" || v === "hybrid" ? v : null;
+}
+
+export async function setAiPath(path: AiPath): Promise<void> {
+  const { setSetting } = await import("../db");
+  await setSetting(AI_PATH_KEY, path);
+  // 문장 다듬기 같은 단발 기능도 경로의 1차 공급자를 따라간다.
+  const { setProvider } = await import("./llm");
+  await setProvider(path === "claude" ? "anthropic" : "gemini");
+}
+
+/**
+ * 이 파이프라인이 돌 수 있는 상태인가 — 선택한 경로의 키가 전부 필요하다.
+ * 한쪽이 빠져도 다른 모델로 자동 대체하지 않는다(역할 분담이 안전성의 원천).
+ */
+export async function pipelineReady(): Promise<{ ok: boolean; reason?: string; path?: AiPath }> {
+  const path = await getAiPath();
+  if (!path) {
     return {
       ok: false,
-      reason:
-        "심층 분석의 추출·조사 단계는 Claude 전용입니다. 설정 → 보조 기능에서 Claude API 키를 넣으면 켜집니다. 다른 모델로 대체하지 않습니다.",
+      reason: "AI 경로를 아직 고르지 않았습니다. 설정 → 필수 기능에서 Claude+Gemini 또는 GPT+Gemini 를 선택하십시오.",
     };
   }
+  const gemini = await getApiKey("gemini");
   if (!gemini) {
+    return { ok: false, path, reason: "Gemini API 키가 없습니다. 설정 → 필수 기능에서 넣으십시오." };
+  }
+  if (path === "claude") {
+    if (!(await getApiKey("anthropic"))) {
+      return {
+        ok: false,
+        path,
+        reason:
+          "Claude API 키가 없습니다. 이 경로의 추출·조사는 Claude 전용이라 다른 모델로 대체하지 않습니다 — 키를 넣거나 GPT+Gemini 경로로 바꾸십시오.",
+      };
+    }
+  } else if (!(await getApiKey("openai"))) {
     return {
       ok: false,
-      reason: "보고서·카드 단계는 Gemini 가 맡습니다. 설정에서 Gemini API 키를 넣으면 켜집니다.",
+      path,
+      reason:
+        "OpenAI API 키가 없습니다. 이 경로의 추출은 GPT 전용이라 다른 모델로 대체하지 않습니다 — 키를 넣거나 Claude+Gemini 경로로 바꾸십시오.",
     };
   }
-  return { ok: true };
+  return { ok: true, path };
 }
 
 /** hh:mm:ss — 3a 가 타임스탬프를 그대로 인용할 수 있게 전사본에 붙인다. */
@@ -162,7 +226,7 @@ const STAGE3A_SYSTEM = `당신은 신규간호사의 근무 전사본에서 학�
 전사본은 개인정보가 가려진 상태입니다. 반드시 아래 JSON 스키마 그대로, JSON 하나만 출력하십시오.
 
 {
-  "교정목록": [{"id": "C001", "타임스탬프": "02:14:30", "원문구간": "", "교정전": "", "교정후": "", "판단근거": "", "확신도": "상|중|하"}],
+  "교정목록": [{"id": "C001", "타임스탬프": "02:14:30", "원문인용": "", "교정전": "", "교정후": "", "판단근거": "", "확신도": "상|중|하"}],
   "판독불가": [{"id": "U001", "타임스탬프": "03:41:12", "들린대로": "", "앞뒤맥락": "", "추정범주": "약품|검사|처치|불명"}],
   "교육포인트": [{"id": "E001", "내용": "", "근거_교정ID": ["C001"], "중요도": "상|중|하"}],
   "근무요약": "시간순 사실 정리",
@@ -174,7 +238,9 @@ const STAGE3A_SYSTEM = `당신은 신규간호사의 근무 전사본에서 학�
 - 목표는 최대한 많이 뽑는 것이다. 교정·판독불가·교육포인트를 빠짐없이 긁어라. 판단의 깊이는 다음 단계가 맡는다.
 - 확신이 없으면 교정목록에 넣지 말고 판독불가로 분류하라. 그럴듯한 약품명을 추측해 채우지 마라.
 - 애매하면 버리지 말고 확신도 "하"로라도 남겨라. 걸러내는 건 다음 단계가 한다.
-- 모든 교정에 판단근거를 채워라.
+- 모든 교정에 원문인용과 판단근거를 채워라. 원문인용은 전사본에서 글자 그대로
+  복사한 문장이어야 한다 — 요약하거나 다듬으면 안 된다. 둘 중 하나라도 못 쓰면
+  교정목록이 아니라 판독불가로 보내라.
 - 교육포인트는 근거_교정ID 로 실제 교정 항목과 연결하라.
 - 전사본에 없는 내용을 추가하지 마라.`;
 
@@ -379,6 +445,426 @@ async function runStage4(shiftId: string, stage3a: string, stage3b: string): Pro
   );
 }
 
+/* ── 하이브리드 경로: 3a GPT-5.6 Sol (OpenAI Batch) ────── */
+//
+// 역할 분담(뒤집지 말 것): GPT 는 기권하지 않는 성질을 재현율로 쓰고,
+// Gemini 는 기권하는 성질을 정밀도로 쓴다. GPT 에 검증을 맡기면 자기
+// 출력을 무비판 승인하고, Gemini 에 추출을 맡기면 놓친다.
+
+async function openaiKey(): Promise<string> {
+  const key = await getApiKey("openai");
+  if (!key) throw new Error("OpenAI API 키가 없습니다.");
+  return key;
+}
+
+/** OpenAI Batch 는 3단이다: JSONL 파일 업로드 → 배치 생성 → 결과 파일 다운로드. */
+async function submitOpenAiBatch(customId: string, body: unknown): Promise<string> {
+  const key = await openaiKey();
+  const FileSystem = await import("expo-file-system/legacy");
+  const line = JSON.stringify({
+    custom_id: customId,
+    method: "POST",
+    url: "/v1/chat/completions",
+    body,
+  });
+  const path = `${FileSystem.cacheDirectory}nsr-batch-${Date.now()}.jsonl`;
+  await FileSystem.writeAsStringAsync(path, line + "\n");
+  try {
+    const form = new FormData();
+    form.append("purpose", "batch");
+    // RN 의 FormData 파일 파트는 uri 객체다 — Blob 이 아니다.
+    form.append("file", {
+      uri: path,
+      name: "batch.jsonl",
+      type: "application/jsonl",
+    } as unknown as Blob);
+    const up = await fetch(`${OPENAI_API}/files`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}` },
+      body: form,
+    });
+    if (!up.ok) throw new Error(`OpenAI 파일 업로드 오류 ${up.status}: ${(await up.text()).slice(0, 200)}`);
+    const file = (await up.json()) as { id: string };
+
+    const res = await fetch(`${OPENAI_API}/batches`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify({
+        input_file_id: file.id,
+        endpoint: "/v1/chat/completions",
+        completion_window: "24h",
+      }),
+    });
+    if (!res.ok) throw new Error(`OpenAI 배치 생성 오류 ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    return ((await res.json()) as { id: string }).id;
+  } finally {
+    await FileSystem.deleteAsync(path, { idempotent: true }).catch(() => undefined);
+  }
+}
+
+async function pollOpenAiBatch(
+  batchId: string,
+  customId: string,
+): Promise<{ ended: boolean; text?: string; usage?: unknown; error?: string }> {
+  const key = await openaiKey();
+  const headers = { authorization: `Bearer ${key}` };
+  const res = await fetch(`${OPENAI_API}/batches/${batchId}`, { headers });
+  if (!res.ok) throw new Error(`OpenAI 배치 조회 오류 ${res.status}`);
+  const data = (await res.json()) as {
+    status: string;
+    output_file_id?: string;
+    error_file_id?: string;
+  };
+  if (["validating", "in_progress", "finalizing"].includes(data.status)) return { ended: false };
+  if (data.status !== "completed") {
+    let detail = "";
+    if (data.error_file_id) {
+      const ef = await fetch(`${OPENAI_API}/files/${data.error_file_id}/content`, { headers });
+      detail = (await ef.text().catch(() => "")).slice(0, 300);
+    }
+    return { ended: true, error: `OpenAI 배치 ${data.status}: ${detail}` };
+  }
+  if (!data.output_file_id) return { ended: true, error: "배치 결과 파일이 없습니다." };
+  const out = await fetch(`${OPENAI_API}/files/${data.output_file_id}/content`, { headers });
+  if (!out.ok) throw new Error(`배치 결과 다운로드 오류 ${out.status}`);
+  for (const line of (await out.text()).split("\n")) {
+    if (!line.trim()) continue;
+    const row = JSON.parse(line) as {
+      custom_id: string;
+      response?: { status_code: number; body?: { choices?: { message?: { content?: string } }[]; usage?: unknown } };
+      error?: { message?: string };
+    };
+    if (row.custom_id !== customId) continue; // 순서 미보장 — id 로만 매칭
+    if (row.error || !row.response || row.response.status_code >= 300) {
+      return { ended: true, error: row.error?.message ?? `요청 실패(${row.response?.status_code})` };
+    }
+    return {
+      ended: true,
+      text: row.response.body?.choices?.[0]?.message?.content ?? "",
+      usage: row.response.body?.usage,
+    };
+  }
+  return { ended: true, error: "배치 결과에서 요청을 찾지 못했습니다." };
+}
+
+/** 3a strict 스키마 — Structured Outputs 는 모든 키 required + additionalProperties:false. */
+const STAGE3A_STRICT_SCHEMA = {
+  type: "object",
+  properties: {
+    교정목록: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          타임스탬프: { type: "string" },
+          원문인용: { type: "string" },
+          교정전: { type: "string" },
+          교정후: { type: "string" },
+          판단근거: { type: "string" },
+          확신도: { type: "string", enum: ["상", "중", "하"] },
+        },
+        required: ["id", "타임스탬프", "원문인용", "교정전", "교정후", "판단근거", "확신도"],
+        additionalProperties: false,
+      },
+    },
+    판독불가: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          타임스탬프: { type: "string" },
+          들린대로: { type: "string" },
+          앞뒤맥락: { type: "string" },
+          추정범주: { type: "string", enum: ["약품", "검사", "처치", "불명"] },
+        },
+        required: ["id", "타임스탬프", "들린대로", "앞뒤맥락", "추정범주"],
+        additionalProperties: false,
+      },
+    },
+    교육포인트: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          id: { type: "string" },
+          내용: { type: "string" },
+          근거_교정ID: { type: "array", items: { type: "string" } },
+          중요도: { type: "string", enum: ["상", "중", "하"] },
+        },
+        required: ["id", "내용", "근거_교정ID", "중요도"],
+        additionalProperties: false,
+      },
+    },
+    근무요약: { type: "string" },
+    근무환경분석: { type: "string" },
+    용어사전: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          용어: { type: "string" },
+          설명: { type: "string" },
+          분류: { type: "string", enum: ["약품", "검사", "처치", "기타"] },
+        },
+        required: ["용어", "설명", "분류"],
+        additionalProperties: false,
+      },
+    },
+  },
+  required: ["교정목록", "판독불가", "교육포인트", "근무요약", "근무환경분석", "용어사전"],
+  additionalProperties: false,
+};
+
+async function submit3aHybrid(shiftId: string): Promise<void> {
+  const transcript = await maskedTranscript(shiftId);
+  if (!transcript.trim()) throw new Error("전사본이 없습니다. 먼저 전사를 실행하십시오.");
+  const batchId = await submitOpenAiBatch(`3a-${shiftId}`, {
+    model: "gpt-5.6-sol",
+    // 추론 모델: temperature 미지원(400), 출력 상한은 max_completion_tokens.
+    max_completion_tokens: 32000,
+    response_format: {
+      type: "json_schema",
+      json_schema: { name: "stage3a", strict: true, schema: STAGE3A_STRICT_SCHEMA },
+    },
+    messages: [
+      { role: "system", content: STAGE3A_SYSTEM },
+      { role: "user", content: `[마스킹된 근무 전사본]\n${transcript}` },
+    ],
+  });
+  await savePipelineJob({ shiftId, stage: "h3a", batchId });
+  await logDebug(`심층 분석(하이브리드): 3a GPT 배치 제출 ${batchId}`);
+}
+
+/* ── 3v 검증 패스 — 기계 검증(로컬) + Gemini Flash 판정 ── */
+
+interface Correction {
+  id: string;
+  타임스탬프: string;
+  원문인용: string;
+  교정전: string;
+  교정후: string;
+  판단근거: string;
+  확신도: string;
+}
+interface Stage3aData {
+  교정목록: Correction[];
+  판독불가: { id: string; 타임스탬프: string; 들린대로: string; 앞뒤맥락: string; 추정범주: string }[];
+  교육포인트: unknown[];
+  근무요약: string;
+  근무환경분석: string;
+  용어사전: unknown[];
+  검증결과?: { 교정_id: string; 판정: string; 사유: string; 인용일치: boolean }[];
+}
+
+/** 원문인용이 전사본에 실제로 있는지 문자열 대조 — LLM 이 필요 없는 부분. */
+function machineVerify(data: Stage3aData, transcript: string): { demoted: number } {
+  const norm = (s: string) => s.replace(/\s+/g, "");
+  const hay = norm(transcript);
+  let demoted = 0;
+  const kept: Correction[] = [];
+  for (const c of data.교정목록) {
+    if (c.원문인용 && hay.includes(norm(c.원문인용))) {
+      kept.push(c);
+      continue;
+    }
+    demoted++;
+    data.판독불가.push({
+      id: `M-${c.id}`,
+      타임스탬프: c.타임스탬프,
+      들린대로: c.교정전,
+      앞뒤맥락: c.원문인용 || "(원문인용 없음)",
+      추정범주: "불명",
+    });
+  }
+  data.교정목록 = kept;
+  return { demoted };
+}
+
+const STAGE3V_SYSTEM = `다른 모델(GPT)이 만든 교정 목록을 검증합니다. 관대하게 볼 이유가 없습니다.
+판정 기준은 "이 교정이 맞을 것 같은가"가 아니라 **"제시된 원문 인용만으로 이 교정이 정당화되는가"**입니다.
+일반적인 의학 지식으로 그럴듯하다는 이유로 유지하지 마십시오. 애매하면 유지가 아니라 강등을 고르십시오.
+원 항목을 수정하지 말고 판정만 내리십시오. 반드시 JSON 하나만 출력하십시오:
+{"검증결과":[{"교정_id":"C001","판정":"유지|강등|기각","사유":"","인용일치":true}]}`;
+
+async function runStage3v(shiftId: string, data: Stage3aData, transcript: string): Promise<void> {
+  const key = await getApiKey("gemini");
+  if (!key) throw new Error("Gemini API 키가 없습니다.");
+  if (data.교정목록.length === 0) {
+    data.검증결과 = [];
+    return;
+  }
+  const res = await fetch(`${GEMINI_API}/models/gemini-3.7-flash:generateContent?key=${key}`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      system_instruction: { parts: [{ text: STAGE3V_SYSTEM }] },
+      contents: [
+        {
+          role: "user",
+          parts: [
+            {
+              text:
+                `[교정목록]\n${JSON.stringify(data.교정목록)}\n\n` +
+                `[마스킹된 전사본]\n${transcript}`,
+            },
+          ],
+        },
+      ],
+      generationConfig: {
+        temperature: 0,
+        response_mime_type: "application/json",
+        max_output_tokens: 16384,
+      },
+    }),
+  });
+  if (!res.ok) throw new Error(`3v 검증 오류 ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  const body = (await res.json()) as {
+    candidates?: { content?: { parts?: { text?: string }[] } }[];
+    usageMetadata?: unknown;
+  };
+  await appendPipelineUsage(shiftId, { stage: "3v", provider: "gemini", usage: body.usageMetadata, at: Date.now() });
+  const raw = (body.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join("");
+  const start = raw.indexOf("{");
+  const end = raw.lastIndexOf("}");
+  const verdicts = (JSON.parse(raw.slice(start, end + 1)) as Stage3aData).검증결과 ?? [];
+
+  // 판정 반영: 유지만 교정목록에 남는다. 강등은 확인 목록으로, 기각은 판독불가로.
+  const byId = new Map(verdicts.map((v) => [v.교정_id, v]));
+  const kept: Correction[] = [];
+  let demote = 0;
+  let reject = 0;
+  for (const c of data.교정목록) {
+    const v = byId.get(c.id);
+    if (!v || v.판정 === "유지") {
+      kept.push(c);
+      continue;
+    }
+    if (v.판정 === "기각") {
+      reject++;
+      data.판독불가.push({
+        id: `R-${c.id}`,
+        타임스탬프: c.타임스탬프,
+        들린대로: c.교정전,
+        앞뒤맥락: c.원문인용,
+        추정범주: "불명",
+      });
+      continue;
+    }
+    // 강등 — 카드가 되지 못하고 '선배에게 확인'으로 간다.
+    demote++;
+    await addConfirmation({
+      shiftId,
+      sourceId: c.id,
+      question: `강등된 교정 — "${c.교정전}" → "${c.교정후}" 이 맞습니까? (${v.사유})`,
+      candidate: c.교정후,
+    });
+  }
+  data.교정목록 = kept;
+  data.검증결과 = verdicts;
+  await appendPipelineUsage(shiftId, {
+    stage: "3v-verdicts",
+    유지: kept.length,
+    강등: demote,
+    기각: reject,
+    at: Date.now(),
+  });
+  await logDebug(`심층 분석: 3v 판정 — 유지 ${kept.length} · 강등 ${demote} · 기각 ${reject}`);
+}
+
+/* ── 하이브리드 3b — Gemini 3.1 Pro + 검색 (Gemini Batch) ── */
+
+async function submit3bHybrid(shiftId: string, stage3aJson: string): Promise<void> {
+  const key = await getApiKey("gemini");
+  if (!key) throw new Error("Gemini API 키가 없습니다.");
+  const transcript = await maskedTranscript(shiftId);
+  const res = await fetch(
+    `${GEMINI_API}/models/gemini-3.1-pro-preview:batchGenerateContent?key=${key}`,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        batch: {
+          display_name: `nsr-3b-${Date.now()}`,
+          input_config: {
+            requests: {
+              requests: [
+                {
+                  request: {
+                    system_instruction: { parts: [{ text: STAGE3B_SYSTEM }] },
+                    // 검색 도구와 JSON 강제 응답은 함께 못 쓰는 세대가 있어
+                    // 프롬프트로 JSON 을 강제하고 파서는 방어적으로 읽는다.
+                    tools: [{ google_search: {} }],
+                    contents: [
+                      {
+                        role: "user",
+                        parts: [
+                          {
+                            text:
+                              `[1차 분석(검증 반영) JSON]\n${stage3aJson}\n\n` +
+                              `[마스킹된 근무 전사본 — 판독불가 앞뒤 맥락 확인용]\n${transcript}`,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  metadata: { key: `3b-${shiftId}` },
+                },
+              ],
+            },
+          },
+        },
+      }),
+    },
+  );
+  if (!res.ok) throw new Error(`Gemini 배치 제출 오류 ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  const data = (await res.json()) as { name?: string };
+  if (!data.name) throw new Error("Gemini 배치 이름을 받지 못했습니다.");
+  await savePipelineJob({ shiftId, stage: "h3b", batchId: data.name });
+  await logDebug(`심층 분석(하이브리드): 3b Gemini 배치 제출 ${data.name}`);
+}
+
+async function pollGeminiBatch(
+  batchName: string,
+  customKey: string,
+): Promise<{ ended: boolean; text?: string; usage?: unknown; error?: string }> {
+  const key = await getApiKey("gemini");
+  const res = await fetch(`${GEMINI_API}/${batchName}?key=${key}`, {});
+  if (!res.ok) throw new Error(`Gemini 배치 조회 오류 ${res.status}`);
+  const data = (await res.json()) as {
+    metadata?: { state?: string };
+    state?: string;
+    done?: boolean;
+    error?: { message?: string };
+    response?: { inlinedResponses?: { inlinedResponses?: unknown[] } | unknown[] };
+  };
+  const state = data.metadata?.state ?? data.state ?? "";
+  if (state.includes("PENDING") || state.includes("RUNNING") || data.done === false) {
+    return { ended: false };
+  }
+  if (data.error || state.includes("FAILED") || state.includes("CANCELLED") || state.includes("EXPIRED")) {
+    return { ended: true, error: data.error?.message ?? `배치 상태 ${state}` };
+  }
+  // 인라인 응답 — 판이 바뀌어도 견디도록 두 가지 꼴을 다 본다.
+  const holder = data.response?.inlinedResponses;
+  const list = (Array.isArray(holder) ? holder : holder?.inlinedResponses ?? []) as {
+    metadata?: { key?: string };
+    response?: { candidates?: { content?: { parts?: { text?: string }[] } }[]; usageMetadata?: unknown };
+    error?: { message?: string };
+  }[];
+  for (const row of list) {
+    if (row.metadata?.key && row.metadata.key !== customKey) continue;
+    if (row.error) return { ended: true, error: row.error.message };
+    return {
+      ended: true,
+      text: (row.response?.candidates?.[0]?.content?.parts ?? []).map((p) => p.text ?? "").join(""),
+      usage: row.response?.usageMetadata,
+    };
+  }
+  return { ended: true, error: "Gemini 배치 결과에서 요청을 찾지 못했습니다." };
+}
+
 /* ── 오케스트레이션 ─────────────────────────────────────── */
 
 function usageOf(message: BatchResult["message"]): unknown {
@@ -390,8 +876,15 @@ export function describeStage(job: PipelineJobRow | null): PipelineState {
   switch (job.stage) {
     case "3a":
       return { stage: "3a", detail: "1차 추출 중 — Claude Opus 5 배치가 돌고 있습니다 (수 분~수십 분)." };
+    case "h3a":
+      return { stage: "3a", detail: "1차 추출 중 — GPT-5.6 Sol 배치가 돌고 있습니다 (수 분~수십 분)." };
+    case "3a-done":
+    case "h3a-done":
+      return { stage: "3a", detail: "1차 추출 완료 — 진행 확인을 누르면 다음 단계로 갑니다." };
     case "3b":
       return { stage: "3b", detail: "2차 조사 중 — Claude Fable 5 가 웹 검색과 함께 검증하고 있습니다." };
+    case "h3b":
+      return { stage: "3b", detail: "검증 통과 — Gemini 3.1 Pro 가 웹 검색으로 조사 중입니다." };
     case "4":
       return { stage: "4", detail: "보고서·카드 생성 대기 — 진행 확인을 누르면 마무리합니다." };
     case "done":
@@ -403,11 +896,12 @@ export function describeStage(job: PipelineJobRow | null): PipelineState {
   }
 }
 
-/** 심층 분석 시작 — 3a 배치를 제출한다. */
+/** 심층 분석 시작 — 선택한 경로의 3a 배치를 제출한다. */
 export async function startDeepAnalysis(shiftId: string): Promise<PipelineState> {
   const ready = await pipelineReady();
   if (!ready.ok) throw new Error(ready.reason);
-  await submit3a(shiftId);
+  if (ready.path === "hybrid") await submit3aHybrid(shiftId);
+  else await submit3a(shiftId);
   return describeStage(await getPipelineJob(shiftId));
 }
 
@@ -430,6 +924,48 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
     } else if (job.stage === "3a-done") {
       // 3b 제출 직전에 앱이 죽은 경우 — 저장된 3a 결과로 다시 제출한다.
       await submit3b(shiftId, job.stage3a ?? "{}");
+    } else if (job.stage === "h3a" && job.batch_id) {
+      // 하이브리드: GPT 추출이 끝나면 기계 검증 → 3v 판정까지 여기서 돈다
+      // (3v 는 입력이 작아 실시간 Flash 로 충분하다).
+      const r = await pollOpenAiBatch(job.batch_id, `3a-${shiftId}`);
+      if (!r.ended) return describeStage(job);
+      if (r.error) throw new Error(`1차 추출(GPT) 실패: ${r.error}`);
+      await appendPipelineUsage(shiftId, { stage: "3a", provider: "openai", usage: r.usage, at: Date.now() });
+      const text = r.text ?? "";
+      const s = text.indexOf("{");
+      const e = text.lastIndexOf("}");
+      if (s < 0 || e <= s) throw new Error("GPT 가 JSON 을 돌려주지 않았습니다.");
+      const data = JSON.parse(text.slice(s, e + 1)) as Stage3aData;
+
+      const transcript = await maskedTranscript(shiftId);
+      const extracted = data.교정목록.length;
+      const { demoted } = machineVerify(data, transcript);
+      await appendPipelineUsage(shiftId, {
+        stage: "3v-machine",
+        추출: extracted,
+        인용불일치_강등: demoted,
+        at: Date.now(),
+      });
+      await runStage3v(shiftId, data, transcript);
+
+      const json = JSON.stringify(data);
+      await savePipelineJob({ shiftId, stage: "h3a-done", stage3a: json });
+      await submit3bHybrid(shiftId, json);
+    } else if (job.stage === "h3a-done") {
+      await submit3bHybrid(shiftId, job.stage3a ?? "{}");
+    } else if (job.stage === "h3b" && job.batch_id) {
+      const r = await pollGeminiBatch(job.batch_id, `3b-${shiftId}`);
+      if (!r.ended) return describeStage(job);
+      if (r.error) throw new Error(`2차 조사(Gemini) 실패: ${r.error}`);
+      await appendPipelineUsage(shiftId, { stage: "3b", provider: "gemini", usage: r.usage, at: Date.now() });
+      const text = r.text ?? "";
+      const s = text.indexOf("{");
+      const e = text.lastIndexOf("}");
+      if (s < 0 || e <= s) throw new Error("Gemini 가 JSON 을 돌려주지 않았습니다.");
+      const json = JSON.stringify(JSON.parse(text.slice(s, e + 1)));
+      await savePipelineJob({ shiftId, stage: "4", stage3b: json });
+      const fresh = await getPipelineJob(shiftId);
+      await runStage4(shiftId, fresh?.stage3a ?? "{}", json);
     } else if (job.stage === "3b" && job.batch_id) {
       const r = await pollBatch(job.batch_id, `3b-${shiftId}`);
       if (!r.ended) return describeStage(job);

@@ -24,6 +24,7 @@ import {
   type Workplace,
 } from "../../src/services/geofence";
 import { MODEL_CHOICES, getApiKey, getCustomServer, getModelFor, getProvider, setApiKey, setCustomServer, setModelFor, setProvider, testConnection, type LlmProvider } from "../../src/services/llm";
+import { AI_PATHS, getAiPath, setAiPath, type AiPath } from "../../src/services/pipeline";
 import {
   MASKABLE_KINDS,
   loadPrivacySettings,
@@ -197,6 +198,22 @@ export default function Settings() {
   });
   const [newTerm, setNewTerm] = useState("");
   const [modelSummary, setModelSummary] = useState("확인 중");
+  // 필수 기능(AI) — 두 경로 중 하나를 반드시 고른다.
+  const [aiPath, setAiPathState] = useState<AiPath | null>(null);
+  const [hasGeminiKey, setHasGeminiKey] = useState(false);
+  const [hasPathKey, setHasPathKey] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [pathKeyInput, setPathKeyInput] = useState("");
+  useEffect(() => {
+    void (async () => {
+      const path = await getAiPath();
+      setAiPathState(path);
+      setHasGeminiKey((await getApiKey("gemini")) !== null);
+      if (path) {
+        setHasPathKey((await getApiKey(path === "claude" ? "anthropic" : "openai")) !== null);
+      }
+    })();
+  }, [aiPath]);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -839,163 +856,56 @@ export default function Settings() {
 </Small>
       </Card>
 
-      {/* 보조 기능 */}
-      <Card>
-        <GroupHead icon="sparkles-outline" color="#C0553F" title="보조 기능 (선택)" />
+      {/* 필수 기능 — AI 경로. 이 앱의 분석·보고서·대화는 AI 없이는 안 돈다. */}
+      <Card tone={aiPath ? "default" : "warn"}>
+        <GroupHead icon="sparkles-outline" color="#C0553F" title="필수 기능 (AI)" />
         <Small>
-          
-  요약 등에 AI를 씁니다. 전사본이 외부로 전송되며, 개인정보는 가려지나 완벽하지 않을 수 있습니다.
-</Small>
-        <Toggle
-          label="문맥 교정·근무 요약 사용"
-          value={llmEnabled}
-          onChange={async (v) => {
-            setLlmEnabled(v);
-            await setSetting(SETTINGS_KEYS.llmPostEdit, v);
-          }}
-        />
-        {llmEnabled ? (
+          분석·보고서·암기카드·대화가 전부 AI 로 돕니다. 아래 두 조합 중 하나를 고르고
+          해당 키를 넣어야 앱이 완전하게 동작합니다. 전사본은 개인정보를 가린 뒤에만
+          전송됩니다. 한쪽 키가 빠져도 다른 모델로 자동 대체하지 않습니다 — 역할
+          분담이 정확도의 원천이라서입니다.
+        </Small>
+        {AI_PATHS.map((p) => {
+          const on = aiPath === p.path;
+          return (
+            <Pressable
+              key={p.path}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+              onPress={async () => {
+                setAiPathState(p.path);
+                await setAiPath(p.path);
+                setConnectionMsg(null);
+              }}
+              style={{
+                borderRadius: radius.lg,
+                borderWidth: 2,
+                borderColor: on ? t.accent : "transparent",
+                backgroundColor: on ? t.accentSoft : t.surfaceAlt,
+                padding: space.md,
+                gap: 4,
+              }}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>{p.title}</Text>
+                {on ? <Badge text="사용 중" tone="ok" /> : null}
+              </View>
+              <Text style={[type.small, { color: t.text, fontWeight: "600" }]}>{p.models}</Text>
+              <Small>{p.why}</Small>
+            </Pressable>
+          );
+        })}
+
+        {aiPath ? (
           <>
-            <Small muted={false}>모델 공급자</Small>
-            <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
-              {(
-                [
-                  ["anthropic", "Claude"],
-                  ["openai", "GPT"],
-                  ["kimi", "Kimi"],
-                  ["gemini", "Gemini"],
-                  ["custom", "Ollama"],
-                ] as [LlmProvider, string][]
-              ).map(([p, label]) => (
-                <View key={p} style={{ flexGrow: 1, flexBasis: "30%" }}>
-                  <Button
-                    label={label}
-                    tone={llmProvider === p ? "primary" : "default"}
-                    onPress={async () => {
-                      setLlmProvider(p);
-                      await setProvider(p);
-                      setLlmModel(await getModelFor(p));
-                      setHasKey((await getApiKey(p)) !== null);
-                      setConnectionMsg(null);
-                    }}
-                  />
-                </View>
-              ))}
-            </View>
-            <Small>
-              Claude·GPT·Kimi·Gemini 는 API 키 방식입니다 — Kimi 키는
-              platform.moonshot.ai, Gemini 키는 aistudio.google.com 에서 발급하며,
-              Gemini 키는 전사의 Gemini 모드와 같은 키를 씁니다.
-              &lsquo;Ollama&rsquo;는 VPS 나 집 컴퓨터의 Ollama·vLLM 같은 OpenAI 호환
-              서버로 보냅니다 — 유료 API 없이 보조 기능을 쓸 수 있고, 전사본이 내
-              서버 밖으로 나가지 않습니다.
+            <Divider />
+            <Small muted={false}>
+              1. Gemini 키 {hasGeminiKey ? "— 저장돼 있습니다" : "(aistudio.google.com/apikey)"}
             </Small>
-            {llmProvider !== "custom" ? (
-              <>
-                <Small muted={false}>모델</Small>
-                <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
-                  {MODEL_CHOICES[llmProvider].map((m) => {
-                    const on = llmModel === m.id;
-                    return (
-                      <Pressable
-                        key={m.id}
-                        accessibilityRole="button"
-                        accessibilityState={{ selected: on }}
-                        onPress={async () => {
-                          setLlmModel(m.id);
-                          await setModelFor(llmProvider, m.id);
-                        }}
-                        style={{
-                          paddingVertical: space.xs,
-                          paddingHorizontal: space.md,
-                          borderRadius: radius.sm,
-                          backgroundColor: on ? t.accent : t.surfaceAlt,
-                          minHeight: 36,
-                          justifyContent: "center",
-                        }}
-                      >
-                        <Text
-                          style={[type.caption, { color: on ? "#FFFFFF" : t.text }]}
-                        >
-                          {m.id} · {m.hint}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <TextInput
-                  value={llmModel}
-                  onChangeText={setLlmModel}
-                  onEndEditing={() => void setModelFor(llmProvider, llmModel)}
-                  placeholder="모델 id 직접 입력 (목록에 없는 새 모델)"
-                  placeholderTextColor={t.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{
-                    color: t.text,
-                    backgroundColor: t.surfaceAlt,
-                    borderRadius: radius.md,
-                    padding: space.md,
-                    fontSize: 14,
-                  }}
-                />
-                <Small>
-                  모델 이름은 몇 달마다 바뀝니다 — 목록은 추천일 뿐이고, 새 모델 id 를
-                  직접 넣으면 그대로 씁니다. 저장 후 연결 테스트로 확인하십시오.
-                </Small>
-              </>
-            ) : null}
-            {llmProvider === "custom" ? (
-              <>
-                <TextInput
-                  value={serverUrl}
-                  onChangeText={setServerUrl}
-                  placeholder="서버 주소 (예: http://100.64.0.2:11434/v1)"
-                  placeholderTextColor={t.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{
-                    color: t.text,
-                    backgroundColor: t.surfaceAlt,
-                    borderRadius: radius.md,
-                    padding: space.md,
-                    fontSize: 14,
-                  }}
-                />
-                <TextInput
-                  value={serverModel}
-                  onChangeText={setServerModel}
-                  placeholder="모델 이름 (예: qwen2.5:14b)"
-                  placeholderTextColor={t.textMuted}
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{
-                    color: t.text,
-                    backgroundColor: t.surfaceAlt,
-                    borderRadius: radius.md,
-                    padding: space.md,
-                    fontSize: 14,
-                  }}
-                />
-                <Button
-                  label="서버 저장"
-                  tone="primary"
-                  onPress={async () => {
-                    if (!serverUrl.trim() || !serverModel.trim()) return;
-                    await setCustomServer({ baseUrl: serverUrl.trim(), model: serverModel.trim() });
-                    setConnectionMsg("저장했습니다. 하단 연결 테스트를 진행해 주십시오.");
-                  }}
-                />
-                <Small>
-                  집 밖에서도 쓰려면 Tailscale 로 서버에 고정 주소를 붙이는 것이 가장
-                  쉽습니다. 키가 필요한 서버라면 아래 칸에 키를 저장하십시오.
-                </Small>
-              </>
-            ) : null}
             <TextInput
-              value={apiKeyInput}
-              onChangeText={setApiKeyInput}
-              placeholder={hasKey ? "키가 저장되어 있습니다" : "API 키 입력"}
+              value={geminiKeyInput}
+              onChangeText={setGeminiKeyInput}
+              placeholder={hasGeminiKey ? "키가 저장되어 있습니다" : "AIza… 키 붙여넣기"}
               placeholderTextColor={t.textMuted}
               secureTextEntry
               autoCapitalize="none"
@@ -1008,36 +918,73 @@ export default function Settings() {
                 fontSize: 14,
               }}
             />
-            <Small>
-              
-  API 키는 기기의 보안 저장소에 안전하게 보관됩니다.
-</Small>
-            <View style={{ flexDirection: "row", gap: space.sm }}>
-              <View style={{ flex: 1 }}>
-                <Button
-                  label="저장"
-                  onPress={async () => {
-                    if (!apiKeyInput.trim()) return;
-                    await setApiKey(apiKeyInput.trim(), llmProvider);
-                    setApiKeyInput("");
-                    setHasKey(true);
-                    setConnectionMsg(null);
-                  }}
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Button
-                  label="연결 테스트"
-                  onPress={async () => {
-                    const result = await testConnection();
-                    setConnectionMsg(result.message);
-                  }}
-                />
-              </View>
-            </View>
+            <Button
+              label="Gemini 키 저장"
+              tone={hasGeminiKey ? "default" : "primary"}
+              onPress={async () => {
+                if (!geminiKeyInput.trim()) return;
+                await setApiKey(geminiKeyInput.trim(), "gemini");
+                setGeminiKeyInput("");
+                setHasGeminiKey(true);
+              }}
+            />
+            <Small muted={false}>
+              2. {aiPath === "claude" ? "Claude 키" : "OpenAI 키"}{" "}
+              {hasPathKey
+                ? "— 저장돼 있습니다"
+                : aiPath === "claude"
+                  ? "(console.anthropic.com)"
+                  : "(platform.openai.com)"}
+            </Small>
+            <TextInput
+              value={pathKeyInput}
+              onChangeText={setPathKeyInput}
+              placeholder={hasPathKey ? "키가 저장되어 있습니다" : "API 키 입력"}
+              placeholderTextColor={t.textMuted}
+              secureTextEntry
+              autoCapitalize="none"
+              autoCorrect={false}
+              style={{
+                color: t.text,
+                backgroundColor: t.surfaceAlt,
+                borderRadius: radius.md,
+                padding: space.md,
+                fontSize: 14,
+              }}
+            />
+            <Button
+              label={aiPath === "claude" ? "Claude 키 저장" : "OpenAI 키 저장"}
+              tone={hasPathKey ? "default" : "primary"}
+              onPress={async () => {
+                if (!pathKeyInput.trim()) return;
+                await setApiKey(pathKeyInput.trim(), aiPath === "claude" ? "anthropic" : "openai");
+                setPathKeyInput("");
+                setHasPathKey(true);
+                setConnectionMsg(null);
+              }}
+            />
+            <Small>키는 기기의 보안 저장소(안드로이드 키스토어)에만 보관됩니다.</Small>
+            <Button
+              label="연결 테스트"
+              onPress={async () => {
+                const result = await testConnection();
+                setConnectionMsg(result.message);
+              }}
+            />
             {connectionMsg ? <Small muted={false}>{connectionMsg}</Small> : null}
+            <Divider />
+            <Toggle
+              label="전사 직후 문맥 교정·근무 요약 자동 실행"
+              value={llmEnabled}
+              onChange={async (v) => {
+                setLlmEnabled(v);
+                await setSetting(SETTINGS_KEYS.llmPostEdit, v);
+              }}
+            />
           </>
-        ) : null}
+        ) : (
+          <Small muted={false}>위에서 조합을 먼저 고르십시오 — 고르면 키 입력 칸이 열립니다.</Small>
+        )}
       </Card>
 
       {/* 디버그 */}

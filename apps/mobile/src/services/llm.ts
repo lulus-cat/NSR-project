@@ -714,38 +714,106 @@ export interface ClinicalReply {
   actions: string[];
 }
 
+/** 대략의 토큰 추정 — 한국어 혼합 텍스트 기준. 5b 의 18만 토큰 경고에 쓴다. */
+export function estimateTokens(text: string): number {
+  return Math.round(text.length / 2);
+}
+
+/** 도구 실행부 — Claude(경로1)와 Gemini(경로2) 루프가 같은 실행기를 쓴다. */
+async function runClinicalTool(
+  name: string,
+  args: Record<string, string>,
+  reportShiftId: string | undefined,
+): Promise<{ result: string; action?: string }> {
+  const db = await import("../db");
+  if (name === "update_card") {
+    const ok = await db.clinicalUpdateCard(args.card_id, args.front, args.back, args.reason);
+    return ok
+      ? { result: "수정했습니다.", action: `카드 수정(${args.card_id}) — ${args.reason}` }
+      : { result: "그 id 의 카드가 없습니다." };
+  }
+  if (name === "delete_card") {
+    const ok = await db.clinicalDeleteCard(args.card_id, args.reason);
+    return ok
+      ? { result: "삭제했습니다.", action: `카드 삭제(${args.card_id}) — ${args.reason}` }
+      : { result: "그 id 의 카드가 없습니다." };
+  }
+  if (name === "add_card") {
+    const id = await db.clinicalAddCard({
+      front: args.front,
+      back: args.back,
+      sourceId: args.source_id || undefined,
+      reason: args.reason,
+    });
+    return id
+      ? { result: `추가했습니다 (id: ${id}).`, action: `카드 추가 — ${args.reason}` }
+      : {
+          result:
+            "거부됨: source_id 가 심층 분석 결과에 없는 id 입니다. 근거 없는 카드는 만들 수 없습니다 — 확인 목록으로 보내십시오.",
+        };
+  }
+  if (name === "update_report_section") {
+    if (!reportShiftId) return { result: "수정할 보고서가 없습니다." };
+    const ok = await db.clinicalUpdateReportSection(
+      reportShiftId,
+      args.section,
+      args.content,
+      args.reason,
+    );
+    return ok
+      ? { result: "보고서를 고쳤습니다.", action: `보고서 '${args.section}' 수정 — ${args.reason}` }
+      : { result: "보고서가 없습니다." };
+  }
+  if (name === "resolve_confirmation") {
+    const ok = await db.resolveConfirmation(args.item_id, args.result, args.reason);
+    return ok
+      ? { result: "확인 목록에서 해소했습니다.", action: `확인 해소(${args.item_id}) — ${args.result}` }
+      : { result: "그 id 의 항목이 없습니다." };
+  }
+  return { result: "모르는 도구입니다." };
+}
+
 /**
  * 5b — 임상 판단 승격. 수동 버튼으로만 들어온다(자동 라우팅 없음).
- * claude-opus-5 (effort high) + 수정 도구. 검색은 토글로만 켠다.
+ * 경로에 따라 모델이 다르다: Claude 경로는 claude-opus-5(high),
+ * GPT+Gemini 경로는 gemini-3.1-pro-preview — 이 자리에서는 추론력보다
+ * 모르는 것을 모른다고 말하는 성질이 중요하다(사양, 뒤집지 말 것).
  */
 export async function clinicalChat(
   history: ChatTurn[],
   input: {
-    /** 5단계 컨텍스트 + 관련 판단근거·지식보강. 호출부가 비식별화해 넘긴다. */
+    /** 5단계 컨텍스트 + 관련 판단근거·검증결과·지식보강. 호출부가 비식별화해 넘긴다. */
     context: string;
     reportShiftId?: string;
     webSearch?: boolean;
   },
 ): Promise<ClinicalReply> {
-  const db = await import("../db");
+  const path = await getSetting<string>("ai.path", "claude");
   const trimmed = [...history];
   while (trimmed.length > 0 && trimmed[0].role !== "user") trimmed.shift();
-  const messages: unknown[] = await Promise.all(
+  const redactedTurns = await Promise.all(
     trimmed.map(async (m) => ({
       role: m.role,
       content: m.role === "user" ? (await redactForNetwork(m.text)).text : m.text,
     })),
   );
 
+  if (path === "hybrid") return clinicalChatGemini(redactedTurns, input);
+  return clinicalChatAnthropic(redactedTurns, input);
+}
+
+async function clinicalChatAnthropic(
+  redactedTurns: { role: "user" | "assistant"; content: string }[],
+  input: { context: string; reportShiftId?: string; webSearch?: boolean },
+): Promise<ClinicalReply> {
+  const messages: unknown[] = [...redactedTurns];
   const tools: unknown[] = [...CLINICAL_TOOLS];
   if (input.webSearch) {
     tools.push({ type: "web_search_20260209", name: "web_search", max_uses: 5 });
   }
-
   const actions: string[] = [];
   const texts: string[] = [];
 
-  // 도구 루프 — stop_reason 이 tool_use 인 동안 실행하고 결과를 돌려준다.
   for (let round = 0; round < 8; round++) {
     const response = await callAnthropic({
       model: "claude-opus-5",
@@ -760,7 +828,7 @@ export async function clinicalChat(
     });
     const { logDebug } = await import("./debug");
     await logDebug(
-      `임상 판단 usage: in ${response.usage?.input_tokens ?? "?"} / out ${response.usage?.output_tokens ?? "?"}`,
+      `임상 판단 usage(anthropic): in ${response.usage?.input_tokens ?? "?"} / out ${response.usage?.output_tokens ?? "?"}`,
     );
     for (const b of response.content) {
       if (b.type === "text" && b.text) texts.push(b.text);
@@ -775,53 +843,98 @@ export async function clinicalChat(
         string,
         string
       >;
-      let result = "";
       try {
-        if (b.name === "update_card") {
-          const ok = await db.clinicalUpdateCard(args.card_id, args.front, args.back, args.reason);
-          result = ok ? "수정했습니다." : "그 id 의 카드가 없습니다.";
-          if (ok) actions.push(`카드 수정(${args.card_id}) — ${args.reason}`);
-        } else if (b.name === "delete_card") {
-          const ok = await db.clinicalDeleteCard(args.card_id, args.reason);
-          result = ok ? "삭제했습니다." : "그 id 의 카드가 없습니다.";
-          if (ok) actions.push(`카드 삭제(${args.card_id}) — ${args.reason}`);
-        } else if (b.name === "add_card") {
-          const id = await db.clinicalAddCard({
-            front: args.front,
-            back: args.back,
-            sourceId: args.source_id || undefined,
-            reason: args.reason,
-          });
-          result = `추가했습니다 (id: ${id}).`;
-          actions.push(`카드 추가 — ${args.reason}`);
-        } else if (b.name === "update_report_section") {
-          if (!input.reportShiftId) {
-            result = "수정할 보고서가 없습니다.";
-          } else {
-            const ok = await db.clinicalUpdateReportSection(
-              input.reportShiftId,
-              args.section,
-              args.content,
-              args.reason,
-            );
-            result = ok ? "보고서를 고쳤습니다." : "보고서가 없습니다.";
-            if (ok) actions.push(`보고서 '${args.section}' 수정 — ${args.reason}`);
-          }
-        } else if (b.name === "resolve_confirmation") {
-          const ok = await db.resolveConfirmation(args.item_id, args.result, args.reason);
-          result = ok ? "확인 목록에서 해소했습니다." : "그 id 의 항목이 없습니다.";
-          if (ok) actions.push(`확인 해소(${args.item_id}) — ${args.result}`);
-        } else {
-          continue; // 서버 도구(web_search)는 서버가 처리한다.
-        }
+        const out = await runClinicalTool(b.name, args, input.reportShiftId);
+        if (out.action) actions.push(out.action);
+        toolResults.push({ type: "tool_result", tool_use_id: b.id, content: out.result });
       } catch (e) {
-        result = `실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`;
+        toolResults.push({
+          type: "tool_result",
+          tool_use_id: b.id,
+          content: `실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`,
+          is_error: true,
+        });
       }
-      toolResults.push({ type: "tool_result", tool_use_id: b.id, content: result });
     }
     if (toolResults.length === 0) break;
     messages.push({ role: "assistant", content: response.content });
     messages.push({ role: "user", content: toolResults });
+  }
+
+  return { text: texts.join("\n").trim() || "(수정을 마쳤습니다.)", actions };
+}
+
+/** 하이브리드 5b — Gemini 3.1 Pro 를 OpenAI 호환 게이트웨이의 함수 호출로 돌린다. */
+async function clinicalChatGemini(
+  redactedTurns: { role: "user" | "assistant"; content: string }[],
+  input: { context: string; reportShiftId?: string; webSearch?: boolean },
+): Promise<ClinicalReply> {
+  const apiKey = await getApiKey("gemini");
+  if (!apiKey) throw new Error("Gemini API 키가 없습니다. 설정 → 필수 기능에서 넣으십시오.");
+  const system =
+    `${CLINICAL_SYSTEM}\n\n[학습 자료·배치 판단 컨텍스트]\n${input.context}` +
+    (input.webSearch
+      ? "\n\n웹 검색이 필요하면 검색 결과를 답에 인용하되, 검색으로 얻은 내용은 카드로 만들지 마십시오."
+      : "");
+
+  interface WireMsg {
+    role: string;
+    content?: string | null;
+    tool_calls?: { id: string; type: string; function: { name: string; arguments: string } }[];
+    tool_call_id?: string;
+  }
+  const messages: WireMsg[] = [
+    { role: "system", content: system },
+    ...redactedTurns.map((m) => ({ role: m.role, content: m.content })),
+  ];
+  const tools = CLINICAL_TOOLS.map((t) => ({
+    type: "function",
+    function: { name: t.name, description: t.description, parameters: t.input_schema },
+  }));
+
+  const actions: string[] = [];
+  const texts: string[] = [];
+  for (let round = 0; round < 8; round++) {
+    const res = await fetch(`${GEMINI_BASE}/chat/completions`, {
+      method: "POST",
+      headers: { "content-type": "application/json", authorization: `Bearer ${apiKey}` },
+      body: JSON.stringify({
+        model: "gemini-3.1-pro-preview",
+        max_tokens: 8000,
+        messages,
+        tools,
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => "");
+      throw new Error(`임상 판단(Gemini) 오류 ${res.status}: ${detail.slice(0, 200)}`);
+    }
+    const data = (await res.json()) as {
+      choices?: { message?: WireMsg }[];
+      usage?: { prompt_tokens?: number; completion_tokens?: number };
+    };
+    const { logDebug } = await import("./debug");
+    await logDebug(
+      `임상 판단 usage(gemini): in ${data.usage?.prompt_tokens ?? "?"} / out ${data.usage?.completion_tokens ?? "?"}`,
+    );
+    const msg = data.choices?.[0]?.message;
+    if (!msg) break;
+    if (msg.content) texts.push(msg.content);
+    if (!msg.tool_calls || msg.tool_calls.length === 0) break;
+
+    messages.push({ role: "assistant", content: msg.content ?? null, tool_calls: msg.tool_calls });
+    for (const call of msg.tool_calls) {
+      let result: string;
+      try {
+        const args = JSON.parse(call.function.arguments || "{}") as Record<string, string>;
+        const out = await runClinicalTool(call.function.name, args, input.reportShiftId);
+        if (out.action) actions.push(out.action);
+        result = out.result;
+      } catch (e) {
+        result = `실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`;
+      }
+      messages.push({ role: "tool", tool_call_id: call.id, content: result });
+    }
   }
 
   return { text: texts.join("\n").trim() || "(수정을 마쳤습니다.)", actions };

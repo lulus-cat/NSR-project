@@ -1223,15 +1223,31 @@ export async function clinicalDeleteCard(cardId: string, reason: string): Promis
   return true;
 }
 
-/** 임상 판단 모드 도구: 카드 추가. */
+/**
+ * 임상 판단 모드 도구: 카드 추가.
+ *
+ * source_id 는 필수이고, 최근 심층 분석 결과에 실제로 존재하는 id(C/U/E…)여야
+ * 한다 — 근거 없는 카드 생성을 모델 재량이 아니라 코드로 막는다(사양).
+ * 존재하지 않으면 null 을 돌려주고 아무것도 만들지 않는다.
+ */
 export async function clinicalAddCard(input: {
   front: string;
   back: string;
   sourceId?: string;
   shiftId?: string;
   reason: string;
-}): Promise<string> {
+}): Promise<string | null> {
   const db = await getDb();
+  const sid = input.sourceId?.trim();
+  if (!sid) return null;
+  const rows = await db.getAllAsync<{ payload: string }>(
+    "SELECT payload FROM shift_reports ORDER BY created_at DESC LIMIT 5",
+  );
+  const validIds = new Set<string>();
+  for (const r of rows) {
+    for (const m of r.payload.matchAll(/"id"\s*:\s*"([A-Za-z]+-?\w+)"/g)) validIds.add(m[1]);
+  }
+  if (!validIds.has(sid)) return null;
   const id = `card_cl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
   const now = Date.now();
   await db.runAsync(
