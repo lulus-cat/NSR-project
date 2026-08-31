@@ -6,7 +6,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { Body, Button, Card, Heading, Small } from "../src/components/ui";
 import { useApp } from "../src/state/AppContext";
 import { TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
-import { setSetting } from "../src/db";
+import { getSetting, setSetting } from "../src/db";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 import { getApiKey, setApiKey } from "../src/services/llm";
 import { AI_PATHS, getAiPath, setAiPath, type AiPath } from "../src/services/pipeline";
@@ -367,13 +367,19 @@ export default function Onboarding() {
               onPress={() => {
                 if (model === "colab" || model === "pc" || model === "gemini") {
                   // 설정 → 전사 화면이 이 모드로 열린다. 주소는 거기서 잇는다.
-                  void save(() =>
-                    setSetting(SETTINGS_KEYS.cloudTranscription, {
+                  // 통째로 덮어쓰면 이미 고른 모델·화자 분리·주소가 날아간다.
+                  void save(async () => {
+                    const prev = await getSetting<Record<string, unknown>>(
+                      SETTINGS_KEYS.cloudTranscription,
+                      {},
+                    );
+                    await setSetting(SETTINGS_KEYS.cloudTranscription, {
+                      ...prev,
                       enabled: false,
                       endpoint: "",
                       mode: model,
-                    }),
-                  );
+                    });
+                  });
                 }
                 next();
               }}

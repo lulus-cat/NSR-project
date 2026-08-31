@@ -35,6 +35,7 @@ import {
   type CardSourceSegment,
   type Edit,
   type TermAnnotation,
+  DEFAULT_COLAB_MODEL_ID,
 } from "@nsr/core";
 import {
   enabledWardPacks,
@@ -264,6 +265,8 @@ export function createSelfHostedProvider(
             progress?: number;
             stage?: string;
             error?: string;
+            /** 서버가 실제로 실은 모델 — 고른 것과 다른지 여기서 드러난다. */
+            model?: string;
             result?: ServerResult;
             segments?: { start: number; end: number; text: string }[];
             next?: number;
@@ -290,7 +293,7 @@ export function createSelfHostedProvider(
               Math.round(lastProgress * 100),
               // %가 안 움직이는 구간의 이유를 말해 준다 — 모델 준비와 화자 분리.
               status.stage === "model"
-                ? "서버 놈이 몸 푸는 중이에요 (처음 한 번, 몇 분 걸림)"
+                ? `${status.model ?? "모델"} 싣는 중 (처음 한 번, 몇 분 걸림)`
                 : status.stage === "align"
                   ? "단어마다 초시계 재서 줄 세우는 중"
                   : status.stage === "diarize"
@@ -819,6 +822,13 @@ export async function finalizeShift(input: {
  * 전사 경로는 서버(콜랩 또는 내 컴퓨터)뿐이다. 주소가 없으면 전사를 시작할
  * 수 없고, 어디서 연결하는지까지 오류 문장이 말해 준다.
  */
+/** 저장된 설정의 전사 방식. 설정 화면(models.tsx)의 inferMode 와 같은 규칙이다. */
+function inferAsrMode(cloud: { mode?: string; endpoint?: string }): string {
+  if (cloud.mode) return cloud.mode;
+  if (cloud.endpoint && !cloud.endpoint.includes("trycloudflare.com")) return "pc";
+  return "colab";
+}
+
 export async function resolveProvider(): Promise<AsrProvider> {
   const cloud = await getSetting<{
     enabled: boolean;
@@ -852,7 +862,13 @@ export async function resolveProvider(): Promise<AsrProvider> {
     );
   }
   const hfToken = cloud.diarize ? await getHfToken() : null;
-  return createSelfHostedProvider(cloud.endpoint, cloud.apiKey, cloud.model, {
+  // 콜랩은 '서버 기본값' 선택지가 없다 — 화면에 기본 모델이 선택된 것으로 보이는
+  // 만큼, 아무것도 안 보내지 말고 그 id 를 실어 보낸다. 예전에는 안 보내서
+  // 서버 기본값이 쓰였고, 화면이 말하는 모델과 실제 모델이 달랐다.
+  const model =
+    cloud.model?.trim() ||
+    (inferAsrMode(cloud) === "colab" ? DEFAULT_COLAB_MODEL_ID : undefined);
+  return createSelfHostedProvider(cloud.endpoint, cloud.apiKey, model, {
     diarize: cloud.diarize,
     hfToken,
   });

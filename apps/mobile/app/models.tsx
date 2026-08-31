@@ -40,6 +40,12 @@ interface ServerAsr {
   mode?: ServerMode;
   /** 모드별로 기억해 두는 주소 — 모드를 오가도 붙여넣은 주소가 안 날아간다. */
   endpoints?: Partial<Record<ServerMode, string>>;
+  /**
+   * 모드별로 기억해 두는 모델. 콜랩 전용 미러와 허깅페이스 공개판은 서로 다른
+   * 목록이라, 모드를 오갔다고 고른 모델이 사라지면 화면은 기본 모델을 가리키는데
+   * 서버는 다른 것을 받는 어긋남이 생긴다.
+   */
+  models?: Partial<Record<ServerMode, string>>;
   /** Gemini 직접 전사에서 쓸 모델 id. 휘스퍼 모델(model)과는 다른 세계라 따로 둔다. */
   geminiModel?: string;
   /** 화자 분리(pyannote) — 콜랩 노트만 지원한다. 토큰은 보안 저장소에 따로 둔다. */
@@ -209,16 +215,18 @@ export default function TranscriptionSetup() {
       // 주소는 모드마다 다른 물건이다(터널 주소 vs 집 IP). 콜랩 주소로 PC
       // 전사를 시도하는 헛걸음이 없도록, 그 모드에서 마지막으로 쓰던 주소로
       // 갈아끼운다. 모델도 모드 목록에 없는 것이면 비운다.
-      const keepModel =
-        nextMode !== "gemini" &&
-        server.model &&
-        serverModelsFor(nextMode).some((m) => m.id === server.model)
-          ? server.model
+      const usable = (id?: string) =>
+        nextMode !== "gemini" && id && serverModelsFor(nextMode).some((m) => m.id === id)
+          ? id
           : undefined;
+      const keepModel = usable(server.models?.[nextMode]) ?? usable(server.model);
       void save({
         ...server,
         endpoint: server.endpoints?.[nextMode] ?? "",
         model: keepModel,
+        // 떠나는 모드의 선택은 남겨 둔다 — 돌아오면 그대로 되살아난다.
+        models:
+          mode === "gemini" ? server.models : { ...server.models, [mode]: server.model },
         mode: nextMode,
       });
     },
@@ -358,6 +366,155 @@ export default function TranscriptionSetup() {
           />
         </View>
       </Card>
+
+      {/* ── 화자 분리 — 콜랩 전용. 토큰까지 여기서 받는다(콜랩엔 설정 없음) ── */}
+      {mode === "colab" ? (
+        <Card>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              minHeight: TOUCH_MIN,
+            }}
+          >
+            <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>화자 분리 사용</Text>
+            <Switch
+              value={!!server.diarize}
+              onValueChange={(v) => void save({ ...server, diarize: v })}
+            />
+          </View>
+          <Small>
+            전사와 함께 누가 말했는지(화자 1·2·3…)를 자동으로 나눕니다 — 문장 중간에
+            화자가 바뀌어도 단어 단위로 경계를 맞춥니다. 기록 화면에서 화자별 역할을
+            한 번에 지정할 수 있고, 전사가 몇 분 더 걸립니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>
+            허깅페이스 토큰{hasHfToken ? " — 저장됨" : " — 아직 없음"}
+          </Small>
+          <Small>
+            화자를 나누는 모델(pyannote)은 무료지만 허깅페이스 계정 확인을 요구합니다.
+            토큰을 여기 한 번 넣어 두면 전사할 때마다 콜랩으로 함께 보냅니다 —
+            콜랩에서는 아무것도 설정하지 않습니다. 토큰은 이 기기의 보안 저장소에만
+            남고, 다른 곳으로는 나가지 않습니다.
+          </Small>
+          <TextInput
+            value={hfTokenInput}
+            onChangeText={setHfTokenInput}
+            placeholder={hasHfToken ? "저장된 토큰이 있습니다" : "hf_ 로 시작하는 Read 토큰"}
+            placeholderTextColor={t.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              color: t.text,
+              backgroundColor: t.surfaceAlt,
+              borderRadius: radius.md,
+              padding: space.md,
+              minHeight: TOUCH_MIN,
+              fontSize: 14,
+            }}
+          />
+          <Button
+            label="토큰 저장"
+            tone={hasHfToken ? "default" : "primary"}
+            onPress={() => void saveHfKey()}
+          />
+          {hasHfToken ? (
+            <Button label="저장된 토큰 지우기" onPress={() => void saveHfKey("")} />
+          ) : null}
+          <Divider />
+          <Small muted={false}>토큰 만들기 — 무료, 한 번만 (약 5분)</Small>
+          <Button
+            label="1. 분리 모델 동의 (huggingface)"
+            onPress={() =>
+              void Linking.openURL("https://huggingface.co/pyannote/speaker-diarization-3.1")
+            }
+          />
+          <Button
+            label="2. 구간 모델 동의 (huggingface)"
+            onPress={() =>
+              void Linking.openURL("https://huggingface.co/pyannote/segmentation-3.0")
+            }
+          />
+          <Button
+            label="3. Read 토큰 발급 → 위 칸에 붙여넣기"
+            onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
+          />
+          <Small>
+            토큰 없이 켜면 그 전사는 화자 없이 전사만 돌아옵니다 — 실패하지 않습니다.
+          </Small>
+        </Card>
+      ) : null}
+
+      {/* ── 모델 선택(휘스퍼 경로): 콜랩·PC 는 같은 문법, Gemini 는 자기 카드에서 ── */}
+      {mode !== "gemini" ? (
+      <Card>
+        <Heading>전사 모델</Heading>
+        <Small>
+          {mode === "colab"
+            ? "누르면 다음 전사부터 그 모델을 씁니다. 콜랩이 처음 쓰는 모델은 내려받느라 몇 분 더 걸립니다 — 폰에는 아무것도 받지 않습니다."
+            : "누르면 다음 전사부터 그 모델을 씁니다. 컴퓨터가 첫 전사 때 알아서 내려받습니다 — 폰에는 아무것도 받지 않습니다."}
+        </Small>
+        <Divider />
+        {models.map((m, i) => (
+          <View key={m.id}>
+            {i > 0 ? <Divider /> : null}
+            <ModelRow
+              model={m}
+              selected={selectedModelId === m.id}
+              onSelect={() =>
+                void save({
+                  ...server,
+                  model: m.id,
+                  models: { ...server.models, [mode]: m.id },
+                })
+              }
+            />
+          </View>
+        ))}
+        {mode === "pc" ? (
+          <>
+            <Divider />
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ selected: selectedModelId === undefined }}
+              onPress={() =>
+                void save({
+                  ...server,
+                  model: undefined,
+                  models: { ...server.models, [mode]: undefined },
+                })
+              }
+              style={({ pressed }) => ({
+                minHeight: TOUCH_MIN,
+                borderRadius: radius.md,
+                backgroundColor:
+                  selectedModelId === undefined
+                    ? t.accentSoft
+                    : pressed
+                      ? t.surfaceAlt
+                      : "transparent",
+                padding: space.md,
+                gap: space.xs,
+              })}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>서버 기본값</Text>
+                {selectedModelId === undefined ? (
+                  <Badge text="선택됨" tone="ok" />
+                ) : (
+                  <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>선택</Text>
+                )}
+              </View>
+              <Small>모델을 지정하지 않고 서버가 미리 실어 둔 모델을 그대로 씁니다.</Small>
+            </Pressable>
+          </>
+        ) : null}
+      </Card>
+
+      ) : null}
 
       {/* ── 선택한 방식의 연결 ── */}
       {mode === "colab" ? (
@@ -550,143 +707,6 @@ export default function TranscriptionSetup() {
             연결 키에서만 돕니다.
           </Small>
         </Card>
-      ) : null}
-
-      {/* ── 화자 분리 — 콜랩 전용. 토큰까지 여기서 받는다(콜랩엔 설정 없음) ── */}
-      {mode === "colab" ? (
-        <Card>
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              minHeight: TOUCH_MIN,
-            }}
-          >
-            <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>화자 분리 사용</Text>
-            <Switch
-              value={!!server.diarize}
-              onValueChange={(v) => void save({ ...server, diarize: v })}
-            />
-          </View>
-          <Small>
-            전사와 함께 누가 말했는지(화자 1·2·3…)를 자동으로 나눕니다 — 문장 중간에
-            화자가 바뀌어도 단어 단위로 경계를 맞춥니다. 기록 화면에서 화자별 역할을
-            한 번에 지정할 수 있고, 전사가 몇 분 더 걸립니다.
-          </Small>
-          <Divider />
-          <Small muted={false}>
-            허깅페이스 토큰{hasHfToken ? " — 저장됨" : " — 아직 없음"}
-          </Small>
-          <Small>
-            화자를 나누는 모델(pyannote)은 무료지만 허깅페이스 계정 확인을 요구합니다.
-            토큰을 여기 한 번 넣어 두면 전사할 때마다 콜랩으로 함께 보냅니다 —
-            콜랩에서는 아무것도 설정하지 않습니다. 토큰은 이 기기의 보안 저장소에만
-            남고, 다른 곳으로는 나가지 않습니다.
-          </Small>
-          <TextInput
-            value={hfTokenInput}
-            onChangeText={setHfTokenInput}
-            placeholder={hasHfToken ? "저장된 토큰이 있습니다" : "hf_ 로 시작하는 Read 토큰"}
-            placeholderTextColor={t.textMuted}
-            secureTextEntry
-            autoCapitalize="none"
-            autoCorrect={false}
-            style={{
-              color: t.text,
-              backgroundColor: t.surfaceAlt,
-              borderRadius: radius.md,
-              padding: space.md,
-              minHeight: TOUCH_MIN,
-              fontSize: 14,
-            }}
-          />
-          <Button
-            label="토큰 저장"
-            tone={hasHfToken ? "default" : "primary"}
-            onPress={() => void saveHfKey()}
-          />
-          {hasHfToken ? (
-            <Button label="저장된 토큰 지우기" onPress={() => void saveHfKey("")} />
-          ) : null}
-          <Divider />
-          <Small muted={false}>토큰 만들기 — 무료, 한 번만 (약 5분)</Small>
-          <Button
-            label="1. 분리 모델 동의 (huggingface)"
-            onPress={() =>
-              void Linking.openURL("https://huggingface.co/pyannote/speaker-diarization-3.1")
-            }
-          />
-          <Button
-            label="2. 구간 모델 동의 (huggingface)"
-            onPress={() =>
-              void Linking.openURL("https://huggingface.co/pyannote/segmentation-3.0")
-            }
-          />
-          <Button
-            label="3. Read 토큰 발급 → 위 칸에 붙여넣기"
-            onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
-          />
-          <Small>
-            토큰 없이 켜면 그 전사는 화자 없이 전사만 돌아옵니다 — 실패하지 않습니다.
-          </Small>
-        </Card>
-      ) : null}
-
-      {/* ── 모델 선택(휘스퍼 경로): 콜랩·PC 는 같은 문법, Gemini 는 자기 카드에서 ── */}
-      {mode !== "gemini" ? (
-      <Card>
-        <Heading>전사 모델</Heading>
-        <Small>
-          {mode === "colab"
-            ? "누르면 다음 전사부터 그 모델을 씁니다. 콜랩이 처음 쓰는 모델은 내려받느라 몇 분 더 걸립니다 — 폰에는 아무것도 받지 않습니다."
-            : "누르면 다음 전사부터 그 모델을 씁니다. 컴퓨터가 첫 전사 때 알아서 내려받습니다 — 폰에는 아무것도 받지 않습니다."}
-        </Small>
-        <Divider />
-        {models.map((m, i) => (
-          <View key={m.id}>
-            {i > 0 ? <Divider /> : null}
-            <ModelRow
-              model={m}
-              selected={selectedModelId === m.id}
-              onSelect={() => void save({ ...server, model: m.id })}
-            />
-          </View>
-        ))}
-        {mode === "pc" ? (
-          <>
-            <Divider />
-            <Pressable
-              accessibilityRole="radio"
-              accessibilityState={{ selected: selectedModelId === undefined }}
-              onPress={() => void save({ ...server, model: undefined })}
-              style={({ pressed }) => ({
-                minHeight: TOUCH_MIN,
-                borderRadius: radius.md,
-                backgroundColor:
-                  selectedModelId === undefined
-                    ? t.accentSoft
-                    : pressed
-                      ? t.surfaceAlt
-                      : "transparent",
-                padding: space.md,
-                gap: space.xs,
-              })}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>서버 기본값</Text>
-                {selectedModelId === undefined ? (
-                  <Badge text="선택됨" tone="ok" />
-                ) : (
-                  <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>선택</Text>
-                )}
-              </View>
-              <Small>모델을 지정하지 않고 서버가 미리 실어 둔 모델을 그대로 씁니다.</Small>
-            </Pressable>
-          </>
-        ) : null}
-      </Card>
-
       ) : null}
 
       <Card>
