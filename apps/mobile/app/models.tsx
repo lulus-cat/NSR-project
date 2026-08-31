@@ -27,6 +27,7 @@ import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/
 import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
 import { getApiKey, migrateRetiredModel, setApiKey } from "../src/services/llm";
+import { getHfToken, setHfToken } from "../src/services/asr";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 
 type ServerMode = "colab" | "pc" | "gemini";
@@ -153,6 +154,9 @@ export default function TranscriptionSetup() {
   // Gemini 키 — 보조 기능과 같은 보안 저장소 항목을 쓴다(구글 AI 키는 하나).
   const [hasGeminiKey, setHasGeminiKey] = useState(false);
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  // 화자 분리 토큰 — 앱에서 받아 전사 요청에 실어 보낸다(콜랩에서 설정하지 않는다).
+  const [hasHfToken, setHasHfToken] = useState(false);
+  const [hfTokenInput, setHfTokenInput] = useState("");
   useEffect(() => {
     void (async () => {
       const saved = await getSetting<ServerAsr>(SETTINGS_KEYS.cloudTranscription, {
@@ -169,6 +173,7 @@ export default function TranscriptionSetup() {
         : saved.geminiModel;
       setServer({ ...saved, mode: m, endpoints, geminiModel });
       setHasGeminiKey((await getApiKey("gemini")) !== null);
+      setHasHfToken((await getHfToken()) !== null);
     })();
   }, []);
 
@@ -218,6 +223,17 @@ export default function TranscriptionSetup() {
       });
     },
     [mode, save, server],
+  );
+
+  /** 화자 분리 토큰 저장·삭제. 보안 저장소에만 남고, 전사 요청에만 실린다. */
+  const saveHfKey = useCallback(
+    async (raw?: string) => {
+      const token = (raw ?? hfTokenInput).trim();
+      await setHfToken(token || null);
+      setHasHfToken(token.length > 0);
+      setHfTokenInput("");
+    },
+    [hfTokenInput],
   );
 
   const saveGeminiKey = useCallback(async () => {
@@ -359,6 +375,10 @@ export default function TranscriptionSetup() {
             주소가 자동으로 저장됩니다
           </Small>
           <Small>버튼이 안 되면 그때만 주소를 복사해 아래에 붙여넣으십시오.</Small>
+          <Small>
+            콜랩에서 고칠 것은 없습니다 — 모델·화자 분리·토큰은 전부 이 화면에서 정하고,
+            전사할 때 함께 보냅니다.
+          </Small>
           <TextInput
             value={server.endpoint}
             onChangeText={setEndpoint}
@@ -532,7 +552,7 @@ export default function TranscriptionSetup() {
         </Card>
       ) : null}
 
-      {/* ── 화자 분리 — 콜랩 전용. 준비는 앱이 아니라 콜랩 쪽에서 한 번만 ── */}
+      {/* ── 화자 분리 — 콜랩 전용. 토큰까지 여기서 받는다(콜랩엔 설정 없음) ── */}
       {mode === "colab" ? (
         <Card>
           <View
@@ -555,13 +575,42 @@ export default function TranscriptionSetup() {
             한 번에 지정할 수 있고, 전사가 몇 분 더 걸립니다.
           </Small>
           <Divider />
-          <Small muted={false}>준비는 콜랩 쪽에서 한 번만 (무료 · 약 5분)</Small>
-          <Small>
-            앱에는 넣을 것이 없습니다. 허깅페이스 토큰을{" "}
-            <Text style={{ fontWeight: "700" }}>콜랩 왼쪽 열쇠 아이콘(보안 비밀)</Text>에
-            &lsquo;HF_TOKEN&rsquo;으로 한 번 저장해 두면 노트가 세션마다 알아서
-            읽습니다. 아래 순서대로 — 노트를 실행하면 같은 안내가 출력됩니다.
+          <Small muted={false}>
+            허깅페이스 토큰{hasHfToken ? " — 저장됨" : " — 아직 없음"}
           </Small>
+          <Small>
+            화자를 나누는 모델(pyannote)은 무료지만 허깅페이스 계정 확인을 요구합니다.
+            토큰을 여기 한 번 넣어 두면 전사할 때마다 콜랩으로 함께 보냅니다 —
+            콜랩에서는 아무것도 설정하지 않습니다. 토큰은 이 기기의 보안 저장소에만
+            남고, 다른 곳으로는 나가지 않습니다.
+          </Small>
+          <TextInput
+            value={hfTokenInput}
+            onChangeText={setHfTokenInput}
+            placeholder={hasHfToken ? "저장된 토큰이 있습니다" : "hf_ 로 시작하는 Read 토큰"}
+            placeholderTextColor={t.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              color: t.text,
+              backgroundColor: t.surfaceAlt,
+              borderRadius: radius.md,
+              padding: space.md,
+              minHeight: TOUCH_MIN,
+              fontSize: 14,
+            }}
+          />
+          <Button
+            label="토큰 저장"
+            tone={hasHfToken ? "default" : "primary"}
+            onPress={() => void saveHfKey()}
+          />
+          {hasHfToken ? (
+            <Button label="저장된 토큰 지우기" onPress={() => void saveHfKey("")} />
+          ) : null}
+          <Divider />
+          <Small muted={false}>토큰 만들기 — 무료, 한 번만 (약 5분)</Small>
           <Button
             label="1. 분리 모델 동의 (huggingface)"
             onPress={() =>
@@ -575,12 +624,11 @@ export default function TranscriptionSetup() {
             }
           />
           <Button
-            label="3. 토큰 발급 (Read) → 콜랩 보안 비밀에 저장"
+            label="3. Read 토큰 발급 → 위 칸에 붙여넣기"
             onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
           />
           <Small>
-            준비가 안 된 채 켜면 그 전사는 화자 없이 전사만 돌아옵니다 — 실패하지
-            않습니다.
+            토큰 없이 켜면 그 전사는 화자 없이 전사만 돌아옵니다 — 실패하지 않습니다.
           </Small>
         </Card>
       ) : null}
