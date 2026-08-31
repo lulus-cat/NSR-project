@@ -125,8 +125,8 @@ export async function searchPlacesKakao(query: string): Promise<KakaoPlace[] | n
     `https://dapi.kakao.com/v2/local/search/keyword.json?size=8&category_group_code=HP8&query=${encodeURIComponent(query.trim())}`,
     { headers: { Authorization: `KakaoAK ${key}` } },
   );
-  if (res.status === 401) throw new Error("카카오 REST 키가 올바르지 않습니다. 설정에서 다시 확인하십시오.");
-  if (!res.ok) throw new Error(`카카오 검색 실패 (${res.status})`);
+  if (res.status === 401) throw new Error("카카오 열쇠(API 키)가 짝퉁이에요! 설정 가서 다시 쳌쳌");
+  if (!res.ok) throw new Error(`카카오 검색 엎어짐 ㅠㅠ (${res.status})`);
   const data = (await res.json()) as {
     documents?: { place_name?: string; address_name?: string; road_address_name?: string; x?: string; y?: string }[];
   };
@@ -163,7 +163,7 @@ export async function searchHospitalsHira(query: string): Promise<HospitalHit[] 
     `?serviceKey=${encodeURIComponent(key)}&yadmNm=${encodeURIComponent(query.trim())}` +
     "&numOfRows=8&pageNo=1&_type=json";
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`병원 검색 실패 (${res.status})`);
+  if (!res.ok) throw new Error(`병원 검색 폭망 ㅠㅠ (${res.status})`);
   const data = (await res.json()) as {
     response?: {
       header?: { resultCode?: string; resultMsg?: string };
@@ -173,7 +173,7 @@ export async function searchHospitalsHira(query: string): Promise<HospitalHit[] 
   const header = data.response?.header;
   if (header?.resultCode && header.resultCode !== "00") {
     // 키 오류(등록 안 됨·미승인)는 여기로 온다. 원문을 그대로 보여준다.
-    throw new Error(`공공데이터 응답: ${header.resultMsg ?? header.resultCode}`);
+    throw new Error(`공공데이터 놈이 뭐라 함: ${header.resultMsg ?? header.resultCode}`);
   }
   return asArray(data.response?.body?.items?.item as Record<string, unknown>[] | undefined)
     .filter((i) => i.XPos && i.YPos)
@@ -212,7 +212,7 @@ export async function searchDrug(name: string): Promise<DrugInfo[] | null> {
     `?serviceKey=${encodeURIComponent(key)}&itemName=${encodeURIComponent(name.trim())}` +
     "&numOfRows=5&pageNo=1&type=json";
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`의약품 검색 실패 (${res.status})`);
+  if (!res.ok) throw new Error(`엥 무슨 약인지 안 나옴 ㅠㅠ (${res.status})`);
   const data = (await res.json()) as { body?: { items?: unknown } };
   return asArray(data.body?.items as Record<string, unknown>[] | undefined).map((i) => ({
     name: strip(i.itemName),

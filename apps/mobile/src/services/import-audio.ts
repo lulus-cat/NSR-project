@@ -19,7 +19,7 @@ export async function importAudioFile(): Promise<{
     copyToCacheDirectory: true,
   });
   if (picked.canceled || !picked.assets?.[0]) {
-    return { ok: false, message: "취소했습니다." };
+    return { ok: false, message: "앗차차 취소" };
   }
   const asset = picked.assets[0];
 
@@ -43,6 +43,6 @@ export async function importAudioFile(): Promise<{
   return {
     ok: true,
     shiftId,
-    message: "가져왔습니다. 근무 기록에서 전사를 실행하십시오.",
+    message: "짠! 잘 훔쳐 왔어요 쏙 내 듀티 녹음 탭 가서 변환 돌려보세용!",
   };
 }

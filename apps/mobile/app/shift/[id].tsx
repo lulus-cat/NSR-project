@@ -165,7 +165,7 @@ export default function ShiftDetail() {
       if (s.shiftId !== shiftId) return;
       if (s.running) {
         setBusy(
-          `전사 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})${s.note ? ` · ${s.note}` : ""}`,
+          `텍스트 변환 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})${s.note ? ` · ${s.note}` : ""}`,
         );
       } else {
         setBusy(null);
@@ -180,18 +180,18 @@ export default function ShiftDetail() {
   const runTranscription = useCallback(() => {
     setError(null);
     if (!startTranscription(shiftId, pending)) {
-      setError("이미 전사가 진행 중이거나 전사할 기록이 없습니다.");
+      setError("이미 다른 거 돌리고 있거나 변환할 녹음이 없어요!");
     }
   }, [shiftId, pending]);
 
   const runFinalize = useCallback(async () => {
     setError(null);
-    setBusy("정리 중");
+    setBusy("예쁘게 각 잡는 중");
     try {
       await finalizeShift({ shiftId, date: date ?? "", dutyLabel, recordedSec: durationSec });
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "정리에 실패했습니다.");
+      setError(e instanceof Error ? e.message : "앗 각 잡기 실패 ㅠㅠ 다시 해봐요");
     } finally {
       setBusy(null);
     }
@@ -246,7 +246,7 @@ export default function ShiftDetail() {
         player.play();
         setPreviewId(rec.id);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "재생하지 못했습니다.");
+        setError(e instanceof Error ? e.message : "삐빅 재생 불가");
       }
     },
     [previewId],
@@ -260,17 +260,17 @@ export default function ShiftDetail() {
 
   const doShare = useCallback(async () => {
     if (!preview) return;
-    setBusy("공유 여는 중");
+    setBusy("밖으로 빼는 중");
     try {
       const outcome = await shareText({
         text: preview.text,
-        fileName: `${date ?? "근무"}-${code ?? ""}-보고서`,
-        title: `${dutyLabel} 보고서 내보내기`,
+        fileName: `${date ?? "듀티"}-${code ?? ""}-리포트`,
+        title: `${dutyLabel} 리포트 밖으로 슝`,
       });
       if (!outcome.shared && outcome.message) setError(outcome.message);
       else setPreview(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "공유하지 못했습니다.");
+      setError(e instanceof Error ? e.message : "앗 공유 엎어짐");
     } finally {
       setBusy(null);
     }
@@ -296,14 +296,14 @@ export default function ShiftDetail() {
         {pending.length > 0 ? (
           <Button
             label={
-              busy?.startsWith("전사")
+              busy?.startsWith("텍스트 변환")
                 ? busy
                 : runnerBusy
-                  ? "다른 근무 전사 중"
-                  : `미전사 기록 ${pending.length}건 전사하기`
+                  ? "딴 듀티 변환하느라 바쁨"
+                  : `밀린 녹음 ${pending.length}건 싹 다 바꾸기`
             }
             tone="primary"
-            busy={busy?.startsWith("전사") ?? false}
+            busy={busy?.startsWith("텍스트 변환") ?? false}
             disabled={runnerBusy}
             onPress={() => void runTranscription()}
           />
@@ -315,9 +315,9 @@ export default function ShiftDetail() {
       {/* ── 음성 파일 — 건수 뒤에 숨어 있던 녹음이 파일별로 보인다 ── */}
       {recordings.length > 0 ? (
         <Card>
-          <Heading>음성 파일</Heading>
+          <Heading>음성 파일 원본</Heading>
           <Small>
-            이 근무에서 녹음된 파일입니다. 재생 단추로 전사 전에 미리 들어볼 수 있습니다.
+            요 듀티 때 털린 녹음 원본이에요. 변환하기 전에 재생 버튼 눌러서 먼저 살짝 들어볼 수 있어요
           </Small>
           {recordings.map((r, i) => {
             const badge = stateBadge(r.state);
@@ -339,7 +339,7 @@ export default function ShiftDetail() {
                 >
                   <Pressable
                     accessibilityRole="button"
-                    accessibilityLabel={playingThis ? "미리 듣기 정지" : "미리 듣기"}
+                    accessibilityLabel={playingThis ? "그만 듣기" : "맛보기 재생"}
                     disabled={!r.file_uri}
                     onPress={() => togglePreview(r)}
                     style={({ pressed }) => ({
@@ -357,11 +357,11 @@ export default function ShiftDetail() {
                   </Pressable>
                   <View style={{ flex: 1, gap: 2 }}>
                     <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>
-                      {clock} 시작{mins > 0 ? ` · ${mins}분` : ""}
+                      {clock} 시작{mins > 0 ? ` · ${mins}분 (순삭)` : ""}
                     </Text>
                     <Text style={[type.small, TABULAR, { color: t.textMuted, fontWeight: "600" }]}>
-                      {mb ? `${mb}MB` : "크기 미확인"}
-                      {r.file_uri ? "" : " · 파일 없음"}
+                      {mb ? `${mb}MB` : "사이즈 모름"}
+                      {r.file_uri ? "" : " · 파일 없음 휑~"}
                     </Text>
                   </View>
                   <Badge text={badge.text} tone={badge.tone} />
@@ -375,19 +375,19 @@ export default function ShiftDetail() {
       {/* 전사 결과로 가는 문 — 결과는 전용 화면에서 본다 */}
       {sentenceCount > 0 ? (
         <Card tone="accent">
-          <Heading>전사 결과</Heading>
+          <Heading>변환 결과물</Heading>
           <Small>
             {sentenceCount}문장 · 문장별 재생, 화자 지정, 단어 수정, AI 다듬기는 결과
             화면에서 합니다.
           </Small>
           <Button
-            label="전사 결과 열기"
+            label="결과물 까보기"
             tone="primary"
             onPress={() => router.push(`/transcript/${encodeURIComponent(shiftId)}`)}
           />
           <Button
-            label={reportMd ? "다시 정리하기" : "카드·보고서 만들기"}
-            busy={busy === "정리 중"}
+            label={reportMd ? "다시 예쁘게 각 잡기" : "단어장·리포트 뚝딱 만들기"}
+            busy={busy === "예쁘게 각 잡는 중"}
             onPress={() => void runFinalize()}
           />
         </Card>
@@ -396,11 +396,9 @@ export default function ShiftDetail() {
       {/* ── 심층 분석 — Claude 추출·조사 + Gemini 보고서. 배치라 몇 분~몇 십 분 ── */}
       {sentenceCount > 0 ? (
         <Card>
-          <Heading>심층 분석 (AI 3단)</Heading>
+          <Heading>초정밀 심층 분석 (AI 3단 콤보)</Heading>
           <Small>
-            Claude Opus 5 가 교정·판독불가·교육포인트를 추출하고, Claude Fable 5 가 웹
-            검색으로 검증하고, Gemini 가 보고서·카드로 정리합니다. 배치 처리라 몇 분에서
-            몇 십 분 걸립니다 — 화면을 닫아도 진행되고, 다시 열어 이어받습니다.
+            똑순이 Claude 5가 피드백 포인트 딱 짚어내고, Claude Fable 5가 폭풍 구글링으로 팩트 체크 갈기고, Gemini가 리포트랑 단어장으로 예쁘게 빚어냅니다. 이 콤보 돌아가는 데 몇 분~몇 십 분 걸려요. 화면 꺼도 알아서 열일하니까 이따 와서 결과만 쏙 빼먹으세요
           </Small>
           {deepGate && !deepGate.ok ? (
             <Body muted>{deepGate.reason}</Body>
@@ -409,20 +407,20 @@ export default function ShiftDetail() {
               <Badge
                 text={
                   deep.stage === "done"
-                    ? "완료"
+                    ? "갓벽하게 끝"
                     : deep.stage === "error"
-                      ? "실패"
-                      : `진행 중 · ${deep.stage} 단계`
+                      ? "엎어짐"
+                      : `열일 중 땀뻘뻘 · ${deep.stage} 단계`
                 }
                 tone={deep.stage === "done" ? "ok" : deep.stage === "error" ? "danger" : "warn"}
               />
               <Small muted={false}>{deep.detail}</Small>
               {deep.error ? <Text style={[type.small, { color: t.danger }]}>{deep.error}</Text> : null}
               {["3a", "3b", "4"].includes(deep.stage) ? (
-                <Button label="진행 확인" busy={deepBusy} onPress={() => void pokeDeep()} />
+                <Button label="어디쯤 왔나 찌르기" busy={deepBusy} onPress={() => void pokeDeep()} />
               ) : (
                 <Button
-                  label={deep.stage === "error" ? "다시 시작" : "다시 분석"}
+                  label={deep.stage === "error" ? "재시동 부릉" : "처음부터 다시 갈기기"}
                   busy={deepBusy}
                   onPress={() => void runDeep()}
                 />
@@ -430,7 +428,7 @@ export default function ShiftDetail() {
             </>
           ) : (
             <Button
-              label="심층 분석 시작"
+              label="심층 분석 풀악셀 시작!"
               tone="primary"
               busy={deepBusy}
               onPress={() => void runDeep()}
@@ -444,7 +442,7 @@ export default function ShiftDetail() {
         {(
           [
             ["report", "보고서"],
-            ["environment", "근무 환경"],
+            ["environment", "오늘 우리 병동 분위기"],
           ] as [Tab, string][]
         ).map(([key, label]) => {
           const on = tab === key;
@@ -477,7 +475,7 @@ export default function ShiftDetail() {
             ) : (
               <Body muted>
 
-  보고서가 없습니다. 전사를 마친 뒤 ‘카드·보고서 만들기’를 실행하십시오.
+  아직 뽑아둔 리포트가 없어요! 글자 변환 다 끝내고 ‘단어장·리포트 뚝딱 만들기’ 꾹 눌러주세요.
 </Body>
             )}
           </Card>
@@ -485,15 +483,14 @@ export default function ShiftDetail() {
           {/* 확인 목록 — 웹 추정은 카드가 아니라 여기 남는다. 해소는 채팅의 임상 판단 모드에서. */}
           {confirmations.length > 0 ? (
             <Card tone="warn">
-              <Heading>확인 목록</Heading>
+              <Heading>쌤한테 물어볼 리스트</Heading>
               <Small>
-                안 들렸거나 웹 추정만 있는 항목입니다. 카드로 만들지 않았습니다 — 선배에게
-                확인한 뒤, 채팅의 &lsquo;임상 판단&rsquo; 모드에서 해소하십시오.
+                녹음이 웅얼거려서 안 들렸거나 AI가 뇌피셜로 때려 맞춘 것들이에요. 확실치 않아서 단어장엔 안 넣었어요 — 선배한테 리얼 팩트 체크하고, 채팅 탭 '임상 판단' 모드에서 털어버리세요!
               </Small>
               {confirmations.map((c) => (
                 <View key={c.id} style={{ gap: 2, paddingVertical: space.sm }}>
                   <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
-                    <Badge text={c.resolved ? "해소됨" : "미확인"} tone={c.resolved ? "ok" : "warn"} />
+                    <Badge text={c.resolved ? "궁금증 해결 완" : "아직 모름"} tone={c.resolved ? "ok" : "warn"} />
                     {c.source_id ? <Small>{c.source_id}</Small> : null}
                   </View>
                   <Body>{c.question}</Body>
@@ -507,19 +504,19 @@ export default function ShiftDetail() {
 
           {reportMd && !preview ? (
             <Card>
-              <Heading>내보내기</Heading>
+              <Heading>밖으로 슝</Heading>
               <Small>
 
-  이름과 연락처 등 가려진 개인정보 내역을 꼭 확인한 뒤 보내십시오.
+  삐- 처리된 환자 이름이나 폰 번호 같은 거 다시 한 번 쳌쳌! 하고 보내세요 꼭
 </Small>
-              <Button label="내보낼 내용 확인" onPress={() => void prepareExport()} />
+              <Button label="요대로 나갑니다 쳌쳌!" onPress={() => void prepareExport()} />
             </Card>
           ) : null}
 
           {preview ? (
             <Card tone={preview.masked ? "default" : "warn"}>
               <Heading>
-  위 내용으로 내보냅니다
+  이 내용 그대로 쏠게요
 </Heading>
               <Badge
                 text={preview.summary}
@@ -546,19 +543,19 @@ export default function ShiftDetail() {
               <Divider />
               <Small>
 
-  수신자와 메신저 서버에 기록이 남습니다. 개인정보가 없는지 마지막으로 확인하십시오.
+  저쪽 폰이랑 카톡 서버에 박제되는 거 알죠? 환자 정보 진짜진짜 없는지 마지막으로 눈 크게 뜨고 확인!
 </Small>
               <View style={{ flexDirection: "row", gap: space.sm }}>
                 <View style={{ flex: 1 }}>
                   <Button
-                    label="보내기"
+                    label="슝 보내버려"
                     tone="primary"
-                    busy={busy === "공유 여는 중"}
+                    busy={busy === "밖으로 빼는 중"}
                     onPress={() => void doShare()}
                   />
                 </View>
                 <View style={{ flex: 1 }}>
-                  <Button label="취소" onPress={() => setPreview(null)} />
+                  <Button label="앗차차 (취소)" onPress={() => setPreview(null)} />
                 </View>
               </View>
             </Card>
@@ -596,9 +593,9 @@ export default function ShiftDetail() {
 
             {taeum.events.length > 0 ? (
               <Card>
-                <Heading>기록된 발언</Heading>
+                <Heading>입에서 나온 찐 발언</Heading>
                 <Small>
-  수치보다 실제 인용문이 중요합니다.
+  숫자 쪼가리보다 실제 내뱉은 한마디 한마디가 찐 증거죠
 </Small>
                 {taeum.events.map((e, i) => (
                   <View key={`${e.segmentId}-${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -614,21 +611,21 @@ export default function ShiftDetail() {
             ) : (
               <Card>
                 <Body muted>
-  감지된 특이 발언이 없습니다.
+  오? 선 넘는 험악한 말은 안 잡혔어요
 </Body>
                 <Small>
 
-  아무 문제 없다는 뜻이 아닙니다. 텍스트에는 어조나 맥락이 담기지 않습니다.
+  그렇다고 진짜 아무 일도 없었단 건 아님! 텍스트엔 꼽주는 뉘앙스가 안 담기니까요
 </Small>
               </Card>
             )}
 
             {taeum.patientAggression.length > 0 ? (
               <Card>
-                <Heading>응대 중 폭언</Heading>
+                <Heading>멱살잡이 텐션 (폭언)</Heading>
                 <Small>
 
-  응대 중 폭언은 산업안전보건법상 보호 대상입니다. 병원 보안 절차에 따라 대응하십시오.
+  환자/보호자가 쌍욕 박는 건 산업안전보건법 위반이에요 병원 매뉴얼대로 참교육(대응) 가즈아!
 </Small>
                 {taeum.patientAggression.map((e, i) => (
                   <View key={`${e.segmentId}-p${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -641,14 +638,13 @@ export default function ShiftDetail() {
             ) : null}
 
             <Card>
-              <Heading>참고</Heading>
+              <Heading>꿀팁 참고</Heading>
               <Small>
 
-  근로기준법은 직장 내 괴롭힘과 신고자에 대한 불이익 처우를 엄격히 금지합니다.
+  근로기준법 센세는 직장 내 괴롭힘이랑 보복성 꼽주기를 절대 용서치 않습니다
 </Small>
               <Small>
-                상담·신고: 소속 병원 고충처리 부서 · 대한간호협회 간호사 인권센터 ·
-                고용노동부 노동포털
+                SOS 칠 곳: 소속 병원 고충처리 부서 · 대한간호협회 간호사 인권센터 · 고용노동부 노동포털
               </Small>
             </Card>
           </>
@@ -656,7 +652,7 @@ export default function ShiftDetail() {
           <Card>
             <Body muted>
 
-  전사 결과 화면에서 화자를 지정한 후 ‘카드·보고서 만들기’를 누르십시오.
+  텍스트 변환 창에서 누가 말한 건지 콕콕 찍어준 다음 ‘단어장·리포트 만들기’ 누르면 훨씬 깔쌈해져요
 </Body>
           </Card>
         )

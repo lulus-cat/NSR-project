@@ -16,7 +16,7 @@ import * as Calendar from "expo-calendar/legacy";
 import { parseDutyString, resolveAll, toDateString, type DutyEntry } from "@nsr/core";
 import { buildSchedule } from "./scheduler";
 
-const CAL_NAME = "NSR 듀티";
+const CAL_NAME = "내 듀티표";
 
 async function ensureCalendar(): Promise<string | null> {
   const { granted } = await Calendar.requestCalendarPermissionsAsync();
@@ -51,7 +51,7 @@ export async function exportMonthToCalendar(
   month0: number,
 ): Promise<{ ok: boolean; count: number; message: string }> {
   const calId = await ensureCalendar();
-  if (!calId) return { ok: false, count: 0, message: "캘린더 권한이 필요합니다." };
+  if (!calId) return { ok: false, count: 0, message: "폰 달력 보려면 허락(권한) 좀" };
 
   const monthStart = new Date(year, month0, 1);
   const monthEnd = new Date(year, month0 + 1, 1);
@@ -65,16 +65,16 @@ export async function exportMonthToCalendar(
   );
   for (const s of shifts) {
     await Calendar.createEventAsync(calId, {
-      title: `${s.label} 근무`,
+      title: `${s.label} 출근 (눈물)`,
       startDate: new Date(s.startAt),
       endDate: new Date(s.endAt),
-      notes: "NSR 듀티표에서 내보냄",
+      notes: "NSR 듀티표에서 쏴줌",
     });
   }
   return {
     ok: true,
     count: shifts.length,
-    message: `${month0 + 1}월 근무 ${shifts.length}건을 '${CAL_NAME}' 캘린더에 내보냈습니다.`,
+    message: `짠! ${month0 + 1}월 듀티 ${shifts.length}개 '${CAL_NAME}' 달력에 예쁘게 꽂아놨어요`,
   };
 }
 
@@ -91,7 +91,7 @@ export async function importMonthFromCalendar(
   month0: number,
 ): Promise<{ ok: boolean; count: number; message: string }> {
   const { granted } = await Calendar.requestCalendarPermissionsAsync();
-  if (!granted) return { ok: false, count: 0, message: "캘린더 권한이 필요합니다." };
+  if (!granted) return { ok: false, count: 0, message: "폰 달력 보려면 허락(권한) 좀" };
 
   const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
   // 우리가 내보낸 캘린더는 제외 — 되돌아 들어오면 메아리가 된다.
@@ -125,8 +125,8 @@ export async function importMonthFromCalendar(
     count: entries.length,
     message:
       entries.length > 0
-        ? `${month0 + 1}월에서 근무 ${entries.length}건을 찾았습니다.`
-        : "가져올 듀티 일정이 없습니다. 캘린더 일정이 '데이', 'N'처럼 듀티 코드여야 합니다.",
+        ? `오! ${month0 + 1}월 달력에서 듀티 ${entries.length}개 털어왔어요`
+        : "달력에 훔쳐 올 듀티가 없어요 ㅠㅠ 달력 일정이 '데이', 'N'처럼 듀티 암호여야 가져올 수 있뜸!",
     ...(entries.length > 0 ? { entries } : {}),
   } as { ok: boolean; count: number; message: string; entries?: DutyEntry[] };
 }

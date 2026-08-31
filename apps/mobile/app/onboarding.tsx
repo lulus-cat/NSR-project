@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "react-native";
@@ -9,7 +9,7 @@ import { TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { setSetting } from "../src/db";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 import { getApiKey, setApiKey } from "../src/services/llm";
-import { AI_PATHS, setAiPath, type AiPath } from "../src/services/pipeline";
+import { AI_PATHS, getAiPath, setAiPath, type AiPath } from "../src/services/pipeline";
 import { searchWorkplace, setWorkplacePlace, type PlaceHit } from "../src/services/geofence";
 import { requestRecordingPermissionsAsync } from "expo-audio";
 import * as Location from "expo-location";
@@ -106,10 +106,24 @@ const ITEMS: { key: string; title: string; body: string }[] = [
 
 const STEPS = ["근무지", "파트", "전사 방식", "AI 설정", "필수 확인"];
 
+/**
+ * 고르던 값을 화면 밖에 남긴다.
+ *
+ * 삼성 DeX 처럼 창 크기·밀도가 바뀌는 환경에서는 안드로이드가 액티비티를 다시
+ * 만들 수 있고, 그러면 이 화면의 useState 가 전부 초기값으로 돌아간다. 몇 단계를
+ * 채워 놓고 처음으로 튕기는 것이 그동안 "다음이 안 눌린다"로 보였다. 모듈에
+ * 남겨 두면 다시 마운트돼도 이어서 진행된다.
+ */
+const draft: { step: number; part: string | null; model: string | null } = {
+  step: 0,
+  part: null,
+  model: null,
+};
+
 export default function Onboarding() {
   const t = useTheme();
   const app = useApp();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(draft.step);
   // AI 필수 설정 — 조합과 키 두 개가 저장돼야 다음으로 갈 수 있다.
   const [aiPath, setAiPathChoice] = useState<AiPath | null>(null);
   const [hasGeminiKey, setHasGeminiKey] = useState(false);
@@ -123,9 +137,28 @@ export default function Onboarding() {
   const [picked, setPicked] = useState<PlaceHit | null>(null);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   // 2단계 — 파트
-  const [part, setPart] = useState<string | null>(null);
+  const [part, setPart] = useState<string | null>(draft.part);
   // 3단계 — 모델
-  const [model, setModel] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(draft.model);
+  // 저장이 실패해도 화면은 넘어간다. 대신 무슨 일이 있었는지는 알린다.
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    draft.step = step;
+    draft.part = part;
+    draft.model = model;
+  }, [step, part, model]);
+
+  /** 이미 저장해 둔 조합·키가 있으면 그대로 읽어 온다. 다시 넣게 하지 않는다. */
+  useEffect(() => {
+    void (async () => {
+      setHasGeminiKey((await getApiKey("gemini")) !== null);
+      const saved = await getAiPath();
+      if (!saved) return;
+      setAiPathChoice(saved);
+      setHasPathKey((await getApiKey(saved === "claude" ? "anthropic" : "openai")) !== null);
+    })();
+  }, []);
   // 4단계 — 고지
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [micGranted, setMicGranted] = useState(false);
@@ -134,6 +167,26 @@ export default function Onboarding() {
   const allChecked = ITEMS.every((i) => checked[i.key]);
 
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
+
+  /**
+   * 저장은 화면 전환을 막지 않는다.
+   *
+   * 예전에는 버튼이 `await 저장()` 뒤에 다음 단계로 넘어갔다. 저장이 늦거나
+   * 실패하면 버튼을 눌러도 아무 일이 안 일어난 것처럼 보였다. 이제 저장은 뒤로
+   * 보내고, 잘못되면 그 자리에서 말로 알린다.
+   */
+  const save = async (run: () => Promise<unknown>) => {
+    try {
+      await run();
+      setSaveMsg(null);
+    } catch (e) {
+      setSaveMsg(
+        `방금 고른 값을 저장하지 못했습니다 (${
+          e instanceof Error ? e.message : "원인 미상"
+        }). 설정 화면에서 다시 지정할 수 있습니다.`,
+      );
+    }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }}>
@@ -233,8 +286,9 @@ export default function Onboarding() {
             <Button
               label={picked ? "이 병원으로 선택" : "나중에 지정하기"}
               tone="primary"
-              onPress={async () => {
-                if (picked) await setWorkplacePlace(picked);
+              onPress={() => {
+                // 저장을 기다리지 않는다 — 저장이 늦거나 실패해도 화면은 넘어가야 한다.
+                if (picked) void save(() => setWorkplacePlace(picked));
                 next();
               }}
             />
@@ -277,8 +331,8 @@ export default function Onboarding() {
             <Button
               label={part ? "다음" : "나중에 정하기"}
               tone="primary"
-              onPress={async () => {
-                if (part) await setSetting("profile.part", part);
+              onPress={() => {
+                if (part) void save(() => setSetting("profile.part", part));
                 next();
               }}
             />
@@ -310,18 +364,21 @@ export default function Onboarding() {
             <Button
               label="다음"
               tone="primary"
-              onPress={async () => {
+              onPress={() => {
                 if (model === "colab" || model === "pc" || model === "gemini") {
                   // 설정 → 전사 화면이 이 모드로 열린다. 주소는 거기서 잇는다.
-                  await setSetting(SETTINGS_KEYS.cloudTranscription, {
-                    enabled: false,
-                    endpoint: "",
-                    mode: model,
-                  });
+                  void save(() =>
+                    setSetting(SETTINGS_KEYS.cloudTranscription, {
+                      enabled: false,
+                      endpoint: "",
+                      mode: model,
+                    }),
+                  );
                 }
                 next();
               }}
             />
+            {saveMsg ? <Small muted={false}>{saveMsg}</Small> : null}
           </>
         ) : null}
 
@@ -341,12 +398,14 @@ export default function Onboarding() {
                   key={p.path}
                   accessibilityRole="radio"
                   accessibilityState={{ selected: on }}
-                  onPress={async () => {
+                  onPress={() => {
                     setAiPathChoice(p.path);
-                    await setAiPath(p.path);
-                    setHasPathKey(
-                      (await getApiKey(p.path === "claude" ? "anthropic" : "openai")) !== null,
-                    );
+                    void save(async () => {
+                      await setAiPath(p.path);
+                      setHasPathKey(
+                        (await getApiKey(p.path === "claude" ? "anthropic" : "openai")) !== null,
+                      );
+                    });
                   }}
                 >
                   <Card tone={on ? "accent" : "default"}>
@@ -381,11 +440,13 @@ export default function Onboarding() {
                 <Button
                   label="Gemini 키 저장"
                   tone={hasGeminiKey ? "default" : "primary"}
-                  onPress={async () => {
+                  onPress={() => {
                     if (!geminiKeyInput.trim()) return;
-                    await setApiKey(geminiKeyInput.trim(), "gemini");
-                    setGeminiKeyInput("");
-                    setHasGeminiKey(true);
+                    void save(async () => {
+                      await setApiKey(geminiKeyInput.trim(), "gemini");
+                      setGeminiKeyInput("");
+                      setHasGeminiKey(true);
+                    });
                   }}
                 />
                 <Small muted={false}>
@@ -415,14 +476,16 @@ export default function Onboarding() {
                 <Button
                   label={aiPath === "claude" ? "Claude 키 저장" : "OpenAI 키 저장"}
                   tone={hasPathKey ? "default" : "primary"}
-                  onPress={async () => {
+                  onPress={() => {
                     if (!pathKeyInput.trim()) return;
-                    await setApiKey(
-                      pathKeyInput.trim(),
-                      aiPath === "claude" ? "anthropic" : "openai",
-                    );
-                    setPathKeyInput("");
-                    setHasPathKey(true);
+                    void save(async () => {
+                      await setApiKey(
+                        pathKeyInput.trim(),
+                        aiPath === "claude" ? "anthropic" : "openai",
+                      );
+                      setPathKeyInput("");
+                      setHasPathKey(true);
+                    });
                   }}
                 />
                 <Small>키는 이 기기의 보안 저장소에만 보관되고, 설정에서 언제든 바꿀 수 있습니다.</Small>
@@ -442,6 +505,7 @@ export default function Onboarding() {
               disabled={!aiPath || !hasGeminiKey || !hasPathKey}
               onPress={next}
             />
+            {saveMsg ? <Small muted={false}>{saveMsg}</Small> : null}
           </>
         ) : null}
 
@@ -525,7 +589,7 @@ export default function Onboarding() {
           </>
         ) : null}
 
-        {step > 0 && step < 3 ? (
+        {step > 0 && step < 4 ? (
           <Button label="이전" onPress={() => setStep((s) => s - 1)} />
         ) : null}
       </ScrollView>

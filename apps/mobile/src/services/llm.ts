@@ -110,8 +110,8 @@ async function callAnthropic(body: unknown): Promise<{
   const apiKey = await getApiKey("anthropic");
   if (!apiKey) {
     throw new Error(
-      "API 키가 설정되어 있지 않습니다. 설정 > 보조 기능에서 입력해 주세요. " +
-        "키는 이 기기의 보안 저장소(iOS 키체인 / Android 키스토어)에만 보관됩니다.",
+      "API 열쇠(키)가 읎어요! 설정 > AI 선배 셋팅 가서 꽂아주세용 " +
+        "열쇠는 폰 안쪽 깊숙한 금고(키체인/키스토어)에만 박아둬서 절대 안 털려요 안심!",
     );
   }
 
@@ -128,11 +128,11 @@ async function callAnthropic(body: unknown): Promise<{
   if (!res.ok) {
     // 상태 코드로 사람이 읽을 말을 만든다. SDK 의 오류 클래스 대신 쓰는 것이다.
     const detail = await res.text().catch(() => "");
-    if (res.status === 401) throw new Error("API 키가 올바르지 않습니다.");
+    if (res.status === 401) throw new Error("엥? API 열쇠(키) 짝퉁인데요? 안 맞음");
     if (res.status === 429) {
-      throw new Error("요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.");
+      throw new Error("앗 너무 많이 찔러서 AI가 뻗었어요 ㅠㅠ 쿨타임 좀 돌고 다시 와주세용");
     }
-    throw new Error(`API 오류 ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`API 놈이 에러 뱉음 ${res.status}: ${detail.slice(0, 200)}`);
   }
   return res.json();
 }
@@ -154,24 +154,24 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
  */
 export const MODEL_CHOICES: Record<Exclude<LlmProvider, "custom">, { id: string; hint: string }[]> = {
   anthropic: [
-    { id: "claude-opus-5", hint: "가장 정확 (기본)" },
-    { id: "claude-fable-5", hint: "최상위 — 가장 비쌈" },
-    { id: "claude-sonnet-5", hint: "균형 — 절반 가격" },
-    { id: "claude-haiku-4-5", hint: "빠르고 가장 저렴" },
+    { id: "claude-opus-5", hint: "킹갓제너럴 정확도 (국룰)" },
+    { id: "claude-fable-5", hint: "최고 존엄 — 근데 돈 엄청 깨짐 주의" },
+    { id: "claude-sonnet-5", hint: "밸런스 패치 — 가격 반값 할인!" },
+    { id: "claude-haiku-4-5", hint: "젤 빠르고 젤 쌈 (가성비충)" },
   ],
   openai: [
-    { id: "gpt-5.6-terra", hint: "균형 (기본)" },
-    { id: "gpt-5.6-sol", hint: "가장 정확" },
-    { id: "gpt-5.6-luna", hint: "가장 저렴" },
+    { id: "gpt-5.6-terra", hint: "밸런스 패치 (국룰)" },
+    { id: "gpt-5.6-sol", hint: "킹갓제너럴 정확도" },
+    { id: "gpt-5.6-luna", hint: "젤 저렴이 (가성비)" },
   ],
   kimi: [
-    { id: "kimi-k3", hint: "기본 — 최신" },
-    { id: "kimi-k2.6", hint: "구형 — 기존 계정만" },
+    { id: "kimi-k3", hint: "국밥 기본 — 제일 최신형 똑똑이" },
+    { id: "kimi-k2.6", hint: "라떼 구형 — 옛날 계정 쓴 사람만 모심" },
   ],
   gemini: [
-    { id: "gemini-3.7-flash", hint: "기본 — 무료 티어 넉넉" },
-    { id: "gemini-3.1-pro-preview", hint: "가장 정확" },
-    { id: "gemini-3.5-flash-lite", hint: "가장 저렴" },
+    { id: "gemini-3.7-flash", hint: "국밥 기본 — 공짜 티어 완전 혜자 낭낭함" },
+    { id: "gemini-3.1-pro-preview", hint: "킹갓제너럴 정확도" },
+    { id: "gemini-3.5-flash-lite", hint: "젤 저렴이 (가성비)" },
   ],
 };
 
@@ -226,12 +226,12 @@ async function callOpenAi(input: {
   const provider = input.override?.provider ?? (await getProvider());
   const custom = provider === "custom" ? await getCustomServer() : null;
   if (provider === "custom" && !custom) {
-    throw new Error("내 서버 주소가 없습니다. 설정 > 보조 기능에서 서버 주소와 모델을 입력해 주세요.");
+    throw new Error("엥 내 서버 주소가 비었어요! 설정 > AI 선배 셋팅 가서 주소랑 녀석(모델) 좀 채워줘용");
   }
   const apiKey = await getApiKey(provider === "anthropic" ? "openai" : provider);
   if (!custom && !apiKey) {
     throw new Error(
-      "API 키가 설정되어 있지 않습니다. 설정 > 보조 기능에서 입력해 주세요.",
+      "API 열쇠(키)가 읎어요! 설정 > AI 선배 셋팅 가서 꽂아주세용",
     );
   }
 
@@ -270,11 +270,11 @@ async function callOpenAi(input: {
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    if (res.status === 401) throw new Error("API 키가 올바르지 않습니다.");
+    if (res.status === 401) throw new Error("엥? API 열쇠(키) 짝퉁인데요? 안 맞음");
     if (res.status === 429) {
-      throw new Error("요청이 너무 많거나 크레딧이 부족합니다. 잠시 후 다시 시도해 주세요.");
+      throw new Error("앗 너무 굴려서 지쳤거나 잔고(크레딧) 털렸어요 쿨타임 차고 다시 고!");
     }
-    throw new Error(`API 오류 ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`API 놈이 뻘소 시전 ${res.status}: ${detail.slice(0, 200)}`);
   }
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
@@ -484,7 +484,7 @@ export async function summarizeShift(
 
   const toolUse = response.content.find((b) => b.type === "tool_use");
   if (!toolUse) {
-    throw new Error("모델이 결과를 구조화해 반환하지 않았습니다. 다시 시도해 주세요.");
+    throw new Error("엥? 녀석이 뻘소리로 답했어요(구조화 실패). 다시 한 번 찔러볼게요");
   }
   // 툴 입력의 JSON 이스케이프는 모델마다 다를 수 있으므로 항상 파서를 거친다.
   const parsed =
@@ -729,14 +729,14 @@ async function runClinicalTool(
   if (name === "update_card") {
     const ok = await db.clinicalUpdateCard(args.card_id, args.front, args.back, args.reason);
     return ok
-      ? { result: "수정했습니다.", action: `카드 수정(${args.card_id}) — ${args.reason}` }
-      : { result: "그 id 의 카드가 없습니다." };
+      ? { result: "예쁘게 고쳐놨어요", action: `카드 수정(${args.card_id}) — ${args.reason}` }
+      : { result: "엥? 그 번호 단어장이 안 보여요" };
   }
   if (name === "delete_card") {
     const ok = await db.clinicalDeleteCard(args.card_id, args.reason);
     return ok
-      ? { result: "삭제했습니다.", action: `카드 삭제(${args.card_id}) — ${args.reason}` }
-      : { result: "그 id 의 카드가 없습니다." };
+      ? { result: "가차 없이 펑! 날렸어요", action: `카드 삭제(${args.card_id}) — ${args.reason}` }
+      : { result: "엥? 그 번호 단어장이 안 보여요" };
   }
   if (name === "add_card") {
     const id = await db.clinicalAddCard({
@@ -746,14 +746,14 @@ async function runClinicalTool(
       reason: args.reason,
     });
     return id
-      ? { result: `추가했습니다 (id: ${id}).`, action: `카드 추가 — ${args.reason}` }
+      ? { result: `새 단어장 뚝딱! (id: ${id})`, action: `카드 추가 — ${args.reason}` }
       : {
           result:
-            "거부됨: source_id 가 심층 분석 결과에 없는 id 입니다. 근거 없는 카드는 만들 수 없습니다 — 확인 목록으로 보내십시오.",
+            "빠꾸머금: source_id가 족보에 없는 유령 번호예요! 근거 없는 뇌피셜 단어장은 금지 물음표 살인마 리스트로 넘겨버리세요!",
         };
   }
   if (name === "update_report_section") {
-    if (!reportShiftId) return { result: "수정할 보고서가 없습니다." };
+    if (!reportShiftId) return { result: "엥? 뜯어고칠 리포트가 안 보여요" };
     const ok = await db.clinicalUpdateReportSection(
       reportShiftId,
       args.section,
@@ -761,16 +761,16 @@ async function runClinicalTool(
       args.reason,
     );
     return ok
-      ? { result: "보고서를 고쳤습니다.", action: `보고서 '${args.section}' 수정 — ${args.reason}` }
-      : { result: "보고서가 없습니다." };
+      ? { result: "리포트 찰지게 고쳐놨어요", action: `보고서 '${args.section}' 수정 — ${args.reason}` }
+      : { result: "엥? 리포트가 없는데요" };
   }
   if (name === "resolve_confirmation") {
     const ok = await db.resolveConfirmation(args.item_id, args.result, args.reason);
     return ok
-      ? { result: "확인 목록에서 해소했습니다.", action: `확인 해소(${args.item_id}) — ${args.result}` }
-      : { result: "그 id 의 항목이 없습니다." };
+      ? { result: "물음표 리스트에서 시원하게 지워버림 싹-", action: `확인 해소(${args.item_id}) — ${args.result}` }
+      : { result: "엥? 그 번호 궁금증이 안 보여요" };
   }
-  return { result: "모르는 도구입니다." };
+  return { result: "엥 이건 모르는 스킬인데?" };
 }
 
 /**
@@ -851,7 +851,7 @@ async function clinicalChatAnthropic(
         toolResults.push({
           type: "tool_result",
           tool_use_id: b.id,
-          content: `실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`,
+          content: `폭망: ${e instanceof Error ? e.message : "귀신 곡할 노릇(원인 모름)"}`,
           is_error: true,
         });
       }
@@ -861,7 +861,7 @@ async function clinicalChatAnthropic(
     messages.push({ role: "user", content: toolResults });
   }
 
-  return { text: texts.join("\n").trim() || "(수정을 마쳤습니다.)", actions };
+  return { text: texts.join("\n").trim() || "(수술 끝! 다 고쳤습니다)", actions };
 }
 
 /** 하이브리드 5b — Gemini 3.1 Pro 를 OpenAI 호환 게이트웨이의 함수 호출로 돌린다. */
@@ -870,7 +870,7 @@ async function clinicalChatGemini(
   input: { context: string; reportShiftId?: string; webSearch?: boolean },
 ): Promise<ClinicalReply> {
   const apiKey = await getApiKey("gemini");
-  if (!apiKey) throw new Error("Gemini API 키가 없습니다. 설정 → 필수 기능에서 넣으십시오.");
+  if (!apiKey) throw new Error("구글 AI 열쇠(키)가 어딨어요! 설정 → 필수 셋팅 가서 꽂아주세용");
   const system =
     `${CLINICAL_SYSTEM}\n\n[학습 자료·배치 판단 컨텍스트]\n${input.context}` +
     (input.webSearch
@@ -931,13 +931,13 @@ async function clinicalChatGemini(
         if (out.action) actions.push(out.action);
         result = out.result;
       } catch (e) {
-        result = `실패: ${e instanceof Error ? e.message : "알 수 없는 오류"}`;
+        result = `폭망: ${e instanceof Error ? e.message : "귀신 곡할 노릇(원인 모름)"}`;
       }
       messages.push({ role: "tool", tool_call_id: call.id, content: result });
     }
   }
 
-  return { text: texts.join("\n").trim() || "(수정을 마쳤습니다.)", actions };
+  return { text: texts.join("\n").trim() || "(수술 끝! 다 고쳤습니다)", actions };
 }
 
 /** 대화를 시작할 수 있는 상태인가 — 공급자 설정이 되어 있는가. */
@@ -946,11 +946,11 @@ export async function llmReady(): Promise<{ ok: boolean; reason?: string }> {
   if (p === "custom") {
     return (await getCustomServer())
       ? { ok: true }
-      : { ok: false, reason: "내 서버 주소가 없습니다. 설정 → 보조 기능에서 입력하십시오." };
+      : { ok: false, reason: "엥 내 서버 주소가 비었어요! 설정 → AI 선배 셋팅 가서 채워줘용" };
   }
   return (await getApiKey(p))
     ? { ok: true }
-    : { ok: false, reason: "API 키가 없습니다. 설정 → 보조 기능에서 공급자와 키를 넣으십시오." };
+    : { ok: false, reason: "열쇠(키)가 읎어요! 설정 → AI 선배 셋팅 가서 누구 쓸 건지 고르고 꽂아주세용" };
 }
 
 /** 키가 유효한지 가볍게 확인한다. 설정 화면의 "연결 테스트" 버튼용. */
@@ -969,11 +969,11 @@ export async function testConnection(): Promise<{ ok: boolean; message: string }
         messages: [{ role: "user", content: "ping" }],
       });
     }
-    return { ok: true, message: "연결됐습니다." };
+    return { ok: true, message: "오 찰떡 연결 완료!" };
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "알 수 없는 오류",
+      message: error instanceof Error ? error.message : "엥 몰라 귀신 곡할 노릇",
     };
   }
 }

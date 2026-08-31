@@ -196,10 +196,10 @@ export async function exportNotePdf(title: string, body: string): Promise<void> 
   const Sharing = await import("expo-sharing");
   const { uri } = await Print.printToFileAsync({ html: noteHtml(title, body) });
   if (!(await Sharing.isAvailableAsync())) {
-    throw new Error("이 기기에서는 공유 시트를 열 수 없습니다.");
+    throw new Error("앗 이 폰에선 공유 창을 못 열어요 ㅠㅠ");
   }
   await Sharing.shareAsync(uri, {
     mimeType: "application/pdf",
-    dialogTitle: `${title.trim() || "노트"} PDF 내보내기`,
+    dialogTitle: `${title.trim() || "이름 없는 녀석"} PDF로 예쁘게 굽기`,
   });
 }

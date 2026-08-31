@@ -36,15 +36,15 @@ export const PRIVACY_KEYS = {
 
 /** 화면에서 켜고 끌 수 있는 항목들. 순서가 곧 화면 순서다. */
 export const MASKABLE_KINDS: { kind: PiiKind; label: string; hint: string }[] = [
-  { kind: "name", label: PII_LABELS.name, hint: "호칭이 포함된 성명 (\"김○○ 님\", \"○○ 선생님\")" },
-  { kind: "phone", label: PII_LABELS.phone, hint: "휴대전화 및 지역번호" },
-  { kind: "rrn", label: PII_LABELS.rrn, hint: "주민등록번호" },
-  { kind: "mrn", label: PII_LABELS.mrn, hint: "등록번호·차트번호" },
+  { kind: "name", label: PII_LABELS.name, hint: "환자/슨생님 이름 (\"김○○ 님\", \"○○ 선생님\")" },
+  { kind: "phone", label: PII_LABELS.phone, hint: "폰 번호랑 지역 번호" },
+  { kind: "rrn", label: PII_LABELS.rrn, hint: "주민번호 (제일 위험)" },
+  { kind: "mrn", label: PII_LABELS.mrn, hint: "환자 번호/차트 번호" },
   { kind: "dob", label: PII_LABELS.dob, hint: "생년월일" },
   {
     kind: "location",
     label: PII_LABELS.location,
-    hint: "병실·침상 번호 (기본 비활성화 — 기록 필요 시 설정)",
+    hint: "병실·침대 번호 (평소엔 냅두는데, 원하면 셋팅에서 가려드림)",
   },
 ];
 
@@ -110,7 +110,7 @@ export async function redactForExport(
               /[을를] 가렸습니다\.$/,
               "이 그대로 포함됩니다.",
             )}`
-          : "마스킹이 비활성화되어 있습니다.",
+          : "모자이크 기능 꺼져 있음 (쌩얼 노출 주의)",
       warnings,
     };
   }
@@ -188,7 +188,7 @@ export async function shareText(input: {
   if (!(await Sharing.isAvailableAsync())) {
     return {
       shared: false,
-      message: `이 기기에서는 공유 기능을 실행할 수 없습니다. 파일 위치: ${file.uri}`,
+      message: `앗 이 폰에선 공유 창을 못 띄워요 ㅠㅠ 파일 여기 짱박혀 있음: ${file.uri}`,
     };
   }
   await Sharing.shareAsync(file.uri, {

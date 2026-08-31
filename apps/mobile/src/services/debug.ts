@@ -54,7 +54,7 @@ export function installGlobalErrorLog(): void {
   const prev = utils.getGlobalHandler();
   utils.setGlobalHandler((e, fatal) => {
     const msg = e instanceof Error ? `${e.message}\n${(e.stack ?? "").split("\n").slice(0, 4).join("\n")}` : String(e);
-    void logDebug(`${fatal ? "[치명] " : ""}${msg}`, "error");
+    void logDebug(`${fatal ? "[대참사] " : ""}${msg}`, "error");
     prev(e, fatal);
   });
 }
@@ -71,21 +71,21 @@ function formatTime(at: number): string {
 export async function buildIssueUrl(userNote?: string): Promise<string> {
   const entries = (await readDebugLog()).slice(-8);
   const lines = entries.map((e) => `- ${formatTime(e.at)} [${e.kind}] ${e.message.split("\n")[0]}`);
-  const logBlock = lines.length > 0 ? (await redactForNetwork(lines.join("\n"))).text : "(기록된 오류 없음)";
+  const logBlock = lines.length > 0 ? (await redactForNetwork(lines.join("\n"))).text : "(오 평화롭다 뻗은 기록 없음)";
 
   const body = [
-    "## 무슨 일이 있었나",
-    userNote?.trim() || "(여기에 상황을 적어주세요 — 어떤 화면에서, 무엇을 눌렀을 때)",
+    "## 대체 무슨 일이 있었나",
+    userNote?.trim() || "(여기다 썰 좀 풀어주세요 — 어떤 화면에서, 뭘 찔렀을 때 폰이 뻗었는지)",
     "",
-    "## 환경",
-    `- 앱 버전: ${currentVersion() ?? "개발 중"}`,
+    "## 폰 상태 (환경)",
+    `- 앱 나이(버전): ${currentVersion() ?? "뚝딱뚝딱 개발 중"}`,
     `- OS: ${Platform.OS} ${Platform.Version}`,
-    `- 기기: ${Constants.deviceName ?? "?"}`,
+    `- 내 폰: ${Constants.deviceName ?? "?"}`,
     "",
-    "## 최근 오류 로그 (자동 첨부, 비식별화됨)",
+    "## 방금 터진 에러 로그 (알아서 복붙할게요, 정보는 모자이크 처리 완)",
     logBlock,
   ].join("\n");
 
-  const title = encodeURIComponent(`[버그] ${userNote?.trim().slice(0, 60) || "앱 오류 보고"}`);
+  const title = encodeURIComponent(`[버그 출몰] ${userNote?.trim().slice(0, 60) || "앱이 미쳤어요 (에러 보고)"}`);
   return `https://github.com/${RELEASE_REPO}/issues/new?title=${title}&body=${encodeURIComponent(body.slice(0, 5500))}`;
 }

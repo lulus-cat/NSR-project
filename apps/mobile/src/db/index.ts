@@ -806,7 +806,7 @@ export async function saveNote(input: {
      ON CONFLICT(id) DO UPDATE SET
        title = excluded.title, body = excluded.body,
        pinned = excluded.pinned, updated_at = excluded.updated_at`,
-    [id, input.title.trim() || "제목 없음", input.body, input.pinned ? 1 : 0, now, now],
+    [id, input.title.trim() || "제목 잃어버림", input.body, input.pinned ? 1 : 0, now, now],
   );
   return id;
 }

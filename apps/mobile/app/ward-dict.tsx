@@ -74,20 +74,20 @@ export default function WardDict() {
 
   const doImport = useCallback(async () => {
     setMsg(null);
-    setBusy("가져오는 중");
+    setBusy("낑낑 가져오는 중");
     try {
       const r = await importWardPackFromFile();
       if (r.canceled) return;
       if (!r.pack) {
-        setMsg(r.errors.join(" ") || "사전을 읽지 못했습니다.");
+        setMsg(r.errors.join(" ") || "엥 족보 파일이 깨졌나 안 읽혀요 ㅠㅠ");
         return;
       }
-      const bits = [`'${r.pack.name}' 사전을 가져왔습니다 (용어 ${r.pack.terms.length}개).`];
+      const bits = [`'${r.pack.name}' 족보 야무지게 훔쳐 왔어요 (단어 무려 ${r.pack.terms.length}개 겟또!).`];
       if (r.warnings.length > 0) bits.push(r.warnings.join(" "));
       setMsg(bits.join(" "));
       await load();
     } catch (e) {
-      setMsg(e instanceof Error ? e.message : "가져오지 못했습니다.");
+      setMsg(e instanceof Error ? e.message : "앗 훔쳐오기 엎어짐");
     } finally {
       setBusy(null);
     }
@@ -106,7 +106,7 @@ export default function WardDict() {
     await saveWardPack(pack);
     setNewName("");
     setNewHospital("");
-    setMsg(`'${name}' 사전을 만들었습니다. 아래의 추천 용어를 추가해 보십시오.`);
+    setMsg(`빰! '${name}' 족보 파기 성공! 밑에 추천 단어들 쏙쏙 담아보세요`);
     await load();
   }, [load, newHospital, newName]);
 
@@ -115,10 +115,10 @@ export default function WardDict() {
       const draft: LexiconEntry = draftTermFromSuggestion(
         suggestion,
         stored.pack.id,
-        `${stored.pack.name} 용어입니다. 의미를 입력하십시오.`,
+        `${stored.pack.name}에 들어갈 단어 뜻을 찰지게 적어주세용`,
       );
       await saveWardPack(addTermToPack(stored.pack, draft, Date.now()));
-      setMsg(`'${suggestion.surface}'${josa(suggestion.surface, "을")} ${stored.pack.name}에 추가했습니다. 의미를 입력하십시오.`);
+      setMsg(`'${suggestion.surface}'${josa(suggestion.surface, "을")} ${stored.pack.name} 족보에 모셔왔습니다! 뜻도 예쁘게 적어봐요`);
       await load();
     },
     [load],
@@ -127,12 +127,12 @@ export default function WardDict() {
   const removePack = useCallback(
     (stored: StoredPack) => {
       Alert.alert(
-        `'${stored.pack.name}' 사전을 삭제합니다`,
-        "이 사전 용어는 전사할 때 반영되지 않습니다. 지우지 않고 기능만 끌 수도 있습니다.",
+        `'${stored.pack.name}' 족보 폭파`,
+        "이거 지우면 나중에 글자 바꿀 때 이 은어들 싹 다 못 알아먹어요! 굳이 안 지우고 잠깐 꺼둘 수도 있는데 진짜 날려요?",
         [
-          { text: "취소", style: "cancel" },
+          { text: "앗차차 (취소)", style: "cancel" },
           {
-            text: "지우기",
+            text: "냅다 지우기",
             style: "destructive",
             onPress: async () => {
               await deleteWardPack(stored.pack.id);
@@ -155,10 +155,10 @@ export default function WardDict() {
       }}
     >
       <Card>
-        <Heading>병동 사전</Heading>
+        <Heading>우리 병동 족보</Heading>
         <Body muted>
           
-  내장 사전은 표준 간호 용어만 제공합니다. 병동만의 은어는 따로 등록해 주십시오.
+  찐 기본 사전은 FM 교과서 단어만 알아요 ㅠㅠ 우리 병동만의 스펙타클 은어는 여기다 따로 모아주세요!
 </Body>
         <Divider />
         <Small muted={false}>
@@ -166,14 +166,14 @@ export default function WardDict() {
 </Small>
         <Small>
           
-  내 사전 › 병동 사전 › 내장 사전 순으로 더 좁은 범위의 뜻이 우선 적용됩니다.
+  내 단어장 › 병동 족보 › 기본 사전 순으로 서열 정리 끝! 좁고 딥한 은어가 다 이겨먹어요
 </Small>
         <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.sm }}>
           <View style={{ flex: 1 }}>
             <Button
-              label="사전 받아오기"
+              label="남의 족보 훔쳐오기"
               tone="primary"
-              busy={busy === "가져오는 중"}
+              busy={busy === "낑낑 가져오는 중"}
               onPress={() => void doImport()}
             />
           </View>
@@ -186,7 +186,7 @@ export default function WardDict() {
         <Card tone={shareCheck.check.needsReview ? "warn" : "default"}>
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
             <Badge
-              text={shareCheck.check.needsReview ? "확인 필요" : "확인됨"}
+              text={shareCheck.check.needsReview ? "확인 필수!" : "끄덕끄덕 (확인 완)"}
               tone={shareCheck.check.needsReview ? "warn" : "ok"}
             />
             <Heading>{shareCheck.pack.pack.name} 보내기</Heading>
@@ -194,7 +194,7 @@ export default function WardDict() {
           <Small muted={false}>{shareCheck.check.summary}</Small>
           <Small>
             
-  사전 예문에 이름이나 병실 등 민감한 개인정보가 들어가지 않게 주의하십시오.
+  족보 예문에 환자 이름이나 병실 번호 같은 거 껴있지 않게 눈 크게 뜨고 조심!
 </Small>
 
           {shareCheck.check.findings.length > 0 ? (
@@ -202,7 +202,7 @@ export default function WardDict() {
               <Divider />
               <Small>
                 
-  자동으로 가려지지 않는 내용입니다. 문맥을 보고 직접 지우십시오.
+  이건 AI가 눈치 못 채서 못 가려주는 놈들이에요! 앞뒤 문맥 보고 쌤이 직접 지워주세요 제발
 </Small>
               {shareCheck.check.findings.slice(0, 20).map((f, i) => (
                 <View key={`${f.termId}-${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -223,7 +223,7 @@ export default function WardDict() {
           <View style={{ flexDirection: "row", gap: space.sm }}>
             <View style={{ flex: 1 }}>
               <Button
-                label={shareCheck.check.needsReview ? "그래도 보내기" : "보내기"}
+                label={shareCheck.check.needsReview ? "알빠임? 그냥 쏠래" : "슝 보내기"}
                 tone={shareCheck.check.needsReview ? "default" : "primary"}
                 onPress={async () => {
                   const target = shareCheck.pack.pack;
@@ -231,13 +231,13 @@ export default function WardDict() {
                   try {
                     await shareWardPack(target);
                   } catch (e) {
-                    setMsg(e instanceof Error ? e.message : "보내지 못했습니다.");
+                    setMsg(e instanceof Error ? e.message : "앗 쏘기 실패");
                   }
                 }}
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Button label="취소" onPress={() => setShareCheck(null)} />
+              <Button label="앗차차 (취소)" onPress={() => setShareCheck(null)} />
             </View>
           </View>
         </Card>
@@ -247,12 +247,12 @@ export default function WardDict() {
       {pending.length > 0 ? (
         <Card tone="warn">
           <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-            <Badge text="확인 필요" tone="warn" />
+            <Badge text="확인 필수!" tone="warn" />
             <Heading>받은 교정 규칙 {pending.length}건</Heading>
           </View>
           <Small>
             
-  전사 결과를 강제로 바꾸는 규칙입니다. 숫자가 틀어질 위험이 있으니 켤 때 조심하십시오.
+  글자 변환 결과를 멱살 잡고 억지로 바꾸는 스킬이에요. 숫자 꼬일 수 있으니까 켤 때 쫄깃하게 조심하세용
 </Small>
           {pending.map((p) => (
             <View key={p.key} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -260,12 +260,12 @@ export default function WardDict() {
                 &ldquo;{p.from}&rdquo; → &ldquo;{p.to}&rdquo;
               </Text>
               {/^\d|\d$/.test(p.from) || /\d/.test(p.to) ? (
-                <Badge text="수치 변경 주의" tone="danger" />
+                <Badge text="숫자 틀어짐 킹조심!" tone="danger" />
               ) : null}
               <View style={{ flexDirection: "row", gap: space.sm }}>
                 <View style={{ flex: 1 }}>
                   <Button
-                    label="적용"
+                    label="얍 적용!"
                     onPress={async () => {
                       await approvePendingCorrection(p.key);
                       await load();
@@ -274,7 +274,7 @@ export default function WardDict() {
                 </View>
                 <View style={{ flex: 1 }}>
                   <Button
-                    label="버림"
+                    label="에이 버려"
                     onPress={async () => {
                       await rejectPendingCorrection(p.key);
                       await load();
@@ -311,7 +311,7 @@ export default function WardDict() {
               />
             </View>
             <Small>{describePack(stored)}</Small>
-            {!stored.enabled ? <Badge text="꺼짐 — 인식 안 됨" tone="muted" /> : null}
+            {!stored.enabled ? <Badge text="꺼둠 — 알아서 못 알아먹음" tone="muted" /> : null}
 
             {stats.terms > 0 ? (
               <>
@@ -326,21 +326,21 @@ export default function WardDict() {
               </>
             ) : (
               <Small>
-  등록된 용어가 없습니다.
+  휑~ 아직 넣은 단어가 없어요
 </Small>
             )}
 
             <View style={{ flexDirection: "row", gap: space.sm, marginTop: space.sm }}>
               <View style={{ flex: 1 }}>
                 <Button
-                  label="동료에게 보내기"
+                  label="동기한테 족보 뿌리기"
                   onPress={() =>
                     setShareCheck({ pack: stored, check: checkPackBeforeShare(stored.pack) })
                   }
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Button label="지우기" tone="danger" onPress={() => removePack(stored)} />
+                <Button label="싹 날리기" tone="danger" onPress={() => removePack(stored)} />
               </View>
             </View>
           </Card>
@@ -349,15 +349,15 @@ export default function WardDict() {
 
       {/* 새 사전 */}
       <Card>
-        <Heading>사전 만들기</Heading>
+        <Heading>새 족보 파기</Heading>
         <Small>
           
-  용어를 모아 두면, 후배 신규 간호사에게 사전 파일 하나로 공유할 수 있습니다.
+  단어 모아두면, 멘붕 온 후배 신규 쌤한테 파일 하나로 족보 쫙 뿌릴 수 있어요
 </Small>
         <TextInput
           value={newName}
           onChangeText={setNewName}
-          placeholder="사전 이름 (예: ○○병원 71병동)"
+          placeholder="족보 이름 (예: 헬게이트 71병동)"
           placeholderTextColor={t.textMuted}
           style={{
             color: t.text,
@@ -381,7 +381,7 @@ export default function WardDict() {
           }}
         />
         <Button
-          label="만들기"
+          label="뚝딱 만들기"
           tone="primary"
           disabled={!newName.trim()}
           onPress={() => void createPack()}
@@ -394,7 +394,7 @@ export default function WardDict() {
           <Heading>사전에 없는 말 {suggestions.length}개</Heading>
           <Small>
             
-  그동안 자주 수정한 미등록 용어입니다. 사전에 넣으면 다음부턴 알아서 잡아냅니다.
+  쌤이 그동안 빡쳐서 수동으로 고친 단어들이에요! 족보에 짱박아두면 다음부턴 AI가 눈치껏 알아서 잡아드림
 </Small>
           {suggestions.slice(0, 10).map((s) => (
             <View key={s.surface} style={{ gap: space.xs, paddingVertical: space.sm }}>
@@ -405,7 +405,7 @@ export default function WardDict() {
               <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
                 {packs.length === 0 ? (
                   <Small>
-  등록할 대상 사전이 없습니다. 사전을 먼저 만드십시오.
+  엥? 꽂아넣을 족보가 없어요! 새 족보부터 파고 오세요
 </Small>
                 ) : (
                   packs.map((stored) => (

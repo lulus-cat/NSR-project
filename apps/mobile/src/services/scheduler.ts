@@ -205,7 +205,7 @@ async function startFor(
     },
     onError(error) {
       // 기록 실패는 조용히 넘어가면 안 된다. 사용자는 기록되고 있다고 믿고 있다.
-      console.error("[NSR] 기록 오류", error);
+      console.error("[앗] 듀티 녹음 엎어짐", error);
       void setSetting("recording.lastError", {
         at: Date.now(),
         message: error instanceof Error ? error.message : String(error),
@@ -233,7 +233,7 @@ export async function startManual(shiftId: string, now = Date.now()): Promise<bo
   await stopActive(now);
   manualStartedAt = now;
   await startFor(
-    { shiftId, code: "OTHER", label: "수동", date: shiftId.split(":")[0], startAt: now, endAt: now + 12 * 3600_000 },
+    { shiftId, code: "OTHER", label: "내 손으로 켬", date: shiftId.split(":")[0], startAt: now, endAt: now + 12 * 3600_000 },
     policy,
     now,
   );
@@ -286,7 +286,7 @@ export async function registerBackgroundTask(): Promise<void> {
         await tick(Date.now());
         return BackgroundTask.BackgroundTaskResult.Success;
       } catch (error) {
-        console.error("[NSR] 백그라운드 틱 실패", error);
+        console.error("[앗] 백그라운드 띡띡이 고장 ㅠㅠ", error);
         return BackgroundTask.BackgroundTaskResult.Failed;
       }
     });
@@ -315,23 +315,23 @@ export function platformCapability(iosContinuousSession: boolean): PlatformCapab
     return {
       fullyAutomatic: true,
       explanation:
-        "근무 시각에 맞춰 자동으로 녹음합니다. Android 정책상 강제 알림이 유지됩니다." +
-        "소리나 진동 없는 무음 알림이며, OS 정책이라 임의로 끌 수 없습니다.",
+        "쌤 출근 시간에 맞춰서 알아서 녹음 켜드림! 안드로이드 똥고집 땜에 알림은 계속 떠 있을 거예요 " +
+        "소리도 진동도 없는 입꾹닫 알림이에요. 구글 맘이라 제가 맘대로 못 꺼요 ㅠㅠ",
     };
   }
   if (iosContinuousSession) {
     return {
       fullyAutomatic: true,
       explanation:
-        "연속 세션 유지 설정으로 근무 시각에 기록이 자동 시작됩니다." +
-        "대기 상태를 유지하느라 배터리가 평소보다 많이 닳습니다.",
+        "'백그라운드 상시 대기' 켜놔서 출근 시간에 녹음 알아서 돌아가요! " +
+        "대신 앱이 뒤에서 몰래 대기 타느라 배터리가 살살 녹을 수 있음",
     };
   }
   return {
     fullyAutomatic: false,
     explanation:
-      "iOS 정책상 앱을 열지 않은 상태에서의 마이크 자동 활성화가 막힐 수 있습니다." +
-      "인계 직전에 앱을 한 번 열어 주십시오. 켜진 기록은 화면을 꺼도 계속 유지됩니다." +
-      "백그라운드 자동 기록을 원하면 설정에서 '연속 세션 유지'를 켜십시오 (배터리 소모 큼).",
+      "애플 놈들 똥고집 땜에 앱 안 켜두면 마이크 혼자 켜지는 게 막힐 때가 있어요 " +
+      "인계 받기 직전에 앱 한 번 슥 열어주세요! 한 번 켜진 녹음은 폰 화면 꺼도 쌩쌩 잘 돌아감 " +
+      "알아서 켜주는 거 원하면 설정 가서 '백그라운드 상시 대기' 켜세용! (배터리 살살 녹음 주의)",
   };
 }
