@@ -426,20 +426,32 @@ export default function TranscriptionSetup() {
           ) : null}
           <Divider />
           <Small muted={false}>토큰 만들기 — 무료, 한 번만 (약 5분)</Small>
+          <Small>
+            누르면 각 쪽이 열립니다. 로그인한 뒤 &lsquo;Agree&rsquo;(동의)를 한 번씩 누르면
+            됩니다 — 승인은 즉시입니다.
+          </Small>
           <Button
-            label="1. 분리 모델 동의 (huggingface)"
+            label="1. 분리 모델 동의 — community-1"
+            onPress={() =>
+              void Linking.openURL(
+                "https://huggingface.co/pyannote/speaker-diarization-community-1",
+              )
+            }
+          />
+          <Button
+            label="2. 분리 모델 동의 — 3.1 (예비)"
             onPress={() =>
               void Linking.openURL("https://huggingface.co/pyannote/speaker-diarization-3.1")
             }
           />
           <Button
-            label="2. 구간 모델 동의 (huggingface)"
+            label="3. 구간 모델 동의 — segmentation-3.0"
             onPress={() =>
               void Linking.openURL("https://huggingface.co/pyannote/segmentation-3.0")
             }
           />
           <Button
-            label="3. Read 토큰 발급 → 위 칸에 붙여넣기"
+            label="4. Read 토큰 발급 → 위 칸에 붙여넣기"
             onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
           />
           <Small>
