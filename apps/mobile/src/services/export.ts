@@ -165,6 +165,17 @@ function safeFileName(name: string): string {
   );
 }
 
+/** 내보낼 수 있는 파일 꼴. 확장자·MIME·(iOS)UTI 를 한 자리에서 정한다. */
+export type ExportFormat = "md" | "txt" | "csv" | "json";
+
+const FORMATS: Record<ExportFormat, { mime: string; uti: string }> = {
+  md: { mime: "text/markdown", uti: "net.daringfireball.markdown" },
+  txt: { mime: "text/plain", uti: "public.plain-text" },
+  // 엑셀·앙키가 바로 읽는 꼴. UTF-8 이라 한글이 깨지지 않게 BOM 을 붙인다.
+  csv: { mime: "text/csv", uti: "public.comma-separated-values-text" },
+  json: { mime: "application/json", uti: "public.json" },
+};
+
 /**
  * 텍스트를 파일로 만들어 공유 시트를 연다.
  *
@@ -175,15 +186,20 @@ export async function shareText(input: {
   text: string;
   fileName: string;
   title: string;
+  /** 안 주면 마크다운. 기존 호출부의 뜻을 그대로 지킨다. */
+  format?: ExportFormat;
 }): Promise<{ shared: boolean; message?: string }> {
   const Sharing = await import("expo-sharing");
   const dir = new Directory(Paths.cache, EXPORT_DIR);
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
 
-  const file = new File(dir, `${safeFileName(input.fileName)}.md`);
+  const format = input.format ?? "md";
+  const spec = FORMATS[format];
+  const file = new File(dir, `${safeFileName(input.fileName)}.${format}`);
   if (file.exists) file.delete();
   file.create();
-  file.write(input.text);
+  // 엑셀이 CSV 를 열 때 UTF-8 임을 알아채도록 BOM 을 앞에 둔다. 없으면 한글이 깨진다.
+  file.write(format === "csv" ? `\uFEFF${input.text}` : input.text);
 
   if (!(await Sharing.isAvailableAsync())) {
     return {
@@ -192,9 +208,9 @@ export async function shareText(input: {
     };
   }
   await Sharing.shareAsync(file.uri, {
-    mimeType: "text/markdown",
+    mimeType: spec.mime,
     dialogTitle: input.title,
-    UTI: "net.daringfireball.markdown",
+    UTI: spec.uti,
   });
   return { shared: true };
 }

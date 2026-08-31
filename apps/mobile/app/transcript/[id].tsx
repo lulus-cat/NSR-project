@@ -46,6 +46,8 @@ import {
 } from "../../src/db";
 import { loadLexicon } from "../../src/services/asr";
 import { llmReady, polishTranscriptSegments } from "../../src/services/llm";
+import { redactForExport, shareText } from "../../src/services/export";
+import { exportBaseName, transcriptToText } from "../../src/services/export-bundle";
 
 const ROLE_OPTIONS: { role: SpeakerRole; label: string }[] = [
   { role: "self", label: "나 (쭈굴)" },
@@ -597,6 +599,53 @@ export default function TranscriptView() {
   }, [segments]);
 
   // ── 삭제 — 전사만 지울지, 녹음까지 지울지 그 자리에서 고른다 ──
+  /**
+   * 전사본을 텍스트 파일로 빼낸다.
+   *
+   * 파일이 폰 밖으로 나가는 길이라 `redactForExport` 를 지나고, 무엇을 몇 건
+   * 가렸는지 눈으로 확인한 뒤에야 공유 창이 열린다.
+   */
+  const runExport = useCallback(async () => {
+    setError(null);
+    setNotice(null);
+    setBusy("내보낼 것 챙기는 중");
+    try {
+      const red = await redactForExport(transcriptToText(segments, { date, dutyLabel }));
+      const warn = red.warnings.map((w) => `· ${w.message}`).join("\n");
+      Alert.alert(
+        "전사본 파일로 빼내기",
+        `${red.summary}\n${warn ? `${warn}\n` : ""}\n` +
+          "이 파일은 폰 밖으로 나갑니다. 보낼 곳을 고르는 창이 열려요.",
+        [
+          { text: "앗차차 (취소)", style: "cancel" },
+          {
+            text: "슝 보내버려",
+            onPress: () => {
+              void (async () => {
+                try {
+                  const out = await shareText({
+                    text: red.text,
+                    fileName: `${exportBaseName(date, dutyLabel)}-전사본`,
+                    format: "txt",
+                    title: `${dutyLabel} 전사본 밖으로 슝`,
+                  });
+                  if (!out.shared && out.message) setError(out.message);
+                  else setNotice("전사본을 텍스트 파일로 빼냈습니다.");
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "앗 공유 엎어짐");
+                }
+              })();
+            },
+          },
+        ],
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "내보낼 것을 챙기지 못했습니다.");
+    } finally {
+      setBusy(null);
+    }
+  }, [date, dutyLabel, segments]);
+
   const runDelete = useCallback(() => {
     Alert.alert(
       "글자 변환본만 쓱싹 지우기",
@@ -647,12 +696,20 @@ export default function TranscriptView() {
           {segments.length}문장 · 문장을 누르면 그 시점부터 재생, 단어를 길게 누르면 수정.
         </Small>
         {segments.length > 0 ? (
-          <Button
-            label={busy?.startsWith("AI") ? busy : "AI 슨생님한테 교정 맡기기"}
-            busy={busy?.startsWith("AI") ?? false}
-            disabled={busy !== null}
-            onPress={() => void runPolish()}
-          />
+          <>
+            <Button
+              label={busy?.startsWith("AI") ? busy : "AI 슨생님한테 교정 맡기기"}
+              busy={busy?.startsWith("AI") ?? false}
+              disabled={busy !== null}
+              onPress={() => void runPolish()}
+            />
+            <Button
+              label="텍스트 파일로 빼내기 (.txt)"
+              busy={busy === "내보낼 것 챙기는 중"}
+              disabled={busy !== null}
+              onPress={() => void runExport()}
+            />
+          </>
         ) : null}
         {segments.length > 0 || recordings.length > 0 ? (
           <View style={{ flexDirection: "row", gap: space.sm }}>

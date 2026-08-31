@@ -595,6 +595,16 @@ export async function listCards(limit = 500): Promise<Card[]> {
   return rows.map(toCard);
 }
 
+/** 한 근무에서 나온 카드만. 내보내기가 근무 단위라 따로 둔다. */
+export async function listCardsForShift(shiftId: string): Promise<Card[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<CardRow>(
+    "SELECT * FROM cards WHERE shift_id = ? ORDER BY created_at ASC",
+    [shiftId],
+  );
+  return rows.map(toCard);
+}
+
 export async function knownEntryIds(matureIntervalDays = 21): Promise<Set<string>> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ entry_id: string }>(
@@ -826,6 +836,25 @@ export async function notesLinkingTo(title: string, excludeId?: string): Promise
   // LIKE 는 "[[제목..." 접두까지만 거른다. 별칭([[제목|별칭]])과 정확 일치를 여기서 판정한다.
   const re = new RegExp(`\\[\\[${title.trim().replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}(\\|[^\\]]*)?\\]\\]`);
   return rows.map(toNote).filter((n) => re.test(n.body));
+}
+
+/** 한 근무의 보고서 전체 — 마크다운과 분석 원본(payload)을 함께 준다. */
+export async function getShiftReport(
+  shiftId: string,
+): Promise<{ markdown: string; payload: unknown; createdAt: number } | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ markdown: string; payload: string; created_at: number }>(
+    "SELECT markdown, payload, created_at FROM shift_reports WHERE shift_id = ?",
+    [shiftId],
+  );
+  if (!row) return null;
+  let payload: unknown = null;
+  try {
+    payload = JSON.parse(row.payload);
+  } catch {
+    payload = null; // 저장이 깨졌어도 마크다운은 내보낼 수 있어야 한다.
+  }
+  return { markdown: row.markdown, payload, createdAt: row.created_at };
 }
 
 export async function listShiftReports(limit = 60): Promise<ShiftReportRow[]> {

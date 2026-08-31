@@ -28,6 +28,7 @@ import {
   buildShiftReport,
   reportToMarkdown,
   scoreShift,
+  type TaeumScore,
   type AsrOptions,
   type AsrCapabilities,
   type Lexicon,
@@ -752,6 +753,22 @@ export async function processRecording(
  * 근무가 끝난 뒤 한 번 돌린다.
  * 전사본 전체를 모아 학습카드·태움 지표·보고서를 만든다.
  */
+/**
+ * 태움 지표만 다시 센다.
+ *
+ * 예전에는 '카드·보고서 만들기' 버튼이 이걸 함께 계산했는데, 그 버튼을
+ * 없애면서 지표가 영영 안 생기게 됐다. 지표는 규칙 기반이라 AI 가 필요 없고
+ * 문장만 있으면 되니, 근무 화면이 열릴 때마다 조용히 다시 센다.
+ * 화자 지정을 나중에 고쳐도 그때 값이 따라온다.
+ */
+export async function refreshTaeumScore(shiftId: string): Promise<TaeumScore | null> {
+  const segments = await listSegments(shiftId);
+  if (segments.length === 0) return null;
+  const score = scoreShift(segments);
+  await saveTaeumScore(shiftId, score);
+  return score;
+}
+
 export async function finalizeShift(input: {
   shiftId: string;
   date: string;

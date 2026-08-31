@@ -23,13 +23,16 @@ import {
   countSegments,
   getPipelineJob,
   getShiftReportMarkdown,
+  getShiftReport,
   getTaeumScore,
+  listCardsForShift,
+  listSegments,
   listConfirmations,
   listRecordings,
   type ConfirmationRow,
   type RecordingRow,
 } from "../../src/db";
-import { finalizeShift } from "../../src/services/asr";
+import { refreshTaeumScore } from "../../src/services/asr";
 import {
   checkDeepAnalysis,
   describeStage,
@@ -43,7 +46,19 @@ import {
   subscribeRunner,
   type RunnerState,
 } from "../../src/services/transcribe-runner";
-import { redactForExport, shareText, type RedactedText } from "../../src/services/export";
+import {
+  redactForExport,
+  shareText,
+  type ExportFormat,
+  type RedactedText,
+} from "../../src/services/export";
+import {
+  analysisToJson,
+  cardsToCsv,
+  exportBaseName,
+  transcriptToText,
+} from "../../src/services/export-bundle";
+import { exportNotePdf } from "../../src/services/note-doc";
 
 function formatTime(sec: number): string {
   const m = Math.floor(sec / 60);
@@ -84,7 +99,15 @@ export default function ShiftDetail() {
   const [reportMd, setReportMd] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [preview, setPreview] = useState<RedactedText | null>(null);
+  /** 내보내기 확인 화면이 들고 있어야 할 것 — 무엇을, 어떤 이름으로, 어떤 꼴로. */
+  const [preview, setPreview] = useState<{
+    label: string;
+    fileName: string;
+    format: ExportFormat;
+    /** 참이면 파일 대신 PDF 로 굽는다. */
+    pdf?: boolean;
+    redacted: RedactedText;
+  } | null>(null);
 
   // ── 심층 분석 (3a→3b→4 파이프라인) ──
   const [deep, setDeep] = useState<PipelineState | null>(null);
@@ -104,7 +127,8 @@ export default function ShiftDetail() {
     ]);
     setSentenceCount(count);
     setRecordings(recs);
-    setTaeum(score);
+    // 문장이 있는데 지표가 없으면 지금 센다 — 규칙 기반이라 AI 가 필요 없다.
+    setTaeum(score ?? (count > 0 ? await refreshTaeumScore(shiftId) : null));
     setReportMd(md);
     setDeep(describeStage(job));
     setDeepGate(gate);
@@ -184,19 +208,6 @@ export default function ShiftDetail() {
     }
   }, [shiftId, pending]);
 
-  const runFinalize = useCallback(async () => {
-    setError(null);
-    setBusy("예쁘게 각 잡는 중");
-    try {
-      await finalizeShift({ shiftId, date: date ?? "", dutyLabel, recordedSec: durationSec });
-      await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "앗 각 잡기 실패 ㅠㅠ 다시 해봐요");
-    } finally {
-      setBusy(null);
-    }
-  }, [date, durationSec, dutyLabel, load, shiftId]);
-
   // ── 미리 듣기 — 전사 전에 어떤 녹음인지 귀로 확인한다 ──
   const previewRef = useRef<AudioPlayer | null>(null);
   const [previewId, setPreviewId] = useState<string | null>(null);
@@ -252,20 +263,103 @@ export default function ShiftDetail() {
     [previewId],
   );
 
-  const prepareExport = useCallback(async () => {
-    if (!reportMd) return;
-    setError(null);
-    setPreview(await redactForExport(reportMd));
-  }, [reportMd]);
+  /**
+   * 내보낼 것을 골라 확인 화면까지 세운다.
+   *
+   * 어떤 종류든 나가기 전에 `redactForExport` 한 곳을 지난다 — 가려진 내역을
+   * 눈으로 보고 나서야 공유 시트가 열린다.
+   */
+  const pickExport = useCallback(
+    async (kind: "transcript" | "report" | "reportPdf" | "cards" | "analysis") => {
+      setError(null);
+      setBusy("내보낼 것 챙기는 중");
+      try {
+        const base = exportBaseName(date, dutyLabel);
+        if (kind === "transcript") {
+          const segs = await listSegments(shiftId);
+          if (segs.length === 0) {
+            setError("아직 글로 바뀐 문장이 없어요. 변환부터 돌리고 오세요.");
+            return;
+          }
+          setPreview({
+            label: "전사본",
+            fileName: `${base}-전사본`,
+            format: "txt",
+            redacted: await redactForExport(transcriptToText(segs, { date, dutyLabel })),
+          });
+          return;
+        }
+        if (kind === "report" || kind === "reportPdf") {
+          if (!reportMd) {
+            setError("아직 보고서가 없어요. 심층 분석부터 돌리고 오세요.");
+            return;
+          }
+          setPreview({
+            label: kind === "reportPdf" ? "보고서 PDF" : "보고서",
+            fileName: `${base}-보고서`,
+            format: "md",
+            pdf: kind === "reportPdf",
+            redacted: await redactForExport(reportMd),
+          });
+          return;
+        }
+        if (kind === "cards") {
+          const cards = await listCardsForShift(shiftId);
+          if (cards.length === 0) {
+            setError("이 근무에서 만들어진 단어장이 없어요.");
+            return;
+          }
+          setPreview({
+            label: `단어장 ${cards.length}장`,
+            fileName: `${base}-단어장`,
+            format: "csv",
+            redacted: await redactForExport(cardsToCsv(cards)),
+          });
+          return;
+        }
+        const rep = await getShiftReport(shiftId);
+        if (!rep) {
+          setError("심층 분석 결과가 없어요. 분석부터 돌리고 오세요.");
+          return;
+        }
+        setPreview({
+          label: "분석 원본",
+          fileName: `${base}-분석원본`,
+          format: "json",
+          redacted: await redactForExport(
+            analysisToJson({
+              shiftId,
+              date,
+              dutyLabel,
+              markdown: rep.markdown,
+              payload: rep.payload,
+              confirmations,
+            }),
+          ),
+        });
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "내보낼 것을 챙기지 못했습니다.");
+      } finally {
+        setBusy(null);
+      }
+    },
+    [confirmations, date, dutyLabel, reportMd, shiftId],
+  );
 
   const doShare = useCallback(async () => {
     if (!preview) return;
     setBusy("밖으로 빼는 중");
     try {
+      if (preview.pdf) {
+        await exportNotePdf(preview.fileName, preview.redacted.text);
+        setPreview(null);
+        return;
+      }
       const outcome = await shareText({
-        text: preview.text,
-        fileName: `${date ?? "듀티"}-${code ?? ""}-리포트`,
-        title: `${dutyLabel} 리포트 밖으로 슝`,
+        text: preview.redacted.text,
+        fileName: preview.fileName,
+        format: preview.format,
+        title: `${dutyLabel} ${preview.label} 밖으로 슝`,
       });
       if (!outcome.shared && outcome.message) setError(outcome.message);
       else setPreview(null);
@@ -274,7 +368,7 @@ export default function ShiftDetail() {
     } finally {
       setBusy(null);
     }
-  }, [code, date, dutyLabel, preview]);
+  }, [dutyLabel, preview]);
 
   return (
     <ScrollView
@@ -385,11 +479,6 @@ export default function ShiftDetail() {
             tone="primary"
             onPress={() => router.push(`/transcript/${encodeURIComponent(shiftId)}`)}
           />
-          <Button
-            label={reportMd ? "다시 예쁘게 각 잡기" : "단어장·리포트 뚝딱 만들기"}
-            busy={busy === "예쁘게 각 잡는 중"}
-            onPress={() => void runFinalize()}
-          />
         </Card>
       ) : null}
 
@@ -434,6 +523,81 @@ export default function ShiftDetail() {
               onPress={() => void runDeep()}
             />
           )}
+        </Card>
+      ) : null}
+
+      {/* ── 내보내기 — 전사본·보고서·단어장·분석 원본을 파일로 ── */}
+      {sentenceCount > 0 && !preview ? (
+        <Card>
+          <Heading>파일로 빼내기</Heading>
+          <Small>
+            고른 것을 파일로 만들어 공유 창을 엽니다. 나가기 전에 가려진 개인정보
+            내역을 먼저 보여드립니다.
+          </Small>
+          <Divider />
+          <Button
+            label="전사본 (.txt) — 원문·교정본 함께"
+            busy={busy === "내보낼 것 챙기는 중"}
+            onPress={() => void pickExport("transcript")}
+          />
+          <Button
+            label="보고서 (.md 텍스트)"
+            onPress={() => void pickExport("report")}
+          />
+          <Button label="보고서 (.pdf 문서)" onPress={() => void pickExport("reportPdf")} />
+          <Button label="단어장 (.csv — 엑셀·앙키)" onPress={() => void pickExport("cards")} />
+          <Button
+            label="분석 원본 (.json — 교정 규칙 만들기용)"
+            onPress={() => void pickExport("analysis")}
+          />
+        </Card>
+      ) : null}
+
+      {preview ? (
+        <Card tone={preview.redacted.masked ? "default" : "warn"}>
+          <Heading>
+이 내용 그대로 쏠게요
+</Heading>
+          <Badge
+            text={preview.redacted.summary}
+            tone={preview.redacted.masked ? "ok" : "danger"}
+          />
+          {preview.redacted.warnings.map((w) => (
+            <Small key={w.reason} muted={false}>
+              ⚠ {w.message}
+            </Small>
+          ))}
+          <Divider />
+          <View
+            style={{
+              backgroundColor: t.surfaceAlt,
+              borderRadius: radius.md,
+              padding: space.md,
+              maxHeight: 320,
+            }}
+          >
+            <ScrollView nestedScrollEnabled>
+              <Text style={[type.small, { color: t.text }]}>{preview.redacted.text}</Text>
+            </ScrollView>
+          </View>
+          <Divider />
+          <Small>
+
+저쪽 폰이랑 카톡 서버에 박제되는 거 알죠? 환자 정보 진짜진짜 없는지 마지막으로 눈 크게 뜨고 확인!
+</Small>
+          <View style={{ flexDirection: "row", gap: space.sm }}>
+            <View style={{ flex: 1 }}>
+              <Button
+                label="슝 보내버려"
+                tone="primary"
+                busy={busy === "밖으로 빼는 중"}
+                onPress={() => void doShare()}
+              />
+            </View>
+            <View style={{ flex: 1 }}>
+              <Button label="앗차차 (취소)" onPress={() => setPreview(null)} />
+            </View>
+          </View>
         </Card>
       ) : null}
 
@@ -502,64 +666,7 @@ export default function ShiftDetail() {
             </Card>
           ) : null}
 
-          {reportMd && !preview ? (
-            <Card>
-              <Heading>밖으로 슝</Heading>
-              <Small>
 
-  삐- 처리된 환자 이름이나 폰 번호 같은 거 다시 한 번 쳌쳌! 하고 보내세요 꼭
-</Small>
-              <Button label="요대로 나갑니다 쳌쳌!" onPress={() => void prepareExport()} />
-            </Card>
-          ) : null}
-
-          {preview ? (
-            <Card tone={preview.masked ? "default" : "warn"}>
-              <Heading>
-  이 내용 그대로 쏠게요
-</Heading>
-              <Badge
-                text={preview.summary}
-                tone={preview.masked ? "ok" : "danger"}
-              />
-              {preview.warnings.map((w) => (
-                <Small key={w.reason} muted={false}>
-                  ⚠ {w.message}
-                </Small>
-              ))}
-              <Divider />
-              <View
-                style={{
-                  backgroundColor: t.surfaceAlt,
-                  borderRadius: radius.md,
-                  padding: space.md,
-                  maxHeight: 320,
-                }}
-              >
-                <ScrollView nestedScrollEnabled>
-                  <Text style={[type.small, { color: t.text }]}>{preview.text}</Text>
-                </ScrollView>
-              </View>
-              <Divider />
-              <Small>
-
-  저쪽 폰이랑 카톡 서버에 박제되는 거 알죠? 환자 정보 진짜진짜 없는지 마지막으로 눈 크게 뜨고 확인!
-</Small>
-              <View style={{ flexDirection: "row", gap: space.sm }}>
-                <View style={{ flex: 1 }}>
-                  <Button
-                    label="슝 보내버려"
-                    tone="primary"
-                    busy={busy === "밖으로 빼는 중"}
-                    onPress={() => void doShare()}
-                  />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Button label="앗차차 (취소)" onPress={() => setPreview(null)} />
-                </View>
-              </View>
-            </Card>
-          ) : null}
         </>
       ) : null}
 
