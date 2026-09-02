@@ -122,19 +122,44 @@ function parseSrt(text) {
   return out;
 }
 
+/**
+ * 줄 단위 텍스트. 세 모양을 받는다.
+ *   - NSR 앱 내보내기: `[시:분:초] 화자 | 문장` 그리고 앱이 고친 문장 다음 줄의 `  (원문) ...`
+ *     → 검토는 **원문(ASR 그대로)** 으로 하고, 앱이 고친 문장은 `appText` 로 따로 든다.
+ *       앱의 자동 교정 자체가 틀렸을 수 있어서다 ("아니고" → "아이고" 같은 사고).
+ *   - `[hh:mm:ss] 문장` / `hh:mm:ss 문장`
+ *   - 시각 없는 줄 (직전 시각을 물려받는다)
+ * 시각이 1분 넘게 되돌아가면 파일 안의 다음 녹음(다른 날·다른 근무)으로 본다 → `part`.
+ */
 function parseLines(text) {
   const out = [];
+  let part = 1;
   for (const rawLine of text.replace(/\r/g, "").split("\n")) {
+    const orig = rawLine.match(/^\s+\(원문\)\s*(.*)$/);
+    if (orig && out.length > 0) {
+      const prev = out[out.length - 1];
+      prev.appText = prev.text;
+      prev.text = orig[1].trim();
+      continue;
+    }
     let line = rawLine.trim().replace(/^[-*]\s+/, "").replace(/\*\*/g, "");
     if (!line || line.startsWith("#")) continue;
     let startSec = out.length > 0 ? out[out.length - 1].startSec : 0;
+    let speaker;
     const m = line.match(/^[[(]?(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d+)?)[\])]?\s*(.*)$/);
     if (m) {
-      startSec = parseTime(m[1]);
+      const t = parseTime(m[1]);
+      if (out.length > 0 && t < startSec - 60) part++;
+      startSec = t;
       line = m[2];
     }
+    const spk = line.match(/^([^|]{1,20})\s*\|\s*(.*)$/);
+    if (spk) {
+      speaker = spk[1].trim();
+      line = spk[2];
+    }
     if (!line) continue;
-    out.push({ startSec, endSec: startSec, text: line });
+    out.push({ startSec, endSec: startSec, text: line, speaker, part });
   }
   return out;
 }
@@ -259,21 +284,49 @@ for (const file of files) {
   const segments = loadSegments(file);
   const rows = [];
   const corrected = [];
+  const appEdits = [];
+  const parts = new Set(segments.map((s) => s.part ?? 1));
+  // 파일 안에 녹음이 여럿이면 시각 앞에 "n번째" 를 붙여 어느 녹음인지 알린다.
+  const label = (seg) =>
+    parts.size > 1 ? `${seg.part ?? 1}번째 ${fmtTime(seg.startSec)}` : fmtTime(seg.startSec);
 
   segments.forEach((seg, segmentIndex) => {
     if (!seg.text) return;
     const result = reviewTranscript(seg.text, { lexicon, memory });
-    corrected.push({ time: fmtTime(seg.startSec), speaker: seg.speaker, text: result.text });
+    corrected.push({ time: label(seg), speaker: seg.speaker, text: result.text });
     for (const it of result.items) {
-      rows.push({ ...it, time: fmtTime(seg.startSec), segmentIndex });
+      rows.push({ ...it, time: label(seg), segmentIndex });
+    }
+    if (seg.appText && seg.appText !== seg.text) {
+      appEdits.push({ time: label(seg), raw: seg.text, app: seg.appText, mine: result.text });
     }
   });
+
+  // 같은 표기가 몇 번 나왔나. 긴 파일에서는 이 표가 검토의 출발점이다.
+  const freq = new Map();
+  for (const r of rows) {
+    if (r.verdict === "auto") continue;
+    const key = `${r.kind}|${r.surface}|${r.suggestion ?? ""}`;
+    const f = freq.get(key) ?? { ...r, count: 0, times: [] };
+    f.count++;
+    if (f.times.length < 3) f.times.push(r.time);
+    freq.set(key, f);
+  }
+  const freqRows = [...freq.values()].sort(
+    (a, b) => b.count - a.count || harmRank(a, lexicon) - harmRank(b, lexicon),
+  );
+  const countOf = (r) => freq.get(`${r.kind}|${r.surface}|${r.suggestion ?? ""}`)?.count ?? 1;
 
   const auto = rows.filter((r) => r.verdict === "auto");
   const check = rows.filter((r) => r.verdict === "check");
   const ask = rows
     .filter((r) => r.verdict === "ask")
-    .sort((a, b) => harmRank(a, lexicon) - harmRank(b, lexicon) || a.segmentIndex - b.segmentIndex);
+    .sort(
+      (a, b) =>
+        harmRank(a, lexicon) - harmRank(b, lexicon) ||
+        countOf(b) - countOf(a) ||
+        a.segmentIndex - b.segmentIndex,
+    );
 
   // 같은 표기는 한 파일에서 한 번만 묻는다. 나머지는 표에 남긴다.
   const askedSurface = new Set();
@@ -297,7 +350,36 @@ for (const file of files) {
     `- 질문의 문장은 ${redact ? "개인정보를 가렸습니다 (그대로 붙여넣어도 됩니다)" : "**가리지 않았습니다** — 밖으로 내보내지 마십시오"}`,
     "",
     "판정 절차와 세 갈래(A 반복 / B 임상 어휘 부재 / C 한글 오독)의 기준은 `.claude/skills/nsr-transcript-review/SKILL.md`.",
+    parts.size > 1 ? `- 파일 안에 녹음 ${parts.size}개 (시각이 되돌아가는 지점 기준). 시각 앞의 "n번째" 가 그 순번.` : "",
     "",
+    "## 0. 후보 빈도 (확인·질문 표기가 몇 번 나왔나)",
+    "",
+    freqRows.length
+      ? "| 횟수 | 원문 | 종류 | 제안 | 예 (시각) |\n| --- | --- | --- | --- | --- |\n" +
+        freqRows
+          .slice(0, 80)
+          .map((r) => {
+            // 반복 구간은 통째로 보여주면 표가 무너진다. 단위와 횟수만.
+            const shown =
+              r.kind === "repetition"
+                ? `"${r.suggestion}" ×${r.reason.match(/(\d+)회/)?.[1] ?? "?"}`
+                : cell(r.surface);
+            return `| ${r.count} | ${shown} | ${KIND_LABEL[r.kind]} | ${cell(r.kind === "repetition" ? "한 번으로" : (r.suggestion ?? "(뜻 확정)"))} | ${r.times.join(", ")} |`;
+          })
+          .join("\n")
+      : "_없음_",
+    "",
+    appEdits.length
+      ? [
+          "## 0-1. 앱이 이미 고친 문장 (원문과 다름 — 앱의 교정이 맞는지도 본다)",
+          "",
+          "| 시각 | 원문(ASR) | 앱 교정 | 이 도구의 교정 |",
+          "| --- | --- | --- | --- |",
+          ...appEdits.slice(0, 200).map((e) => `| ${e.time} | ${cell(quote(e.raw))} | ${cell(quote(e.app))} | ${cell(quote(e.mine))} |`),
+          appEdits.length > 200 ? `\n… 그 밖에 ${appEdits.length - 200}건` : "",
+          "",
+        ].join("\n")
+      : "",
     "## 1. 자동 적용한 교정",
     "",
     table(auto),
