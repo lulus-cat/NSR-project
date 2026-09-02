@@ -3,17 +3,33 @@
 신규간호사 근무 녹음 → 전사 → 교정 → 학습카드 앱. 사용자는 비개발자이며, 이 저장소의 코드는
 대부분 Claude 가 쓴다. **모든 세션(Fable·Opus 어느 모델이든)은 이 파일을 먼저 읽는다.**
 
+## 시작하기 전에 — 최신 판이 이 브랜치에 있는가
+
+APK 판 번호는 CI 가 **태그 최고값 +1** 로 매긴다. 어느 브랜치에서 푸시하든 그렇다.
+그래서 낡은 브랜치에서 푸시하면 **기능이 빠진 판이 "최신"** 이 되어 폰에 깔린다
+(0.1.56 사고 — 기본 브랜치가 24개 커밋 뒤처져 있었다). 작업 전에 반드시 확인한다.
+
+```bash
+git fetch --all --tags
+LATEST=$(git tag --sort=-v:refname | head -1)
+git merge-base --is-ancestor $LATEST HEAD && echo "최신 판($LATEST) 포함 — 진행" \
+  || { echo "최신 판($LATEST)이 이 브랜치에 없다. 먼저 합친다:"; git branch -r --contains $LATEST; }
+```
+
+없다고 나오면 그 브랜치를 `git merge` 로 합친 뒤에 시작한다. 합치지 않고 푸시하지 않는다.
+
 ## 저장소 지도
 
 | 경로 | 무엇 | 검증 |
 | --- | --- | --- |
-| `packages/core/` | 플랫폼 독립 도메인 로직 (한글 음운, 사전, 전사 교정, 태움, 학습, 듀티) | `npm test` (vitest 314+), `npm run typecheck` |
-| `apps/mobile/` | Expo 57 / RN 0.86 앱. 화면·저장·녹음·네이티브 모듈만 담당 | `cd apps/mobile && npx tsc --noEmit` |
+| `packages/core/` | 플랫폼 독립 도메인 로직 (한글 음운, 사전, 전사 교정·검토, 태움, 학습, 듀티) | `npm test` (vitest 330+), `npm run typecheck` |
+| `apps/mobile/` | Expo 57 / RN 0.86 앱. 화면·저장·녹음·네이티브 모듈. 전사는 콜랩·PC 서버로 보낸다 (온디바이스 whisper.rn 은 0.1.5x 에서 뺐다) | `cd apps/mobile && npx tsc --noEmit` |
+| `apps/mobile/src/services/pipeline.ts`, `llm.ts`, `asr.ts` | 심층 분석 파이프라인(추출→검증→조사→보고서), LLM 경로, 전사 서버 연결 | 위와 같음 |
 | `apps/mobile/modules/nsr-audio-decode/` | 로컬 Expo 네이티브 모듈 (m4a→wav, 포그라운드 서비스) | APK CI |
-| `tools/` | 저장소 운영 스크립트 (판 점검, 전사본 검토, 스킬 업로드) | 실행해 본다 |
-| `docs/` | 설계 근거. 01 법·개인정보, 02 전사 파이프라인, 03 도구 조사, 07 전사 검토 워크플로 | — |
+| `tools/` | 저장소 운영 스크립트 (판 점검, 전사본 검토, 스킬 업로드, 릴리스 노트) | 실행해 본다 |
+| `docs/` | 설계 근거. 01 법·개인정보, 02 전사 파이프라인, 03 도구 조사, 07 전사 검토 워크플로, `colab/` 전사 서버 노트 | — |
 | `data/` | 녹음·전사본 작업 폴더. **환자 정보가 들어 있어 대부분 gitignore** (`data/README.md`) | — |
-| `.github/workflows/` | `build-apk.yml` (main·claude/** 푸시마다 APK → Releases prerelease), 모델 릴리스 | — |
+| `.github/workflows/` | `build-apk.yml` (claude/** 푸시마다 APK → Releases prerelease), 모델 릴리스 | — |
 
 ## 명령
 
@@ -31,10 +47,18 @@ node tools/review-transcript.mjs data/transcripts/<파일>   # 전사본 1차 �
 `.claude/skills/` 에 있다. 이름을 부르지 않아도 해당 작업이면 먼저 읽는다.
 
 **이 저장소 고유 규칙 (반드시)**
-- `nsr-transcript-review` — 전사본 검토·교정·질문. 녹음본/전사 파일이 들어오면 항상.
+- `nsr-transcript-review` — 전사본 검토·교정·질문. 녹음본/전사 파일이 들어오면 항상. 판별 기준은 실제 세션에서 채운다 — 지어내지 않는다.
 - `nsr-privacy` — 전사본·녹음·사전이 기기 밖으로 나가는 코드 전부 (LLM 호출 포함).
 - `nsr-design` — 화면·컴포넌트·색·글자.
 - `nsr-android-build` — APK·CI·gradle·네이티브 의존성.
+
+**분석 파이프라인 (0.1.4x 부터. `services/pipeline.ts`·`llm.ts` 를 만지면 반드시)**
+- `nursing-pipeline` — 단계 순서(전사→마스킹→추출→검증→조사→보고서·카드→대화→임상 판단)와 실패 시 중단 규칙.
+- `pipeline-schema` — 각 단계 JSON 스키마 정본 (`schema.json`). 코드가 어긋나면 코드가 틀린 것.
+- `provider-routing` — 경로별(Claude 단독 / GPT+Gemini 하이브리드) 모델 배정과 근거. 자동 대체 금지.
+- `batch-ops` — Batch API 제출·폴링·복구 (`pipeline_jobs`).
+- `korean-clinical-style` — 보고서·카드·안내문의 한국어 임상 문체.
+- `openai-api`, `gemini-api` — 각 API 를 fetch 로 부르는 참조 (SDK 금지). Anthropic 은 `claude-api` 내장 스킬.
 
 **작업 방식 (외부에서 가져옴, MIT — `.claude/skills/THIRD_PARTY_NOTICES.md`)**
 - `test-driven-development` — core 에 기능·버그 수정을 넣을 때. 테스트 먼저.
