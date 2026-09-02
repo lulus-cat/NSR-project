@@ -15,7 +15,7 @@
  * 오래된 녹음을 안 지우는 것이 가장 큰 위험이다.
  */
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -44,6 +44,11 @@ CREATE TABLE IF NOT EXISTS recordings (
   state         TEXT NOT NULL DEFAULT 'recording',
   -- 본인 음성이 없어 통비법상 보관할 수 없다고 판단해 버린 경우 사유를 남긴다.
   discard_reason TEXT,
+  -- 가져온 파일의 원래 이름. 녹음기가 만든 파일은 비어 있다.
+  label         TEXT,
+  -- 1 이면 같은 근무의 다른 기록과 합치지 않고 따로 본다(전사 결과·학습 목록).
+  -- 기존 설치에는 getDb 가 ALTER TABLE 로 붙인다.
+  separate      INTEGER NOT NULL DEFAULT 0,
   created_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_recordings_shift ON recordings(shift_id);

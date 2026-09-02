@@ -171,6 +171,7 @@ function Gate() {
       <Stack.Screen name="models" options={{ title: "전사 설정" }} />
       <Stack.Screen name="shift/[id]" options={{ title: "근무 기록" }} />
       <Stack.Screen name="transcript/[id]" options={{ title: "전사 결과" }} />
+      <Stack.Screen name="import-audio" options={{ title: "음성 가져오기" }} />
     </Stack>
     <LaunchOverlay ready />
     </>

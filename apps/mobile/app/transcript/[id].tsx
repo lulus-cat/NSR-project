@@ -264,8 +264,11 @@ export default function TranscriptView() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
   const router = useRouter();
-  const params = useLocalSearchParams<{ id: string }>();
+  const params = useLocalSearchParams<{ id: string; rec?: string }>();
   const shiftId = decodeURIComponent(params.id ?? "");
+  // rec 가 있으면 '따로' 둔 파일 하나의 전사본이다. 없으면 합친 전사본.
+  const recId =
+    typeof params.rec === "string" && params.rec ? decodeURIComponent(params.rec) : undefined;
   const [date, code] = shiftId.split(":");
   const dutyLabel = DEFAULT_TEMPLATES[(code as ShiftCode) ?? "OTHER"]?.label ?? "듀티";
 
@@ -274,12 +277,20 @@ export default function TranscriptView() {
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const recLabel = recId
+    ? (recordings.find((r) => r.id === recId)?.label ?? "따로 보는 파일")
+    : null;
 
   const load = useCallback(async () => {
-    const [segs, recs] = await Promise.all([listSegments(shiftId), listRecordings(shiftId)]);
+    const [segs, recs] = await Promise.all([
+      listSegments(shiftId, recId ? { recordingId: recId } : { mergedOnly: true }),
+      listRecordings(shiftId),
+    ]);
     setSegments(segs);
-    setRecordings(recs);
-  }, [shiftId]);
+    // 재생·삭제가 이 화면에 보이는 문장과 같은 파일을 가리켜야 한다 — 따로 보는
+    // 파일이면 그 파일만, 합친 전사본이면 따로 둔 파일을 뺀 나머지만.
+    setRecordings(recs.filter((r) => (recId ? r.id === recId : r.separate !== 1)));
+  }, [shiftId, recId]);
 
   useEffect(() => {
     void load();
@@ -625,7 +636,9 @@ export default function TranscriptView() {
                 try {
                   const out = await shareText({
                     text: red.text,
-                    fileName: `${exportBaseName(date, dutyLabel)}-전사본`,
+                    fileName: `${exportBaseName(date, dutyLabel)}-전사본${
+                      recLabel ? `-${recLabel.replace(/\.[^.]+$/, "")}` : ""
+                    }`,
                     format: "txt",
                     title: `${dutyLabel} 전사본 밖으로 슝`,
                   });
@@ -644,7 +657,7 @@ export default function TranscriptView() {
     } finally {
       setBusy(null);
     }
-  }, [date, dutyLabel, segments]);
+  }, [date, dutyLabel, recLabel, segments]);
 
   const runDelete = useCallback(() => {
     Alert.alert(
@@ -658,7 +671,7 @@ export default function TranscriptView() {
           onPress: () => {
             void (async () => {
               stopPlayback();
-              await deleteTranscript(shiftId);
+              await deleteTranscript(shiftId, recordings.map((r) => r.id));
               router.back();
             })();
           },
@@ -669,7 +682,7 @@ export default function TranscriptView() {
           onPress: () => {
             void (async () => {
               stopPlayback();
-              const uris = await deleteShiftRecordings(shiftId);
+              const uris = await deleteShiftRecordings(shiftId, recordings.map((r) => r.id));
               const FileSystem = await import("expo-file-system/legacy");
               for (const uri of uris) {
                 try {
@@ -684,13 +697,13 @@ export default function TranscriptView() {
         },
       ],
     );
-  }, [router, shiftId, stopPlayback]);
+  }, [recordings, router, shiftId, stopPlayback]);
 
   const listHeader = (
     <View style={{ padding: space.lg, paddingBottom: 0, gap: space.md }}>
       <Card>
         <Heading>
-          {date} · {dutyLabel} 전사
+          {date} · {dutyLabel} 전사{recLabel ? ` · ${recLabel}` : ""}
         </Heading>
         <Small>
           {segments.length}문장 · 문장을 누르면 그 시점부터 재생, 단어를 길게 누르면 수정.

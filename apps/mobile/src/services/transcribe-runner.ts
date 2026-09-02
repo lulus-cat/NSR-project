@@ -25,6 +25,10 @@ export interface RunnerState {
   /** 지금 몇 번째 파일인가 (1부터). */
   fileIndex: number;
   fileCount: number;
+  /** 지금 돌리는 기록의 id — 화면이 파일별 배지를 이걸로 맞춘다. */
+  fileId: string | null;
+  /** 지금 파일 기준 0~100. */
+  filePercent: number;
   /** 전체 작업 기준 0~100. */
   percent: number;
   /** %가 안 움직이는 이유(서버가 모델 준비 중 등). 움직이기 시작하면 지워진다. */
@@ -40,6 +44,8 @@ let state: RunnerState = {
   shiftId: null,
   fileIndex: 0,
   fileCount: 0,
+  fileId: null,
+  filePercent: 0,
   percent: 0,
   note: null,
   error: null,
@@ -78,6 +84,8 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
     shiftId,
     fileIndex: 1,
     fileCount: files.length,
+    fileId: files[0]?.id ?? null,
+    filePercent: 0,
     percent: 0,
     note: null,
     error: null,
@@ -95,7 +103,12 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
       let sentenceTotal = 0;
       for (let i = 0; i < files.length; i++) {
         const rec = files[i];
-        emit({ fileIndex: i + 1, percent: Math.round((i / files.length) * 100) });
+        emit({
+          fileIndex: i + 1,
+          fileId: rec.id,
+          filePercent: 0,
+          percent: Math.round((i / files.length) * 100),
+        });
         if (!rec.file_uri || !new File(rec.file_uri).exists) {
           missing += 1;
           await setRecordingState(rec.id, "discarded", "엥 폰 용량 없다고 파일 증발함 휑~");
@@ -109,8 +122,13 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
         );
         sentenceTotal += await processRecording(rec, provider, (filePct, note) => {
           const overall = Math.round(((i + filePct / 100) / files.length) * 100);
-          if (overall !== state.percent || (note ?? null) !== state.note) {
-            emit({ percent: overall, note: note ?? null });
+          const mine = Math.round(Math.max(0, Math.min(100, filePct)));
+          if (
+            overall !== state.percent ||
+            mine !== state.filePercent ||
+            (note ?? null) !== state.note
+          ) {
+            emit({ percent: overall, filePercent: mine, note: note ?? null });
             void notifyProgress(
               NOTIF_ID,
               overall,
@@ -136,6 +154,7 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
       emit({
         running: false,
         percent: 100,
+        fileId: null,
         note: null,
         error: missing > 0 ? `엥 ${missing}건은 폰 용량 정리하다 파일이 증발해서 걍 쿨하게 패스했어요` : null,
         completedAt: Date.now(),
@@ -144,7 +163,7 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
     } catch (e) {
       const msg = e instanceof Error ? e.message : "앗 텍스트 변환 엎어졌어요 대참사 ㅠㅠ";
       void logDebug(`텍스트 변환 폭망 ㅠㅠ: ${msg}`);
-      emit({ running: false, note: null, error: msg, completedAt: Date.now() });
+      emit({ running: false, fileId: null, note: null, error: msg, completedAt: Date.now() });
       await notifyDone(NOTIF_ID, "가다 자빠짐 (변환 중단)", msg);
     }
   })();

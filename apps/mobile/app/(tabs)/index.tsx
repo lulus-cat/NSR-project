@@ -27,6 +27,7 @@ import {
   Card,
   DashedDivider,
   Enter,
+  GaugeBar,
   HeaderScreen,
   Small,
 } from "../../src/components/ui";
@@ -42,7 +43,11 @@ import {
 } from "../../src/db";
 import { SETTINGS_KEYS, buildSchedule, startManual, stopManual } from "../../src/services/scheduler";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
-import { importAudioFile } from "../../src/services/import-audio";
+import {
+  runnerState,
+  subscribeRunner,
+  type RunnerState,
+} from "../../src/services/transcribe-runner";
 
 function formatClock(epochMs: number): string {
   const d = new Date(epochMs);
@@ -303,7 +308,13 @@ export default function Home() {
   const [pendingShiftId, setPendingShiftId] = useState<string | null>(null);
   // 미전사 녹음 파일들 — 건수만이 아니라 어떤 녹음인지 보여준다.
   const [pendingRows, setPendingRows] = useState<
-    { id: string; shift_id: string | null; started_at: number; duration_sec: number }[]
+    {
+      id: string;
+      shift_id: string | null;
+      started_at: number;
+      duration_sec: number;
+      label?: string | null;
+    }[]
   >([]);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [needsServer, setNeedsServer] = useState(false);
@@ -382,6 +393,17 @@ export default function Home() {
   }, []);
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // 전사 러너 — 돌고 있으면 기록 폴더에 막대로 보이고, 끝나면 목록을 다시 읽는다.
+  const [runner, setRunner] = useState<RunnerState | null>(null);
+  useEffect(() => {
+    const now = runnerState();
+    setRunner(now.running ? now : null);
+    return subscribeRunner((s) => {
+      setRunner(s.running ? s : null);
+      if (!s.running && s.completedAt) void load();
+    });
   }, [load]);
 
   const onRefresh = useCallback(async () => {
@@ -543,6 +565,23 @@ export default function Home() {
                 : undefined
             }
           />
+          {runner ? (
+            <View style={{ gap: space.xs, paddingBottom: space.sm }}>
+              <BriefRow
+                icon="sync-outline"
+                label={`텍스트 변환 중 (${runner.fileIndex}/${runner.fileCount})`}
+                value={`${runner.percent}%`}
+                valueColor={t.accent}
+                onPress={
+                  runner.shiftId
+                    ? () => router.push(`/shift/${encodeURIComponent(runner.shiftId!)}`)
+                    : undefined
+                }
+              />
+              <GaugeBar ratio={runner.percent / 100} color={t.accent} />
+              {runner.note ? <Small>{runner.note}</Small> : null}
+            </View>
+          ) : null}
           {/* 건수 뒤에 실제 녹음 파일이 보인다 — 무엇이 전사를 기다리는지 세지 않아도 안다. */}
           {pendingRows.slice(0, 3).map((r) => {
             const d = new Date(r.started_at);
@@ -551,7 +590,7 @@ export default function Home() {
               <BriefRow
                 key={r.id}
                 icon="mic-outline"
-                label={`${d.getMonth() + 1}월 ${d.getDate()}일 ${formatClock(r.started_at)} 녹음`}
+                label={r.label ?? `${d.getMonth() + 1}월 ${d.getDate()}일 ${formatClock(r.started_at)} 녹음`}
                 value={mins > 0 ? `${mins}분 · 전사` : "전사"}
                 valueColor={t.accent}
                 onPress={
@@ -594,13 +633,7 @@ export default function Home() {
             icon="folder-open-outline"
             label="다른 앱에서 음성 가져오기"
             value="선택"
-            onPress={async () => {
-              const r = await importAudioFile();
-              if (r.ok && r.shiftId) {
-                await load();
-                router.push(`/shift/${encodeURIComponent(r.shiftId)}`);
-              }
-            }}
+            onPress={() => router.push("/import-audio")}
           />
         </>
       ),

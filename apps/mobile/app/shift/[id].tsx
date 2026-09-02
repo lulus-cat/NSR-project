@@ -17,7 +17,7 @@ import {
   type TaeumScore,
   type ShiftCode,
 } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { Badge, Body, Button, Card, Divider, GaugeBar, Heading, Small } from "../../src/components/ui";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   countSegments,
@@ -29,6 +29,7 @@ import {
   listSegments,
   listConfirmations,
   listRecordings,
+  segmentCountsByRecording,
   type ConfirmationRow,
   type RecordingRow,
 } from "../../src/db";
@@ -66,6 +67,12 @@ function formatTime(sec: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
+/** epoch ms → "HH:MM 시작". 이름 없는 녹음 파일을 부를 때. */
+function startClock(ms: number): string {
+  const d = new Date(ms);
+  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 시작`;
+}
+
 /** 녹음 상태를 사람이 읽는 배지로. */
 function stateBadge(state: string): { text: string; tone: "ok" | "muted" | "warn" } {
   switch (state) {
@@ -95,6 +102,10 @@ export default function ShiftDetail() {
   const [tab, setTab] = useState<Tab>("report");
   const [sentenceCount, setSentenceCount] = useState(0);
   const [recordings, setRecordings] = useState<RecordingRow[]>([]);
+  /** 기록별 문장 수 — 파일마다 몇 문장인지, 따로 둔 파일에 결과가 있는지. */
+  const [counts, setCounts] = useState<Map<string, number>>(new Map());
+  /** 이 근무를 돌리는 중인 러너 상태. 다른 근무 것이거나 안 돌면 null. */
+  const [runner, setRunner] = useState<RunnerState | null>(null);
   const [taeum, setTaeum] = useState<TaeumScore | null>(null);
   const [reportMd, setReportMd] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -116,7 +127,7 @@ export default function ShiftDetail() {
   const [confirmations, setConfirmations] = useState<ConfirmationRow[]>([]);
 
   const load = useCallback(async () => {
-    const [count, recs, score, md, job, gate, cfs] = await Promise.all([
+    const [count, recs, score, md, job, gate, cfs, perRec] = await Promise.all([
       countSegments(shiftId),
       listRecordings(shiftId),
       getTaeumScore(shiftId),
@@ -124,9 +135,11 @@ export default function ShiftDetail() {
       getPipelineJob(shiftId),
       pipelineReady(),
       listConfirmations(shiftId),
+      segmentCountsByRecording(shiftId),
     ]);
     setSentenceCount(count);
     setRecordings(recs);
+    setCounts(perRec);
     // 문장이 있는데 지표가 없으면 지금 센다 — 규칙 기반이라 AI 가 필요 없다.
     setTaeum(score ?? (count > 0 ? await refreshTaeumScore(shiftId) : null));
     setReportMd(md);
@@ -180,19 +193,36 @@ export default function ShiftDetail() {
 
   const pending = recordings.filter((r) => r.state === "recorded");
   const durationSec = recordings.reduce((sum, r) => sum + r.duration_sec, 0);
+  // '따로' 둔 파일은 제 전사본으로 간다. 나머지는 한 전사본이다.
+  const separateDone = recordings.filter(
+    (r) => r.separate === 1 && (counts.get(r.id) ?? 0) > 0,
+  );
+  const mergedCount = recordings
+    .filter((r) => r.separate !== 1)
+    .reduce((sum, r) => sum + (counts.get(r.id) ?? 0), 0);
   const dutyLabel = DEFAULT_TEMPLATES[(code as ShiftCode) ?? "OTHER"]?.label ?? "근무";
 
   const [runnerBusy, setRunnerBusy] = useState(false);
+  // 파일이 바뀔 때마다 목록을 다시 읽는다 — 예전엔 다 끝나야 읽어서, 두 번째
+  // 파일부터는 '전사 중'인데도 첫 파일만 전사 중, 나머지는 미전사로 보였다.
+  const lastFileRef = useRef<string | null>(null);
   useEffect(() => {
     const apply = (s: RunnerState) => {
       setRunnerBusy(s.running);
-      if (s.shiftId !== shiftId) return;
+      if (s.shiftId !== shiftId) {
+        setRunner(null);
+        return;
+      }
+      setRunner(s.running ? s : null);
       if (s.running) {
-        setBusy(
-          `텍스트 변환 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})${s.note ? ` · ${s.note}` : ""}`,
-        );
+        setBusy(`텍스트 변환 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})`);
+        if (s.fileId !== lastFileRef.current) {
+          lastFileRef.current = s.fileId;
+          void listRecordings(shiftId).then(setRecordings);
+        }
       } else {
         setBusy(null);
+        lastFileRef.current = null;
         if (s.error) setError(s.error);
         if (s.completedAt) void load();
       }
@@ -402,7 +432,21 @@ export default function ShiftDetail() {
             onPress={() => void runTranscription()}
           />
         ) : null}
-        {busy ? <Small muted={false}>{busy}…</Small> : null}
+        {runner ? (
+          <View style={{ gap: space.xs }}>
+            <GaugeBar ratio={runner.percent / 100} color={t.accent} height={8} />
+            <View style={{ flexDirection: "row", justifyContent: "space-between", gap: space.sm }}>
+              <Text style={[type.small, { color: t.textMuted, flexShrink: 1 }]}>
+                {runner.note ?? `파일 ${runner.fileIndex}/${runner.fileCount} 받아적는 중`}
+              </Text>
+              <Text style={[type.small, TABULAR, { color: t.text, fontWeight: "700" }]}>
+                {runner.percent}%
+              </Text>
+            </View>
+          </View>
+        ) : busy ? (
+          <Small muted={false}>{busy}…</Small>
+        ) : null}
         {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
       </Card>
 
@@ -450,16 +494,34 @@ export default function ShiftDetail() {
                     <Ionicons name={playingThis ? "stop" : "play"} size={18} color={t.accent} />
                   </Pressable>
                   <View style={{ flex: 1, gap: 2 }}>
-                    <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>
-                      {clock} 시작{mins > 0 ? ` · ${mins}분 (순삭)` : ""}
+                    <Text
+                      style={[type.body, { color: t.text, fontWeight: "600" }]}
+                      numberOfLines={1}
+                    >
+                      {r.label ?? `${clock} 시작`}
+                      {mins > 0 ? ` · ${mins}분 (순삭)` : ""}
                     </Text>
                     <Text style={[type.small, TABULAR, { color: t.textMuted, fontWeight: "600" }]}>
                       {mb ? `${mb}MB` : "사이즈 모름"}
+                      {r.separate === 1 ? " · 따로 보기" : ""}
+                      {(counts.get(r.id) ?? 0) > 0 ? ` · ${counts.get(r.id)}문장` : ""}
                       {r.file_uri ? "" : " · 파일 없음 휑~"}
                     </Text>
                   </View>
-                  <Badge text={badge.text} tone={badge.tone} />
+                  <Badge
+                    text={
+                      r.state === "transcribing" && runner?.fileId === r.id
+                        ? `전사 중 ${runner.filePercent}%`
+                        : badge.text
+                    }
+                    tone={badge.tone}
+                  />
                 </View>
+                {r.state === "transcribing" && runner?.fileId === r.id ? (
+                  <View style={{ marginTop: space.xs }}>
+                    <GaugeBar ratio={runner.filePercent / 100} color={t.accent} />
+                  </View>
+                ) : null}
               </View>
             );
           })}
@@ -474,11 +536,27 @@ export default function ShiftDetail() {
             {sentenceCount}문장 · 문장별 재생, 화자 지정, 단어 수정, AI 다듬기는 결과
             화면에서 합니다.
           </Small>
-          <Button
-            label="결과물 까보기"
-            tone="primary"
-            onPress={() => router.push(`/transcript/${encodeURIComponent(shiftId)}`)}
-          />
+          {mergedCount > 0 ? (
+            <Button
+              label={
+                separateDone.length > 0 ? `합친 전사본 까보기 (${mergedCount}문장)` : "결과물 까보기"
+              }
+              tone="primary"
+              onPress={() => router.push(`/transcript/${encodeURIComponent(shiftId)}`)}
+            />
+          ) : null}
+          {separateDone.map((r) => (
+            <Button
+              key={r.id}
+              label={`${r.label ?? startClock(r.started_at)} 따로 보기 (${counts.get(r.id) ?? 0}문장)`}
+              tone={mergedCount > 0 ? "default" : "primary"}
+              onPress={() =>
+                router.push(
+                  `/transcript/${encodeURIComponent(shiftId)}?rec=${encodeURIComponent(r.id)}`,
+                )
+              }
+            />
+          ))}
         </Card>
       ) : null}
 

@@ -294,12 +294,14 @@ export function createSelfHostedProvider(
               Math.round(lastProgress * 100),
               // %가 안 움직이는 구간의 이유를 말해 준다 — 모델 준비와 화자 분리.
               status.stage === "model"
-                ? `${status.model ?? "모델"} 싣는 중 (처음 한 번, 몇 분 걸림)`
-                : status.stage === "align"
-                  ? "단어마다 초시계 재서 줄 세우는 중"
-                  : status.stage === "diarize"
-                    ? "서버 놈이 목소리 갈라치기(화자 분리) 중 (몇 분 걸림)"
-                    : undefined,
+                ? `${status.model ?? "모델"} 싣는 중`
+                : status.stage === "transcribe"
+                  ? "서버 놈이 폭풍 받아적는 중"
+                  : status.stage === "align"
+                    ? "단어마다 초시계 재서 줄 세우는 중"
+                    : status.stage === "diarize"
+                      ? "서버 놈이 목소리 갈라치기(화자 분리) 중"
+                      : undefined,
             );
           }
         }
@@ -432,7 +434,7 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
         }
 
         // 4) 전사 요청 — 구조화 출력(JSON 배열)으로 강제한다.
-        onProgress?.(55, "구글 AI가 폭풍 타건 중 — 진행률 안 뜨고 몇 분 멍때리니까 냅두세요");
+        onProgress?.(55, "구글 AI가 폭풍 타건 중 (여기선 진행률이 안 떠요)");
         const prompt =
           "이 음성은 한국 병원 병동의 근무 중 대화 기록이다. 전체를 한국어로 전사하라.\n" +
           "- 문장 단위로 나누고, 각 항목에 시작(start)·끝(end) 시각을 초 단위 숫자로 붙여라.\n" +

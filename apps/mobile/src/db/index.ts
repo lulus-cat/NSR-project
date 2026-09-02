@@ -30,6 +30,18 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
     dbPromise = (async () => {
       const db = await SQLite.openDatabaseAsync("nsr.db");
       await db.execAsync(SCHEMA_SQL);
+      // 기존 설치에 새 열을 붙인다. CREATE TABLE IF NOT EXISTS 는 있는 표를
+      // 안 건드리므로 열이 없으면 ALTER 로 더한다 — 두 번 돌아도 안전하다.
+      const cols = await db.getAllAsync<{ name: string }>("PRAGMA table_info(recordings)");
+      const have = new Set(cols.map((c) => c.name));
+      if (!have.has("label")) {
+        await db.execAsync("ALTER TABLE recordings ADD COLUMN label TEXT");
+      }
+      if (!have.has("separate")) {
+        await db.execAsync(
+          "ALTER TABLE recordings ADD COLUMN separate INTEGER NOT NULL DEFAULT 0",
+        );
+      }
       // 전사 도중 앱이 죽으면(프로세스 종료·강제 종료) 'transcribing' 이 영영
       // 남는다. 그러면 그 기록은 '전사할 기록'에서 사라져 다시 전사할 길이
       // 없다 — 실사용에서 콜랩 끊김 뒤 그대로 재현된 사고다. 러너는 프로세스
@@ -146,6 +158,10 @@ export interface RecordingRow {
   size_bytes: number;
   state: RecordingState;
   discard_reason: string | null;
+  /** 가져온 파일의 원래 이름. 녹음기가 만든 파일은 null. */
+  label: string | null;
+  /** 1 이면 같은 근무의 다른 기록과 합치지 않고 따로 본다. */
+  separate: number;
   created_at: number;
 }
 
@@ -154,12 +170,24 @@ export async function createRecording(input: {
   shiftId: string | null;
   seq: number;
   startedAt: number;
+  /** 가져온 파일의 원래 이름. */
+  label?: string;
+  /** 참이면 같은 근무의 다른 기록과 합치지 않는다. */
+  separate?: boolean;
 }): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO recordings (id, shift_id, seq, started_at, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [input.id, input.shiftId, input.seq, input.startedAt, Date.now()],
+    `INSERT INTO recordings (id, shift_id, seq, started_at, label, separate, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.id,
+      input.shiftId,
+      input.seq,
+      input.startedAt,
+      input.label ?? null,
+      input.separate ? 1 : 0,
+      Date.now(),
+    ],
   );
 }
 
@@ -216,6 +244,8 @@ export interface TranscribedRecordingRow {
   shift_id: string | null;
   started_at: number;
   duration_sec: number;
+  label: string | null;
+  separate: number;
   sentences: number;
 }
 
@@ -224,7 +254,7 @@ export async function listTranscribedRecordings(
 ): Promise<TranscribedRecordingRow[]> {
   const db = await getDb();
   return db.getAllAsync<TranscribedRecordingRow>(
-    `SELECT r.id, r.shift_id, r.started_at, r.duration_sec,
+    `SELECT r.id, r.shift_id, r.started_at, r.duration_sec, r.label, r.separate,
             (SELECT COUNT(*) FROM segments s WHERE s.recording_id = r.id) AS sentences
        FROM recordings r
       WHERE r.state = 'transcribed'
@@ -249,8 +279,25 @@ export async function expireRecordings(olderThan: number): Promise<string[]> {
  * 전사만 지운다 — 문장(과 딸린 편집·주석)이 지워지고, 녹음은 '녹음됨'으로
  * 돌아가 다시 전사할 수 있다. 음성 파일은 건드리지 않는다.
  */
-export async function deleteTranscript(shiftId: string): Promise<void> {
+export async function deleteTranscript(
+  shiftId: string,
+  /** 주면 이 기록들의 전사본만 — 따로 둔 파일은 제 화면에서 제 것만 지운다. */
+  recordingIds?: string[],
+): Promise<void> {
   const db = await getDb();
+  if (recordingIds) {
+    for (const id of recordingIds) {
+      await db.runAsync("DELETE FROM segments WHERE shift_id = ? AND recording_id = ?", [
+        shiftId,
+        id,
+      ]);
+      await db.runAsync(
+        "UPDATE recordings SET state = 'recorded' WHERE id = ? AND state = 'transcribed'",
+        [id],
+      );
+    }
+    return;
+  }
   await db.runAsync("DELETE FROM segments WHERE shift_id = ?", [shiftId]);
   await db.runAsync(
     "UPDATE recordings SET state = 'recorded' WHERE shift_id = ? AND state = 'transcribed'",
@@ -259,8 +306,24 @@ export async function deleteTranscript(shiftId: string): Promise<void> {
 }
 
 /** 전사와 녹음을 함께 지운다. 지울 파일 경로를 돌려준다 — 파일 삭제는 호출부가 한다. */
-export async function deleteShiftRecordings(shiftId: string): Promise<string[]> {
+export async function deleteShiftRecordings(
+  shiftId: string,
+  recordingIds?: string[],
+): Promise<string[]> {
   const db = await getDb();
+  if (recordingIds) {
+    const out: string[] = [];
+    for (const id of recordingIds) {
+      const row = await db.getFirstAsync<{ file_uri: string | null }>(
+        "SELECT file_uri FROM recordings WHERE id = ?",
+        [id],
+      );
+      await db.runAsync("DELETE FROM segments WHERE recording_id = ?", [id]);
+      await db.runAsync("DELETE FROM recordings WHERE id = ?", [id]);
+      if (row?.file_uri) out.push(row.file_uri);
+    }
+    return out;
+  }
   const rows = await db.getAllAsync<{ file_uri: string | null }>(
     "SELECT file_uri FROM recordings WHERE shift_id = ?",
     [shiftId],
@@ -379,12 +442,43 @@ export async function countSegments(shiftId: string): Promise<number> {
   return row?.n ?? 0;
 }
 
-export async function listSegments(shiftId: string): Promise<TranscriptSegment[]> {
+/** 기록별 문장 수 — 근무 화면이 파일마다 몇 문장인지 보일 때. */
+export async function segmentCountsByRecording(shiftId: string): Promise<Map<string, number>> {
   const db = await getDb();
-  const rows = await db.getAllAsync<SegmentRow>(
-    "SELECT * FROM segments WHERE shift_id = ? ORDER BY start_sec",
+  const rows = await db.getAllAsync<{ recording_id: string; n: number }>(
+    "SELECT recording_id, COUNT(*) AS n FROM segments WHERE shift_id = ? GROUP BY recording_id",
     [shiftId],
   );
+  return new Map(rows.map((r) => [r.recording_id, r.n]));
+}
+
+/**
+ * 근무의 전사 문장.
+ *
+ * 시각(start_sec)은 파일 안 기준이라, 한 근무에 파일이 여럿이면 파일 차례(seq)로
+ * 먼저 줄 세워야 한다 — start_sec 만으로 정렬하면 30분마다 잘린 두 파일이 뒤섞인다.
+ *
+ *  · recordingId: 그 기록 하나만 ('따로' 둔 파일의 결과 화면).
+ *  · mergedOnly:  '따로' 둔 기록을 뺀 나머지 (합친 전사본 화면).
+ *  · 둘 다 없으면 전부 — 카드·지표·내보내기는 근무 전체를 본다.
+ */
+export async function listSegments(
+  shiftId: string,
+  opts: { recordingId?: string; mergedOnly?: boolean } = {},
+): Promise<TranscriptSegment[]> {
+  const db = await getDb();
+  const rows = opts.recordingId
+    ? await db.getAllAsync<SegmentRow>(
+        "SELECT * FROM segments WHERE shift_id = ? AND recording_id = ? ORDER BY start_sec",
+        [shiftId, opts.recordingId],
+      )
+    : await db.getAllAsync<SegmentRow>(
+        `SELECT s.* FROM segments s
+           LEFT JOIN recordings r ON r.id = s.recording_id
+          WHERE s.shift_id = ?${opts.mergedOnly ? " AND COALESCE(r.separate, 0) = 0" : ""}
+          ORDER BY COALESCE(r.seq, 0), COALESCE(r.started_at, 0), s.start_sec`,
+        [shiftId],
+      );
   return rows.map(toSegment);
 }
 
