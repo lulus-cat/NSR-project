@@ -115,6 +115,10 @@ function findBestMatch(
     // "폴리를" → "폴리", "석션했어요" → "석션" 을 잡기 위함.
     const maxTrim = Math.min(3, Math.max(0, lastToken.text.length - 1));
     for (let trim = 0; trim <= maxTrim; trim++) {
+      // 꼬리가 조사·어미처럼 생기지 않았으면 낱말의 일부다. 자르지 않는다.
+      if (trim > 0 && !looksLikeTail(lastToken.text.slice(lastToken.text.length - trim))) {
+        continue;
+      }
       const rawEnd = lastToken.end - trim;
       if (rawEnd <= rawStart) continue;
       const slice = text.slice(rawStart, rawEnd);
@@ -173,6 +177,30 @@ function readsAsAbbreviation(surface: string, abbr: string): boolean {
 /** 공백만 다른 두 표기인가. */
 function sameIgnoringSpace(a: string, b: string): boolean {
   return a.replace(/\s+/g, "") === b.replace(/\s+/g, "");
+}
+
+/**
+ * 어절 꼬리를 잘라낼 때, 잘린 꼬리가 이 글자로 시작할 때만 조사·어미로 본다.
+ *
+ * "티오티" 의 마지막 "티" 를 조사로 보고 앞 두 글자를 약어 TO 로 바꿔 버린 사고에서
+ * 나왔다. 목록은 명사 뒤에 실제로 붙는 조사·보조용언·접미의 첫 음절이다.
+ * 여기 없는 글자로 시작하는 꼬리는 낱말의 일부로 보고 자르지 않는다 —
+ * 덜 잡는 쪽이 잘못 고치는 쪽보다 낫다 (전사본은 증거다).
+ */
+const TAIL_START = new Set(
+  (
+    "이가을를은는의에께로으와과랑도만부까처보마조밖나든라요야아" + // 조사
+    "하해했함할합한됐되돼됨될된시셨" + // 용언화 (석션했어요, 석션시켰어요)
+    "들님씨분임입였있없인일뿐같대때용쪽값" // 접미·보조 (환자분, 오더대로, 인계때)
+  ).split(""),
+);
+
+/** 잘려 나간 꼬리가 조사·어미로 시작하는가. 문장부호로 시작해도 허용한다. */
+function looksLikeTail(tail: string): boolean {
+  const first = tail[0];
+  if (!first) return true;
+  if (/[.,!?~"'()[\]{}·…:;]/.test(first)) return true;
+  return TAIL_START.has(first);
 }
 
 /**

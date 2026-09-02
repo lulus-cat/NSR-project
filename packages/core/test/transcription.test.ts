@@ -193,3 +193,20 @@ describe("상용 엔진 키워드 부스팅", () => {
     expect(k.find((x) => x.keyword === "브레이든")?.weight).toBe(1);
   });
 });
+
+describe("조사 절단의 한계 — 낱말의 앞부분만 용어로 잡아서는 안 된다", () => {
+  it("'티오티'의 앞 두 글자를 약어 TO 로 바꾸지 않는다", () => {
+    // 어절 꼬리를 조사로 보고 잘라내는 규칙이 '티'를 조사로 오인한 사고.
+    // 꼬리는 실제 조사·어미로 시작할 때만 잘라낸다.
+    const r = correctTranscript("티오티 확인했어요");
+    expect(r.text).toBe("티오티 확인했어요");
+    expect(r.edits).toHaveLength(0);
+  });
+
+  it("진짜 조사·어미가 붙은 것은 여전히 잡는다", () => {
+    expect(correctTranscript("폴리를 뺐어요").termIds).toContain("foley-catheter");
+    expect(correctTranscript("석션했어요").termIds).toContain("suction");
+    expect(correctTranscript("드레싱이랑 소독").termIds).toContain("dressing");
+    expect(correctTranscript("브이에스는 정상이에요").text).toContain("V/S는");
+  });
+});
