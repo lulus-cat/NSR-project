@@ -1,0 +1,122 @@
+# 전사본 검토 워크플로 — 녹음본을 넣고, 서로 교정하고, 사전을 키운다
+
+휘스퍼(한국어 대화로 재학습한 medium)가 틀리는 세 가지를 사람과 Claude 가 나눠서 잡는
+흐름이다. 판정 기준은 `.claude/skills/nsr-transcript-review/SKILL.md` 에 있고, 이 문서는
+**누가 언제 무엇을 하는지**만 적는다.
+
+## 세 가지 오류와 누가 잡나
+
+| 오류 | 예 | 1차 (도구, 결정적) | 2차 (Claude, 문맥) | 3차 (사용자) |
+| --- | --- | --- | --- | --- |
+| A 반복 환각 | "네 네 네 네" | 3회 이상 연속 반복을 찾아 표시 | 무음 구간인지, 실제 발화 가능성 | 그 시각을 들어 확인 |
+| B 임상 어휘 부재 | 노디→노티, 섹션→석션 | 사전 오인식·약어 읽기·발음 0.9 이상은 자동 교정. 0.78~0.9 는 후보 | 앞뒤 문장·슬롯·숫자로 판정 | 못 정한 것만 답 |
+| C 순수 한글 오독 | 낼→내일 | (사전이 아니므로 못 잡음) | 문맥으로 판정, 사전에는 안 넣음 | 못 정한 것만 답 |
+
+도구가 못 하는 것이 2차, Claude 가 못 정하는 것이 3차로 간다. 3차로 가는 것은 **파일명·시각·문장**이
+붙어서 간다. 사용자가 녹음의 그 지점을 찾아 들을 수 있어야 하기 때문이다.
+
+## 한 번의 순환
+
+```
+녹음 → (콜랩·앱) 전사 → data/transcripts/ 에 넣음
+   ↓
+node tools/review-transcript.mjs data/transcripts/<파일>      ← 1차
+   ↓  data/reviews/<파일>.review.md  (자동 / 확인 / 질문 / 교정본)
+Claude 가 nsr-transcript-review 절차로 판정표 작성                ← 2차
+   ↓  판독 불가 → [질문 n] 파일·시각·문장·후보
+사용자가 답함                                                    ← 3차
+   ↓
+data/corrections/confirmed.jsonl 에 규칙 추가 (커밋됨)
+   ↓  같은 B 오인식이 2회 이상 → packages/core/src/lexicon/misheard.ts + 회귀 테스트
+다음 전사부터 자동 적용. 앱도 같은 core 를 쓰므로 폰에서도 같은 결과.
+```
+
+첫 번째 녹음본에서 질문이 많은 것이 정상이다. 두세 번 돌면 같은 병동의 말은 거의 다 규칙이 된다.
+
+## 파일 넣는 법
+
+- 이름: `YYYY-MM-DD_근무_순번.확장자` (예 `2026-08-24_D_01.json`). 질문에 이 이름이 그대로 나온다.
+- 형식: 콜랩 서버 JSON, `.srt`/`.vtt`, 줄 단위 `.txt`. 자세한 것은 `data/README.md`.
+- `data/transcripts/`, `data/recordings/`, `data/reviews/` 는 커밋되지 않는다. 환자 정보가 있다.
+  Claude Code 세션에 파일을 올리는 것 자체가 그 내용을 Anthropic 서버로 보내는 일이다 —
+  `docs/01-legal-and-privacy.md` 의 판단 기준이 여기에도 적용된다. 실명·등록번호가 든 파일은
+  넣기 전에 앱의 내보내기(가리기 켬)나 `deidentify` 를 거친 것을 쓰는 편이 안전하다.
+
+## 답하는 법
+
+질문은 이 모양으로 온다.
+
+```
+[질문 1] 파일: 2026-08-24_D_01.json · 시각: 00:12:34
+문장: "환자A 어제 [?석숀] 두 번 했고 가래 많았어요"
+후보: ① 석션 (사전 용어 "석션", 발음 0.84) ② 석숀 그대로 ③ 다른 말
+왜 못 정하나: 발음은 석션에 가깝지만 이 병동 표기 이력이 없습니다.
+```
+
+"1번 ①", "2번은 실제로 그렇게 말한 거", "3번은 티오티가 아니라 T-tube" 처럼 짧게 답하면 된다.
+모르면 "모름" 이라고 하면 원문을 그대로 둔다.
+
+## 확정 규칙 파일
+
+`data/corrections/confirmed.jsonl` — 한 줄에 규칙 하나. 문장 원문과 환자 정보는 넣지 않는다.
+
+```json
+{"from":"석숀","to":"석션","kind":"B","entryId":"suction","decidedAt":"2026-09-02","note":"가래 문맥. 이 병동 표기"}
+```
+
+- `kind` A 는 규칙으로 만들지 않는다 (반복은 매번 새로 찾는다).
+- `kind` C 는 글자 치환으로만 쓰이고 사전에 들어가지 않는다.
+- 도구는 이 파일을 읽어 사전보다 먼저 적용한다. 그래서 한 번 답한 것은 다시 묻지 않는다.
+
+## 사전으로 승격
+
+같은 B 규칙이 두 번 이상 확정되면 core 에 올린다.
+
+1. `packages/core/src/lexicon/misheard.ts` 의 해당 항목에 표기 추가 (없는 용어면 `terms-*.ts` 에 항목 신설).
+2. `packages/core/test/transcription.test.ts` 에 그 문장으로 회귀 테스트 한 줄.
+3. `npm test` 통과 확인 → 커밋. APK CI 가 돌아 앱에도 들어간다.
+
+## 같은 스킬을 세 곳에서 쓴다
+
+| 어디 | 무엇을 읽나 | 어떻게 |
+| --- | --- | --- |
+| Claude Code (Fable·Opus, 이 저장소) | `.claude/skills/nsr-transcript-review/` | 저장소에 있으니 자동. 도구도 돌릴 수 있다 |
+| Claude API (앱·스크립트가 부름) | 같은 폴더를 올린 API 스킬 | `tools/upload-skill.mjs` 로 올리고 `container.skills` 로 붙임 |
+| 앱 안 (`apps/mobile/src/services/llm.ts`) | 시스템 프롬프트 `POST_EDIT_SYSTEM` | 지금은 짧은 규칙만. 스킬이 검증되면 그 요약을 여기 반영 |
+
+### API 스킬 올리기
+
+```bash
+ANTHROPIC_API_KEY=sk-ant-... node tools/upload-skill.mjs --save        # 처음
+ANTHROPIC_API_KEY=sk-ant-... node tools/upload-skill.mjs --update skill_01…   # 고친 뒤 새 판
+```
+
+올라간 뒤 Messages API 요청은 이 모양이다 (베타 헤더 없음, 코드 실행 도구가 필요하다).
+
+```json
+{
+  "model": "claude-opus-5",
+  "max_tokens": 16000,
+  "container": { "skills": [{ "type": "custom", "skill_id": "skill_01…", "version": "latest" }] },
+  "tools": [{ "type": "code_execution_20250825", "name": "code_execution" }],
+  "messages": [{ "role": "user", "content": "<가려진 전사본>" }]
+}
+```
+
+"네이티브 스킬"이라는 말이 뜻하는 것이 이것이다 — 프롬프트에 규칙을 매번 붙여 넣는 대신,
+Anthropic 쪽에 올려 둔 스킬 폴더를 요청마다 이름으로 부른다. 모델은 요청을 받으면 SKILL.md 를
+읽고 필요할 때 `references/` 를 연다. 규칙을 고치면 새 판만 올리면 되고 앱은 손댈 필요가 없다.
+
+### 앱 연동 (다음 단계, 스킬 검증 후)
+
+`llm.ts` 의 `postEditTranscript` 에 설정값(스킬 id)이 있으면 위 요청 모양으로 바꾼다.
+비용이 달라지므로(코드 실행 컨테이너) 설정 화면에 "스킬 사용" 스위치와 안내가 함께 들어가야 한다.
+`redactForNetwork` 를 거치는 것은 그대로다 — 스킬을 써도 전사본이 나가는 사실은 변하지 않는다.
+
+## 왜 파인튜닝을 다시 하지 않나
+
+지금 쓰는 모델은 이미 한국어 대화 1,273시간으로 재학습된 것이다. 여기서 더 올리려면 병동 음성이
+라벨과 함께 필요한데, 그것은 환자 대화 녹음이다 (`docs/02` 3절). 사전·규칙·문맥 판정은 그 데이터
+없이 같은 효과의 상당 부분을 낸다. 규칙이 수백 개 쌓인 뒤에도 남는 오류가 있으면 그때
+파인튜닝 여부를 다시 본다 — 그때는 "어떤 말이 자주 틀리는지" 목록이 이미 있으므로 훨씬 작은
+데이터로 된다.

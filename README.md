@@ -85,6 +85,14 @@ NSR은 그 **흐릿해지는 기억의 조각들을 단단하게 붙잡아두는
 
 ### 개발 및 실행 가이드
 
+Claude 로 작업할 때의 지도는 `CLAUDE.md`, 작업 규칙은 `.claude/skills/` 에 있다.
+녹음본을 넣고 전사본을 교정해 가는 흐름은 [docs/07-transcript-review-workflow.md](docs/07-transcript-review-workflow.md).
+
+**전사본 검토**
+```bash
+node tools/review-transcript.mjs data/transcripts/<파일>   # 1차 교정 + 확인·질문 목록 → data/reviews/
+```
+
 **코어 (테스트 및 타입체크)**
 ```bash
 npm install
