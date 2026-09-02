@@ -16,7 +16,7 @@
  */
 
 import type { Lexicon, LexiconEntry } from "../lexicon/index.js";
-import { defaultLexicon, spokenSurfacesOf } from "../lexicon/index.js";
+import { COMMON_WORDS, defaultLexicon, spokenSurfacesOf } from "../lexicon/index.js";
 import { phoneticSimilarity } from "../hangul/similarity.js";
 import { expandInitialism } from "../hangul/initialism.js";
 import type { CorrectionResult, Edit, TermAnnotation } from "./types.js";
@@ -125,6 +125,11 @@ function findBestMatch(
       const trimmed = trimPunctuation(slice, rawStart);
       const candidate = trimmed.text;
       if (candidate.length < 2) continue;
+      // 마지막 어절이 "[이름]" 처럼 부호로 시작하면 꼬리를 자른 뒤 "아니 " 같은
+      // 공백 꼬리가 남는다. 그건 더 짧은 span 과 같은 후보다 — 여기서 보지 않는다.
+      // (공백이 글자 수에 끼어 "아니 " 를 3음절로 세는 사고가 있었다.)
+      if (/\s$/.test(candidate)) continue;
+      const syllables = candidate.replace(/[^가-힣]/g, "").length;
 
       const hit = lexicon.lookup(candidate, opts.minPhoneticConfidence);
       if (!hit) continue;
@@ -132,12 +137,30 @@ function findBestMatch(
       // 발음 매칭은 짧을수록 우연히 걸릴 확률이 높다.
       // 그렇다고 2음절을 통째로 버리면 이 도메인의 핵심 용어(노티·폴리·오더·인계)가
       // 전부 빠진다. 그래서 배제 대신 **짧을수록 높은 신뢰도를 요구**한다.
+      // 2음절 상한이 0.95 인 이유: 0.92 였을 때 "아니"↔"아이"(0.925)가 걸려 실제
+      // 전사본의 "아니라고" 가 "아이라고" 로 바뀌었다. 자모 하나 차이의 2음절은
+      // 발음만으로는 못 가른다 — 그런 것은 검토 도구가 후보로 올려 사람이 본다.
       if (hit.via === "phonetic" && hit.confidence < 1) {
         const required =
-          candidate.length <= 2
-            ? Math.max(opts.minPhoneticConfidence, 0.92)
+          syllables <= 2
+            ? Math.max(opts.minPhoneticConfidence, 0.95)
             : opts.minPhoneticConfidence;
         if (hit.confidence < required) continue;
+        // 원문이 그 자체로 흔한 일반어면 화자가 실제로 그렇게 말한 것이다.
+        // 발음이 가깝다는 이유로 덮어쓰지 않는다 (lexicon/common-words.ts).
+        // 조사가 붙은 채 매칭됐을 수도 있으니 마지막 글자를 뗀 줄기도 본다 ("이번에"→"이번").
+        if (COMMON_WORDS.has(candidate) || COMMON_WORDS.has(candidate.slice(0, -1))) continue;
+        // 두 어절 이상에 걸친 발음 매칭은 우연이 훨씬 잦다 ("우리 얜"↔"오리엔", "결과 나오"↔
+        // "결과 나옴"). 거의 같을 때만 받는다.
+        if (/\s/.test(candidate) && hit.confidence < 0.95) continue;
+        // 조사가 붙은 채로 용어와 비슷해진 것은 우연이다. "설명은"↔"천명음" 은 조사 "은" 이
+        // 용어의 "음" 과 맞아떨어져 0.90 이 됐다. 후보의 끝이 조사·어미 글자인데 용어의
+        // 끝과 다르면, 조사를 뗀 후보(다른 trim)가 용어에 가까울 때만 잡힌다.
+        const last = candidate[candidate.length - 1];
+        if (TAIL_START.has(last)) {
+          const target = closestHangulSurface(hit.entry, candidate);
+          if (target && target[target.length - 1] !== last) continue;
+        }
       }
 
       // 긴 매칭 + 높은 신뢰도를 선호한다.
@@ -195,8 +218,8 @@ const TAIL_START = new Set(
   ).split(""),
 );
 
-/** 잘려 나간 꼬리가 조사·어미로 시작하는가. 문장부호로 시작해도 허용한다. */
-function looksLikeTail(tail: string): boolean {
+/** 잘려 나간 꼬리가 조사·어미로 시작하는가. 문장부호로 시작해도 허용한다. 검토 도구도 쓴다. */
+export function looksLikeTail(tail: string): boolean {
   const first = tail[0];
   if (!first) return true;
   if (/[.,!?~"'()[\]{}·…:;]/.test(first)) return true;

@@ -19,10 +19,10 @@
  */
 
 import type { CorrectionOptions } from "./correct.js";
-import { correctTranscript } from "./correct.js";
+import { correctTranscript, looksLikeTail } from "./correct.js";
 import { splitSentences } from "./sentences.js";
 import type { Lexicon, LexiconEntry } from "../lexicon/index.js";
-import { ALL_ABBREVS, defaultLexicon, spokenSurfacesOf } from "../lexicon/index.js";
+import { ALL_ABBREVS, COMMON_WORDS, defaultLexicon, spokenSurfacesOf } from "../lexicon/index.js";
 import { phoneticSimilarity } from "../hangul/similarity.js";
 import { expandInitialism } from "../hangul/initialism.js";
 
@@ -83,6 +83,8 @@ function innerRepeat(
   const m = re.exec(word);
   if (!m || m.index === undefined) return null;
   const unit = m[1];
+  // 한글이 아닌 반복("ccc", "xxx")은 약어일 수 있다. 말의 반복만 본다.
+  if (!/[가-힣]/.test(unit)) return null;
   return { offset: m.index, length: m[0].length, unit, count: m[0].length / unit.length };
 }
 
@@ -178,9 +180,8 @@ export interface ReviewOptions extends CorrectionOptions {
   /** 발음 매칭 교정 중 이 값 이상이면 auto, 미만이면 check. 기본 0.95. */
   autoThreshold?: number;
   /**
-   * 사전 용어와 이 값 이상 가까우면 ask 후보로 올린다. 기본 0.78.
-   * 2음절 후보는 우연히 걸릴 확률이 높아 0.84 이상을 요구한다
-   * (석숀↔석션 0.84, 인케↔인계 0.88 은 잡고, 노트↔노티 0.76 은 안 잡는 선).
+   * 사전 용어와 이 값 이상 가까우면 ask 후보로 올린다. 기본 0.78 (카데타↔카테터 0.79 를 잡는 선).
+   * 3음절 이상만 본다 — 2음절은 우연이 태반이다 (findUnknownCandidates 머리말).
    */
   askThreshold?: number;
   repetition?: RepetitionOptions;
@@ -226,24 +227,8 @@ function closestHangulSurface(entry: LexiconEntry, surface: string): string {
   return best;
 }
 
-/**
- * 병동 대화에 흔한 일반어. 사전 용어와 발음이 우연히 가까워도("내일"↔"레일", "연락"↔"열남")
- * 사용자에게 묻지 않고 **확인 목록**에만 둔다. 문맥이 임상 용어를 요구하는 자리라면
- * 문맥을 읽는 쪽(사람·모델)이 거기서 잡는다. 여기서 버리지는 않는다 — 판정만 낮춘다.
- */
-const COMMON_WORDS: ReadonlySet<string> = new Set(
-  (
-    "오늘 내일 어제 모레 지금 아까 이따 나중 먼저 다음 처음 마지막 시간 아침 점심 저녁 오전 오후 새벽 " +
-    "주말 평일 연락 전화 문자 확인 정리 준비 시작 마무리 다시 계속 그냥 정말 진짜 완전 조금 많이 약간 " +
-    "거의 전부 항상 가끔 자주 이거 저거 그거 여기 저기 거기 우리 저희 선생님 언니 누구 무엇 어디 언제 " +
-    "어떻게 얼마 사람 생각 말씀 이야기 얘기 부탁 감사 죄송 미안 괜찮 안녕 수고 고생 걱정 문제 이유 방법 " +
-    "경우 상황 정도 이상 이하 이후 이전 동안 사이 근처 때문 위해 대해 통해 관련 포함 제외 결과 내용 " +
-    "자료 파일 사진 영상 목록 이름 번호 주소 나이 남자 여자 아이 어른 가족 부모 엄마 아빠 친구 동생 " +
-    "오빠 누나 집에 회사 학교 식당 화장실 커피 과일 우리가 그래서 그러면 그런데 그리고 하지만 근데 " +
-    "일단 아마 혹시 만약 역시 물론 특히 바로 벌써 아직 이미 금방 천천히 빨리 잠깐 잠시 오래 매일 " +
-    "이번 저번 다음주 이번주 지난주 요즘 최근 원래 보통 가끔씩 자꾸 계속해서 그때 이때 저때 언제나"
-  ).split(/\s+/),
-);
+// 흔한 일반어 목록은 교정기와 공유한다 (lexicon/common-words.ts). 교정기는 거기 있는 말을
+// 발음 매칭으로 덮어쓰지 않고, 여기서는 사용자에게 묻지 않고 "확인" 으로만 낮춘다.
 
 function isCovered(word: string, covered: ReadonlySet<string>): boolean {
   for (const s of covered) {
@@ -254,9 +239,37 @@ function isCovered(word: string, covered: ReadonlySet<string>): boolean {
 }
 
 /**
+ * 용언 어미로 흔히 끝나는 글자. 후보의 끝이 이것인데 사전 용어의 끝과 다르면, 어미까지
+ * 세어야 겨우 비슷해진 우연이다 ("휴식이"↔"표시기", "얘네만"↔"에네마", "그러니"↔"그레이").
+ * 조사 목록(correct.ts 의 looksLikeTail)에 어미를 더한 것이다.
+ */
+const VERB_ENDINGS: ReadonlySet<string> = new Set(
+  (
+    "니 데 든 던 고 서 면 며 지 게 어 아 자 죠 네 나 까 걸 긴 는 은 을 라 러 려 냐 뇨 군 " +
+    "더 놔 녀 봐 줘 워 와 져 쳐 떠 퍼 뭐 돼 대 래 케 세 테 셔 셨 겠 았 었 였 " // 아니더·올려놔·피아녀
+  ).split(/\s+/),
+);
+
+function endsLikeEnding(word: string): boolean {
+  const last = word[word.length - 1];
+  return looksLikeTail(last) || VERB_ENDINGS.has(last);
+}
+
+/** 한글 표기가 알파벳 읽기로 풀리는가 ("디씨", "알알", "에이피"). */
+function readsLikeAbbr(surface: string): boolean {
+  return expandInitialism(surface.replace(/\s+/g, "")).some((r) => r.length >= 2);
+}
+
+/**
  * 교정기가 손대지 않은 어절 중에서 사람이 봐야 할 것을 찾는다.
  *   - 알파벳 읽기로 풀리는데 사전에 없는 약어 (3음절 이상 — "이에", "아이" 같은 일반어를 피한다)
  *   - 사전 용어와 발음이 가깝지만 교정 문턱에 못 미친 말
+ *
+ * 정밀도를 위해 세 가지를 요구한다 (7,500문장짜리 실제 파일에서 배운 것):
+ *   - 후보도 사전 표기도 **3음절 이상**. 2음절은 "차례"↔"사레", "보니"↔"폴리" 처럼 우연이 태반이다.
+ *     2음절 오인식은 사전의 misheard 목록과 문맥을 읽는 사람이 맡는다.
+ *   - 후보의 끝이 조사·어미 글자면 사전 표기도 같은 글자로 끝나야 한다.
+ *   - 흔한 일반어는 아예 보지 않는다.
  */
 function findUnknownCandidates(
   sentence: string,
@@ -271,13 +284,21 @@ function findUnknownCandidates(
   for (const tok of tokenize(sentence)) {
     const word = bare(tok.text);
     if (!/[가-힣]{2,}/.test(word)) continue;
+    // 긴 어절은 용어+조사가 아니라 용언·구다. 사전 용어는 길어야 6~7음절이다.
+    if (word.length > 8) continue;
     if (isCovered(word, covered)) continue;
+    // 흔한 일반어는 사전 용어와 발음이 우연히 가까워도 후보로 올리지 않는다.
+    // 화자가 실제로 그렇게 말했을 확률이 압도적이고, 긴 파일에서 잡음만 만든다.
+    if (COMMON_WORDS.has(word)) continue;
 
     let best: ReviewItem | null = null;
     const maxTrim = Math.min(3, word.length - 2);
     for (let trim = 0; trim <= maxTrim; trim++) {
+      // 꼬리가 조사·어미처럼 생기지 않았으면 낱말의 일부다 — 교정기와 같은 규칙.
+      if (trim > 0 && !looksLikeTail(word.slice(word.length - trim))) continue;
       const cand = word.slice(0, word.length - trim);
       if (!/^[가-힣]{2,}$/.test(cand)) continue;
+      if (COMMON_WORDS.has(cand)) continue;
 
       if (cand.length >= 3) {
         const readings = expandInitialism(cand).filter((r) => r.length >= 2);
@@ -298,23 +319,30 @@ function findUnknownCandidates(
         }
       }
 
+      if (cand.length < 3) continue;
+      // 마지막 글자를 뗀 줄기가 흔한 말이면 조사가 붙은 일반어다 ("사람이", "카드만").
+      if (COMMON_WORDS.has(cand.slice(0, -1))) continue;
       const hit = lexicon.lookup(cand, thresholds.ask);
-      if (!hit || hit.via !== "phonetic" || hit.confidence >= thresholds.minPhonetic) continue;
-      const required = cand.length <= 2 ? Math.max(thresholds.ask, 0.84) : thresholds.ask;
-      if (hit.confidence < required) continue;
+      if (!hit || hit.via !== "phonetic") continue;
+      // 교정기가 이미 고쳤을 구간(문턱 이상)은 건너뛴다.
+      if (hit.confidence >= thresholds.minPhonetic) continue;
+      if (hit.confidence < thresholds.ask) continue;
+      const suggestion = closestHangulSurface(hit.entry, cand);
+      if (suggestion.length < 3) continue;
+      if (endsLikeEnding(cand) && suggestion[suggestion.length - 1] !== cand[cand.length - 1]) continue;
+      // 약어의 한글 읽기(피이지·알아이·피이티)는 어미로 끝나는 우리말과 잘 겹친다
+      // ("보이지"↔"피이지", "사람이"↔"알아이"). 후보가 어미로 끝나면 약어 읽기와는 맞추지 않는다.
+      if (hit.entry.id.startsWith("abbr-") && endsLikeEnding(cand)) continue;
       if (best && best.confidence >= hit.confidence) continue;
-      const common = COMMON_WORDS.has(cand);
       best = {
         ...base,
-        verdict: common ? "check" : "ask",
+        verdict: "ask",
         kind: "unknown-term",
         surface: cand,
-        suggestion: closestHangulSurface(hit.entry, cand),
+        suggestion,
         entryId: hit.entry.id,
         confidence: hit.confidence,
-        reason: common
-          ? `흔한 일반어 — 사전 용어 "${hit.entry.ko}" 와 발음 ${hit.confidence.toFixed(2)} 로 가깝지만, 문맥이 그 용어를 요구할 때만 오인식으로 본다`
-          : `사전 용어 "${hit.entry.ko}" 와 발음 유사도 ${hit.confidence.toFixed(2)} — 교정 문턱(${thresholds.minPhonetic}) 미만이라 손대지 않음`,
+        reason: `사전 용어 "${hit.entry.ko}" 와 발음 유사도 ${hit.confidence.toFixed(2)} — 교정 문턱 미만이라 손대지 않음`,
       };
     }
     if (best && !seen.has(best.surface)) {
@@ -378,6 +406,9 @@ export function reviewTranscript(raw: string, options: ReviewOptions = {}): Revi
     for (const a of result.annotations) {
       const entry = lexicon.get(a.entryId);
       if (!entry?.abbr || !AMBIGUOUS_ABBR.has(abbrKey(entry.abbr))) continue;
+      // "호흡" 처럼 한국어 표제어를 그대로 말한 것은 뜻이 갈리지 않는다. 약어(D/C)나
+      // 약어 읽기(디씨·알알)로 말했을 때만 어느 뜻인지 확정할 일이 생긴다.
+      if (a.surface === entry.ko || /[가-힣]/.test(a.surface) && !readsLikeAbbr(a.surface)) continue;
       items.push({
         ...base,
         verdict: "check",
