@@ -45,7 +45,7 @@ const Ctx = createContext<AppStateValue | null>(null);
 
 export function useApp(): AppStateValue {
   const value = useContext(Ctx);
-  if (!value) throw new Error("AppProvider 안에서만 사용할 수 있습니다.");
+  if (!value) throw new Error("엥? AppProvider 품속에서만 놀 수 있어요!");
   return value;
 }
 
@@ -106,8 +106,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
         // 걸린 인증이 없으면 그만이다.
       }
       const result = await LocalAuthentication.authenticateAsync({
-        promptMessage: "기록 내용에 민감 정보가 포함될 수 있습니다",
-        cancelLabel: "취소",
+        promptMessage: "환자 정보 털릴 수 있음 주의",
+        cancelLabel: "앗차차 (취소)",
         // 생체인식이 거듭 실패하면 기기 잠금(PIN·패턴)으로도 풀 수 있게.
         disableDeviceFallback: false,
       });

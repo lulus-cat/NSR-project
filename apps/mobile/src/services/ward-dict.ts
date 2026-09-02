@@ -100,12 +100,12 @@ export async function shareWardPack(pack: WardPack): Promise<void> {
 
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error(
-      `이 기기에서는 공유 기능을 실행할 수 없습니다. 파일 위치: ${file.uri}`,
+      `이 폰에선 카톡 공유 같은 거 못 열어요 ㅠㅠ 파일 여기 짱박혀 있음: ${file.uri}`,
     );
   }
   await Sharing.shareAsync(file.uri, {
     mimeType: "application/json",
-    dialogTitle: `${pack.name} 사전 내보내기`,
+    dialogTitle: `${pack.name} 족보 밖으로 슝`,
     UTI: "public.json",
   });
 }
@@ -136,7 +136,7 @@ export async function importWardPackFromFile(): Promise<ImportOutcome> {
   } catch (e) {
     return {
       ...empty,
-      errors: [`파일을 읽지 못했습니다: ${e instanceof Error ? e.message : e}`],
+      errors: [`엥 파일이 안 읽혀요 ㅠㅠ 고장 남: ${e instanceof Error ? e.message : e}`],
       canceled: false,
       saved: false,
     };
@@ -173,7 +173,7 @@ export async function activePacks(): Promise<WardPack[]> {
 export function describePack(stored: StoredPack): string {
   const stats = packStats(stored.pack);
   const where = [stored.pack.hospital, stored.pack.ward].filter(Boolean).join(" ");
-  const bits = [`용어 ${stats.terms}개`, `표기 ${stats.surfaces}개`];
-  if (stored.pack.author) bits.push(`작성자 ${stored.pack.author}`);
+  const bits = [`단어 무려 ${stats.terms}개 겟또!`, `껍데기 ${stats.surfaces}개`];
+  if (stored.pack.author) bits.push(`만든 사람 (고인물) ${stored.pack.author}`);
   return [where, bits.join(" · ")].filter(Boolean).join(" — ");
 }

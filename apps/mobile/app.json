@@ -43,7 +43,8 @@
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#1B302A"
+        "backgroundColor": "#1B302A",
+        "monochromeImage": "./assets/adaptive-icon-mono.png"
       }
     },
     "plugins": [
@@ -78,7 +79,8 @@
         {
           "calendarPermission": "듀티표를 폰 캘린더에 일정으로 넣기 위해 캘린더 접근이 필요합니다."
         }
-      ]
+      ],
+      "./plugins/with-dex"
     ],
     "experiments": {
       "typedRoutes": true

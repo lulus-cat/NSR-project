@@ -26,10 +26,10 @@
  */
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import { createSchedule, resolveAll, toDateString } from "@nsr/core";
+import { resolveAll, toDateString } from "@nsr/core";
 import { getSetting, listDutyEntries, setSetting } from "../db";
 import { searchHospitalsHira, searchPlacesKakao } from "./publicdata";
-import { currentSession, startManual, stopManual } from "./scheduler";
+import { buildSchedule, currentSession, startManual, stopManual } from "./scheduler";
 
 export const GEOFENCE_TASK = "nsr-workplace-geofence";
 
@@ -48,8 +48,7 @@ export interface Workplace {
 
 /** 오늘(또는 자정을 넘긴 어제 나이트) 근무가 있는가. */
 async function isWorkingDay(now = Date.now()): Promise<{ working: boolean; shiftId: string }> {
-  const entries = await listDutyEntries();
-  const shifts = resolveAll(createSchedule(entries));
+  const shifts = resolveAll(await buildSchedule());
   const today = toDateString(now);
   const yesterday = toDateString(now - 24 * 3600_000);
   const hit = shifts.find(
@@ -83,7 +82,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
       await setSetting("geofence.lastExitAt", Date.now());
     }
   } catch (e) {
-    console.error("[NSR] 지오펜스 처리 실패", e);
+    console.error("[앗] 위치 감지기 뻗음", e);
   }
 });
 
@@ -110,7 +109,7 @@ export async function setWorkplaceHere(radius = 150): Promise<Workplace | null> 
     latitude: pos.coords.latitude,
     longitude: pos.coords.longitude,
     radius,
-    label: "근무지",
+    label: "내 병원 (근무지)",
   };
   await setSetting(GEO_KEYS.workplace, wp);
   return wp;
@@ -154,7 +153,7 @@ export async function searchWorkplace(
     };
   }
   throw new Error(
-    "이 버전에는 검색 키가 없습니다. 설정에서 카카오 및 공공데이터 키를 직접 넣으십시오.",
+    "아직 쪼렙(베타)이라 검색 열쇠가 없어요 ㅠㅠ 설정 가서 카카오랑 공공데이터 키 직접 꽂아주세용",
   );
 }
 
@@ -190,15 +189,15 @@ export async function setGeofence(on: boolean): Promise<{ ok: boolean; message?:
   }
 
   const wp = await getWorkplace();
-  if (!wp) return { ok: false, message: "먼저 근무지를 지정하십시오." };
+  if (!wp) return { ok: false, message: "병원 위치부터 찍어주세용 (나 어디로 출근해?)" };
 
   const fg = await Location.requestForegroundPermissionsAsync();
-  if (!fg.granted) return { ok: false, message: "위치 권한이 필요합니다." };
+  if (!fg.granted) return { ok: false, message: "폰 위치 권한 안 주면 못 써요 ㅠㅠ" };
   const bg = await Location.requestBackgroundPermissionsAsync();
   if (!bg.granted) {
     return {
       ok: false,
-      message: "백그라운드 기록을 위해 기기 위치 권한을 '항상 허용'으로 바꾸십시오.",
+      message: "앱 안 켜도 뒤에서 몰래 녹음 켜려면 폰 위치 권한을 꼭 '항상 허용'으로 풀어주세요!",
     };
   }
 
@@ -225,6 +224,6 @@ export async function restoreGeofence(): Promise<void> {
       await setGeofence(true);
     }
   } catch (e) {
-    console.error("[NSR] 지오펜스 복구 실패", e);
+    console.error("[앗] 위치 감지기 심폐소생술 실패 ㅠㅠ", e);
   }
 }

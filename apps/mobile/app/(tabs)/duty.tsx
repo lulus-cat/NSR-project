@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useRouter } from "expo-router";
@@ -13,6 +13,7 @@ import {
   toDateString,
   type DutyEntry,
   type ShiftCode,
+  type ShiftTemplate,
 } from "@nsr/core";
 import { Badge, Body, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
 import { CONTENT_MAX, TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
@@ -23,6 +24,10 @@ import {
   upsertDutyEntries,
 } from "../../src/db";
 import { useApp } from "../../src/state/AppContext";
+import {
+  loadDutyTemplates,
+  saveDutyTemplateOverride,
+} from "../../src/services/scheduler";
 import { exportMonthToCalendar, importMonthFromCalendar } from "../../src/services/calendar-sync";
 
 const WEEKDAYS = ["일", "월", "화", "수", "목", "금", "토"];
@@ -53,6 +58,10 @@ export default function Duty() {
   const app = useApp();
   const router = useRouter();
   const [entries, setEntries] = useState<DutyEntry[]>([]);
+  const [templates, setTemplates] = useState<Record<ShiftCode, ShiftTemplate>>(DEFAULT_TEMPLATES);
+  /** 근무 시간 카드에서 지금 펼쳐 편집 중인 코드와 입력값. */
+  const [editCode, setEditCode] = useState<ShiftCode | null>(null);
+  const [editForm, setEditForm] = useState({ start: "", end: "", pre: "", post: "" });
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [selected, setSelected] = useState(toDateString(Date.now()));
   const [monthAnchor, setMonthAnchor] = useState(() => {
@@ -63,6 +72,7 @@ export default function Duty() {
 
   const load = useCallback(async () => {
     setEntries(await listDutyEntries());
+    setTemplates(await loadDutyTemplates());
     const scores = await listTaeumScores(120);
     const map = new Map<string, ReturnType<typeof taeumTemperature>>();
     for (const s of scores) {
@@ -77,7 +87,8 @@ export default function Duty() {
   }, [load]);
 
   const byDate = useMemo(() => new Map(entries.map((e) => [e.date, e])), [entries]);
-  const schedule = useMemo(() => createSchedule(entries), [entries]);
+  // 사용자 근무 시간이 달력·통계·자동 기록 판정 모두에 같은 값으로 반영된다.
+  const schedule = useMemo(() => createSchedule(entries, templates), [entries, templates]);
   const resolved = useMemo(
     () => new Map(resolveAll(schedule).map((s) => [s.date, s])),
     [schedule],
@@ -473,7 +484,7 @@ export default function Duty() {
                   { label: "이브데이", value: patterns.evday, hint: "이브닝 뒤 바로 데이" },
                   { label: "퐁당퐁당", value: patterns.pongdang, hint: "하루걸러 출근" },
                 ], [
-                  { label: "데데데나", value: patterns.dayRunToNight, hint: "데이 연속 뒤 나이트" },
+                  { label: "연속 근무", value: patterns.sameShiftRun, hint: "같은 근무 4일 이상" },
                   { label: "나이트 연속", value: patterns.longestNightRun, hint: "최장 연속 일수" },
                   { label: "샌드위치 오프", value: patterns.sandwichOff, hint: "나이트-오프-나이트" },
                 ]].map((rowTiles, ri) => (
@@ -499,7 +510,7 @@ export default function Duty() {
                 ))}
               </View>
               ))}
-              {patterns.naode + patterns.evday + patterns.dayRunToNight + patterns.sandwichOff > 0 ||
+              {patterns.naode + patterns.evday + patterns.sameShiftRun + patterns.sandwichOff > 0 ||
               patterns.longestNightRun > 3 ? (
                 <Small>
                   연속 5일이나 나이트 3일을 넘는 일정입니다. 계속되면 근무표를 기록해 두십시오.
@@ -555,23 +566,174 @@ export default function Duty() {
             {syncMsg ? <Small muted={false}>{syncMsg}</Small> : null}
           </Card>
 
-          {/* 근무 시간 기본값 */}
+          {/* 근무·기록 시간 — 근무 시각, 인계 앞뒤, 자동 기록 여유를 한 자리에서 */}
           <Card>
-            <Heading>근무 시간 설정</Heading>
+            <Heading>근무·기록 시간 설정</Heading>
+            <Small>
+              근무를 눌러 시각과 인계 앞뒤 여유를 고치십시오. 달력·근무 통계·자동
+              기록·홈의 인계 체류 표시가 전부 이 값을 씁니다.
+            </Small>
             {(["D", "E", "N", "ADM", "SPC"] as ShiftCode[]).map((code) => {
-              const tpl = DEFAULT_TEMPLATES[code];
+              const tpl = templates[code];
+              const editing = editCode === code;
               return (
                 <View key={code}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", paddingVertical: space.sm }}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      if (editing) {
+                        setEditCode(null);
+                        return;
+                      }
+                      setEditCode(code);
+                      setEditForm({
+                        start: tpl.startTime ?? "",
+                        end: tpl.endTime ?? "",
+                        pre: String(tpl.preHandoverMin),
+                        post: String(tpl.postHandoverMin),
+                      });
+                    }}
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      minHeight: TOUCH_MIN,
+                    }}
+                  >
                     <Body>{tpl.label}</Body>
                     <Small>
-                      {tpl.startTime}~{tpl.endTime} · 인계 앞 {tpl.preHandoverMin}분 / 뒤 {tpl.postHandoverMin}분
+                      {tpl.startTime}~{tpl.endTime} · 인계 앞 {tpl.preHandoverMin}분 / 뒤{" "}
+                      {tpl.postHandoverMin}분 {editing ? "▲" : "▼"}
                     </Small>
-                  </View>
+                  </Pressable>
+                  {editing ? (
+                    <View style={{ gap: space.sm, paddingBottom: space.md }}>
+                      <View style={{ flexDirection: "row", gap: space.sm }}>
+                        {(
+                          [
+                            ["start", "시작 (07:00)"],
+                            ["end", "종료 (15:00)"],
+                          ] as const
+                        ).map(([field, ph]) => (
+                          <TextInput
+                            key={field}
+                            value={editForm[field]}
+                            onChangeText={(v) => setEditForm((f) => ({ ...f, [field]: v }))}
+                            placeholder={ph}
+                            placeholderTextColor={t.textMuted}
+                            keyboardType="numbers-and-punctuation"
+                            style={{
+                              flex: 1,
+                              color: t.text,
+                              backgroundColor: t.surfaceAlt,
+                              borderRadius: radius.md,
+                              padding: space.md,
+                              fontSize: 14,
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <View style={{ flexDirection: "row", gap: space.sm }}>
+                        {(
+                          [
+                            ["pre", "인계 앞(분)"],
+                            ["post", "인계 뒤(분)"],
+                          ] as const
+                        ).map(([field, ph]) => (
+                          <TextInput
+                            key={field}
+                            value={editForm[field]}
+                            onChangeText={(v) => setEditForm((f) => ({ ...f, [field]: v }))}
+                            placeholder={ph}
+                            placeholderTextColor={t.textMuted}
+                            keyboardType="number-pad"
+                            style={{
+                              flex: 1,
+                              color: t.text,
+                              backgroundColor: t.surfaceAlt,
+                              borderRadius: radius.md,
+                              padding: space.md,
+                              fontSize: 14,
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <Button
+                        label="저장"
+                        tone="primary"
+                        onPress={async () => {
+                          const time = /^([01]?\d|2[0-3]):[0-5]\d$/;
+                          if (!time.test(editForm.start) || !time.test(editForm.end)) {
+                            setSyncMsg("시각은 07:00 같은 HH:MM 꼴이어야 합니다.");
+                            return;
+                          }
+                          const pre = Number(editForm.pre);
+                          const post = Number(editForm.post);
+                          if (!Number.isFinite(pre) || !Number.isFinite(post) || pre < 0 || post < 0) {
+                            setSyncMsg("인계 분은 0 이상의 숫자여야 합니다.");
+                            return;
+                          }
+                          await saveDutyTemplateOverride(code, {
+                            startTime: editForm.start,
+                            endTime: editForm.end,
+                            preHandoverMin: Math.round(pre),
+                            postHandoverMin: Math.round(post),
+                          });
+                          setTemplates(await loadDutyTemplates());
+                          setEditCode(null);
+                          setSyncMsg(null);
+                        }}
+                      />
+                    </View>
+                  ) : null}
                   <Divider />
                 </View>
               );
             })}
+            <Small muted={false}>자동 기록 여유</Small>
+            <Small>
+              자동 기록이 근무 시작 {app.policy.leadMinutes}분 전에 켜지고, 종료 후{" "}
+              {app.policy.trailMinutes}분까지 이어집니다. 인계를 놓치지 않으려면 인계
+              앞뒤보다 넉넉해야 합니다.
+            </Small>
+            <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
+              {[
+                ["기록 시작 전", "leadMinutes", [15, 30, 45, 60]] as const,
+                ["종료 후 유지", "trailMinutes", [15, 30, 40, 60]] as const,
+              ].map(([label, key, presets]) => (
+                <View key={key} style={{ flex: 1, minWidth: 150, gap: space.xs }}>
+                  <Small muted={false}>
+                    {label}: {app.policy[key]}분
+                  </Small>
+                  <View style={{ flexDirection: "row", gap: space.xs }}>
+                    {presets.map((v) => (
+                      <Pressable
+                        key={v}
+                        accessibilityRole="button"
+                        onPress={() => void app.updatePolicy({ ...app.policy, [key]: v })}
+                        style={{
+                          paddingVertical: space.xs,
+                          paddingHorizontal: space.sm,
+                          borderRadius: radius.sm,
+                          backgroundColor: app.policy[key] === v ? t.accent : t.surfaceAlt,
+                          minHeight: 34,
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text
+                          style={[
+                            type.caption,
+                            { color: app.policy[key] === v ? "#FFFFFF" : t.text },
+                          ]}
+                        >
+                          {v}분
+                        </Text>
+                      </Pressable>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </View>
           </Card>
         </View>
       </ScrollView>

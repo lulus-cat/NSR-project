@@ -1,18 +1,28 @@
 /**
- * 노트 편집기 — 옵시디언의 부분집합.
+ * 노트 편집기 — 옵시디언의 부분집합, 이제 라이브 편집.
  *
- * 편집(일반 텍스트)과 보기(마크다운 렌더)를 오간다. 보기에서
- * [[위키링크]]를 누르면 그 제목의 노트로 가고, 없으면 만든다.
- * 백링크(이 노트를 참조하는 노트)는 맨 아래에 모인다.
+ * 편집 중에도 마크다운이 색·굵기로 보인다(markdown-editor). 서식은 아래
+ * 도구 줄로 선택 영역에 바로 먹인다 — 문법을 몰라도 문서처럼 쓸 수 있다.
+ * '문서' 보기는 완성본 판형(제목 크기·체크박스·콜아웃)이고, 같은 판형이
+ * PDF(A4 · 여백 1.17in · 줄간 1.4)로 나간다.
+ *
+ * [[위키링크]]는 문서 보기에서 눌러 이동하고, 백링크는 맨 아래에 모인다.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { useLocalSearchParams, useRouter } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
+import type { ComponentProps } from "react";
 import { Card, Small } from "../../src/components/ui";
 import { Markdown, extractTags } from "../../src/components/markdown";
-import { CONTENT_MAX, radius, space, type, useTheme } from "../../src/theme";
+import {
+  MarkdownEditor,
+  type MarkdownEditorHandle,
+} from "../../src/components/markdown-editor";
+import { exportNotePdf } from "../../src/services/note-doc";
+import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   deleteNote,
   getNote,
@@ -22,17 +32,32 @@ import {
   type NoteRow,
 } from "../../src/db";
 
-/** 커서 위치를 모르는 대신 본문 끝에 문법 조각을 붙여 주는 도구 줄. */
-const SNIPPETS: { label: string; insert: string }[] = [
-  { label: "[[링크]]", insert: "[[]]" },
-  { label: "#태그", insert: "#" },
-  { label: "☐ 할 일", insert: "\n- [ ] " },
-  { label: "주의 블록", insert: "\n> [!주의] " },
-  { label: "제목", insert: "\n## " },
+/** 서식 도구 — 커서/선택 위치에 바로 먹는다. */
+const TOOLS: {
+  key: string;
+  icon?: ComponentProps<typeof Ionicons>["name"];
+  label?: string;
+  hint: string;
+  run: (e: MarkdownEditorHandle) => void;
+}[] = [
+  { key: "h2", label: "제목", hint: "제목 (## )", run: (e) => e.toggleLinePrefix("## ") },
+  { key: "h3", label: "소제목", hint: "소제목 (### )", run: (e) => e.toggleLinePrefix("### ") },
+  { key: "bold", label: "굵게", hint: "굵게 (**)", run: (e) => e.wrapSelection("**") },
+  { key: "italic", label: "기울임", hint: "기울임 (*)", run: (e) => e.wrapSelection("*") },
+  { key: "code", label: "코드", hint: "코드 (`)", run: (e) => e.wrapSelection("`") },
+  { key: "list", icon: "list", hint: "글머리 목록", run: (e) => e.toggleLinePrefix("- ") },
+  { key: "num", label: "1.", hint: "번호 목록", run: (e) => e.toggleLinePrefix("1. ") },
+  { key: "task", icon: "checkbox-outline", hint: "할 일", run: (e) => e.toggleLinePrefix("- [ ] ") },
+  { key: "quote", label: "인용", hint: "인용 (>)", run: (e) => e.toggleLinePrefix("> ") },
+  { key: "hr", label: "―", hint: "구분선", run: (e) => e.insert("\n---\n") },
+  { key: "link", label: "[[링크]]", hint: "노트 연결", run: (e) => e.insert("[[]]") },
+  { key: "tag", label: "#태그", hint: "태그", run: (e) => e.insert("#") },
+  { key: "callout", label: "주의", hint: "주의 블록", run: (e) => e.toggleLinePrefix("> [!주의] ", ["> [!주의] ", "> "]) },
 ];
 
 export default function NoteEditor() {
   const t = useTheme();
+  const insets = useSafeAreaInsets();
   const router = useRouter();
   const params = useLocalSearchParams<{ id: string; title?: string; seed?: string }>();
   const [noteId, setNoteId] = useState<string | null>(params.id === "new" ? null : params.id);
@@ -41,6 +66,8 @@ export default function NoteEditor() {
   const [pinned, setPinned] = useState(false);
   const [preview, setPreview] = useState(false);
   const [backlinks, setBacklinks] = useState<NoteRow[]>([]);
+  const [busyPdf, setBusyPdf] = useState(false);
+  const editorRef = useRef<MarkdownEditorHandle | null>(null);
   const saveTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const loaded = useRef(false);
 
@@ -53,7 +80,7 @@ export default function NoteEditor() {
           setBody(n.body);
           setPinned(n.pinned);
           setBacklinks(await notesLinkingTo(n.title, n.id));
-          // 내용이 있는 노트는 보기부터 — 읽으러 오는 경우가 더 많다.
+          // 내용이 있는 노트는 문서 보기부터 — 읽으러 오는 경우가 더 많다.
           if (n.body.trim()) setPreview(true);
         }
       } else {
@@ -92,6 +119,14 @@ export default function NoteEditor() {
     if (saveTimer.current) clearTimeout(saveTimer.current);
   }, []);
 
+  const changeBody = useCallback(
+    (v: string) => {
+      setBody(v);
+      scheduleSave({ body: v });
+    },
+    [scheduleSave],
+  );
+
   const openLink = useCallback(
     async (target: string) => {
       await persist();
@@ -117,6 +152,18 @@ export default function NoteEditor() {
     [body, persist],
   );
 
+  const runPdf = useCallback(async () => {
+    setBusyPdf(true);
+    try {
+      await persist();
+      await exportNotePdf(title, body);
+    } catch (e) {
+      Alert.alert("PDF 내보내기 실패", e instanceof Error ? e.message : "다시 시도해 보십시오.");
+    } finally {
+      setBusyPdf(false);
+    }
+  }, [body, persist, title]);
+
   const tags = extractTags(body);
 
   return (
@@ -124,7 +171,8 @@ export default function NoteEditor() {
       style={{ flex: 1, backgroundColor: t.bg }}
       contentContainerStyle={{
         padding: space.lg,
-        paddingBottom: space.bottom,
+        // 스택 화면 — 내비게이션 바 안전영역만큼 띄운다.
+        paddingBottom: space.lg + insets.bottom,
         gap: space.md,
         width: "100%",
         maxWidth: CONTENT_MAX,
@@ -133,7 +181,7 @@ export default function NoteEditor() {
       keyboardShouldPersistTaps="handled"
     >
       {/* 제목 + 도구 */}
-      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.xs }}>
         <TextInput
           value={title}
           onChangeText={(v) => {
@@ -144,6 +192,15 @@ export default function NoteEditor() {
           placeholderTextColor={t.textMuted}
           style={[type.heading, { flex: 1, color: t.text, paddingVertical: space.sm }]}
         />
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="PDF로 내보내기"
+          disabled={busyPdf}
+          onPress={() => void runPdf()}
+          style={({ pressed }) => ({ padding: space.sm, opacity: pressed || busyPdf ? 0.5 : 1 })}
+        >
+          <Ionicons name="print-outline" size={20} color={t.textMuted} />
+        </Pressable>
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={pinned ? "핀 해제" : "핀 고정"}
@@ -177,12 +234,12 @@ export default function NoteEditor() {
         </Pressable>
       </View>
 
-      {/* 편집 | 보기 전환 */}
+      {/* 편집 | 문서 전환 */}
       <View style={{ flexDirection: "row", gap: space.sm }}>
         {(
           [
             [false, "편집"],
-            [true, "보기"],
+            [true, "문서"],
           ] as const
         ).map(([mode, label]) => (
           <Pressable
@@ -232,48 +289,62 @@ export default function NoteEditor() {
         </Card>
       ) : (
         <>
-          <TextInput
-            value={body}
-            onChangeText={(v) => {
-              setBody(v);
-              scheduleSave({ body: v });
-            }}
-            multiline
-            textAlignVertical="top"
-            placeholder={"내용을 적습니다.\n\n## 제목\n- 목록\n- [ ] 할 일\n[[다른 노트]] 로 연결, #태그 로 분류\n> [!주의] 콜아웃"}
-            placeholderTextColor={t.textMuted}
-            style={{
-              minHeight: 320,
-              color: t.text,
-              backgroundColor: t.surface,
-              borderRadius: radius.lg,
-              padding: space.lg,
-              fontSize: 15,
-              lineHeight: 23,
-            }}
-          />
-          <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-            {SNIPPETS.map((s) => (
+          {/* 서식 도구 줄 — 가로 스크롤. 선택 영역/커서 줄에 바로 먹는다. */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            keyboardShouldPersistTaps="always"
+            contentContainerStyle={{ gap: space.xs, paddingVertical: 2 }}
+          >
+            {TOOLS.map((tool) => (
               <Pressable
-                key={s.label}
+                key={tool.key}
                 accessibilityRole="button"
+                accessibilityLabel={tool.hint}
                 onPress={() => {
-                  const nb = body + s.insert;
-                  setBody(nb);
-                  scheduleSave({ body: nb });
+                  if (editorRef.current) tool.run(editorRef.current);
                 }}
                 style={({ pressed }) => ({
+                  minHeight: TOUCH_MIN,
+                  minWidth: TOUCH_MIN,
                   paddingHorizontal: space.md,
-                  paddingVertical: space.sm,
                   borderRadius: radius.md,
-                  backgroundColor: t.surfaceAlt,
-                  transform: [{ scale: pressed ? 0.95 : 1 }],
+                  backgroundColor: pressed ? t.accentSoft : t.surfaceAlt,
+                  alignItems: "center",
+                  justifyContent: "center",
                 })}
               >
-                <Text style={[type.small, { color: t.text }]}>{s.label}</Text>
+                {tool.icon ? (
+                  <Ionicons name={tool.icon} size={17} color={t.text} />
+                ) : (
+                  <Text
+                    style={[
+                      type.small,
+                      {
+                        color: t.text,
+                        fontWeight: tool.key === "bold" ? "800" : "600",
+                        fontStyle: tool.key === "italic" ? "italic" : "normal",
+                      },
+                    ]}
+                  >
+                    {tool.label}
+                  </Text>
+                )}
               </Pressable>
             ))}
-          </View>
+          </ScrollView>
+          <MarkdownEditor
+            ref={editorRef}
+            value={body}
+            onChange={changeBody}
+            placeholder={
+              "내용을 적습니다. 쓰는 동안에도 서식이 보입니다.\n\n## 제목\n- 목록\n- [ ] 할 일\n[[다른 노트]] 로 연결, #태그 로 분류\n> [!주의] 콜아웃"
+            }
+          />
+          <Small>
+            글자 크기는 편집에선 같게 보입니다 — 제목 크기 등 실제 판형은 &lsquo;문서&rsquo;
+            보기와 PDF 에 적용됩니다.
+          </Small>
         </>
       )}
 

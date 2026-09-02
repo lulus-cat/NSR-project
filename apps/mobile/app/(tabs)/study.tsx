@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
-  createSchedule,
   dueStates,
   newCardState,
   resolveAll,
@@ -20,13 +19,16 @@ import {
 import { Badge, Body, Button, Card, ChipRow, Divider, Small } from "../../src/components/ui";
 import { CONTENT_MAX, TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import { getNoteByTitle, getShiftReportMarkdown, saveNote } from "../../src/db";
+import { buildSchedule } from "../../src/services/scheduler";
 import {
   listCards,
   listDutyEntries,
   listReviewStates,
   listShiftReports,
+  listTranscribedRecordings,
   saveReviewState,
   type ShiftReportRow,
+  type TranscribedRecordingRow,
 } from "../../src/db";
 import { getSource } from "@nsr/core";
 
@@ -45,7 +47,7 @@ const GRADES: { grade: Grade; label: string; hint: string }[] = [
   { grade: 5, label: "쉬움", hint: "한참 뒤" },
 ];
 
-type Mode = "review" | "sets" | "reports";
+type Mode = "review" | "sets" | "reports" | "transcripts";
 
 /** "2026-08-24:D" → "8월 24일 · 데이" */
 function setTitle(shiftId: string | undefined): string {
@@ -60,7 +62,8 @@ function setTitle(shiftId: string | undefined): string {
 export default function Study() {
   const t = useTheme();
   const router = useRouter();
-  const [mode, setMode] = useState<Mode>("review");
+  // 첫 칩이 전사 기록이므로 처음 열리는 화면도 전사 기록이다 — 칩과 화면이 어긋나면 헷갈린다.
+  const [mode, setMode] = useState<Mode>("transcripts");
   const [cards, setCards] = useState<StudyCard[]>([]);
   const [states, setStates] = useState<ReviewState[]>([]);
   const [queue, setQueue] = useState<string[]>([]);
@@ -68,22 +71,25 @@ export default function Study() {
   const [nightDays, setNightDays] = useState<Set<number>>(new Set());
   const [done, setDone] = useState(0);
   const [reports, setReports] = useState<ShiftReportRow[]>([]);
+  const [transcripts, setTranscripts] = useState<TranscribedRecordingRow[]>([]);
   const [search, setSearch] = useState("");
   const [openSet, setOpenSet] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [allCards, allStates, dutyEntries, allReports] = await Promise.all([
+    const [allCards, allStates, dutyEntries, allReports, allTranscripts] = await Promise.all([
       listCards(),
       listReviewStates(),
       listDutyEntries(),
       listShiftReports(),
+      listTranscribedRecordings(),
     ]);
     setCards(allCards);
     setStates(allStates);
     setReports(allReports);
+    setTranscripts(allTranscripts);
 
     // 나이트 근무일은 복습을 걸어봐야 못 한다. 그날은 예정일에서 비켜준다.
-    const shifts = resolveAll(createSchedule(dutyEntries));
+    const shifts = resolveAll(await buildSchedule(dutyEntries));
     const nights = new Set<number>();
     for (const s of shifts) {
       if (s.code !== "N") continue;
@@ -98,9 +104,12 @@ export default function Study() {
     setRevealed(false);
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // 화면에 돌아올 때마다 다시 읽는다 — 전사 기록을 지우고 돌아오면 목록이 낡아 있다.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const cardById = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards]);
   const stateById = useMemo(() => new Map(states.map((s) => [s.cardId, s])), [states]);
@@ -140,6 +149,56 @@ export default function Study() {
     return [...bySet.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
   }, [cards, search]);
 
+  // ── 전사 기록 줄 — 합친 파일들은 근무 하나로, '따로' 둔 파일은 제 줄로 ──
+  const transcriptRows = useMemo(() => {
+    type Row = {
+      key: string;
+      shiftId: string | null;
+      /** 있으면 '따로' 둔 파일 하나. */
+      recId?: string;
+      label: string | null;
+      startedAt: number;
+      durationSec: number;
+      sentences: number;
+      files: number;
+    };
+    const merged = new Map<string, Row>();
+    const rows: Row[] = [];
+    for (const r of transcripts) {
+      if (r.separate === 1 || !r.shift_id) {
+        rows.push({
+          key: r.id,
+          shiftId: r.shift_id,
+          recId: r.id,
+          label: r.label,
+          startedAt: r.started_at,
+          durationSec: r.duration_sec,
+          sentences: r.sentences,
+          files: 1,
+        });
+        continue;
+      }
+      const g = merged.get(r.shift_id);
+      if (g) {
+        g.sentences += r.sentences;
+        g.durationSec += r.duration_sec;
+        g.files += 1;
+        g.startedAt = Math.min(g.startedAt, r.started_at);
+      } else {
+        merged.set(r.shift_id, {
+          key: `shift:${r.shift_id}`,
+          shiftId: r.shift_id,
+          label: null,
+          startedAt: r.started_at,
+          durationSec: r.duration_sec,
+          sentences: r.sentences,
+          files: 1,
+        });
+      }
+    }
+    return [...rows, ...merged.values()].sort((a, b) => b.startedAt - a.startedAt);
+  }, [transcripts]);
+
   const sources = current ? current.sourceIds.map(getSource).filter(Boolean) : [];
 
   return (
@@ -159,6 +218,7 @@ export default function Study() {
         <Text style={{ fontSize: 28, lineHeight: 36, fontWeight: "700", color: t.text }}>학습</Text>
         <ChipRow
           items={[
+            { key: "transcripts", label: "전사 기록" },
             { key: "review", label: queue.length > 0 ? `복습 ${queue.length}` : "복습" },
             { key: "sets", label: "카드 세트" },
             { key: "reports", label: "근무 보고서" },
@@ -258,6 +318,67 @@ export default function Study() {
         ) : null}
 
         {/* ── 카드 세트 (퀴즐렛 라이브러리) ── */}
+        {/* ── 전사 기록 — 파일별로, 눌러서 결과 화면으로 ── */}
+        {mode === "transcripts" ? (
+          transcripts.length === 0 ? (
+            <Card>
+              <Body muted>
+                전사가 끝난 기록이 아직 없습니다. 근무 기록에서 전사를 실행하면 여기 파일별로
+                쌓입니다.
+              </Body>
+            </Card>
+          ) : (
+            transcriptRows.map((r) => {
+              const started = new Date(r.startedAt);
+              const clock = `${String(started.getHours()).padStart(2, "0")}:${String(started.getMinutes()).padStart(2, "0")}`;
+              const href = r.shiftId
+                ? `/transcript/${encodeURIComponent(r.shiftId)}${
+                    r.recId ? `?rec=${encodeURIComponent(r.recId)}` : ""
+                  }`
+                : null;
+              const where = r.recId
+                ? "따로 보는 파일"
+                : r.files > 1
+                  ? `파일 ${r.files}개 합침 · ${clock} 시작`
+                  : `${clock} 시작`;
+              return (
+                <Pressable
+                  key={r.key}
+                  accessibilityRole="button"
+                  disabled={!href}
+                  onPress={() => href && router.push(href)}
+                  style={({ pressed }) => ({ transform: [{ scale: pressed ? 0.98 : 1 }] })}
+                >
+                  <Card>
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: space.sm,
+                      }}
+                    >
+                      <Text
+                        style={[type.cardTitle, { color: t.text, flexShrink: 1 }]}
+                        numberOfLines={1}
+                      >
+                        {setTitle(r.shiftId ?? undefined)}
+                        {r.recId ? ` · ${r.label ?? `${clock} 파일`}` : ""}
+                      </Text>
+                      <Badge text={`${r.sentences}문장`} tone="muted" />
+                    </View>
+                    <Small>
+                      {where}
+                      {r.durationSec > 0 ? ` · ${Math.round(r.durationSec / 60)}분` : ""} · 눌러서
+                      전사 확인·재생
+                    </Small>
+                  </Card>
+                </Pressable>
+              );
+            })
+          )
+        ) : null}
+
         {mode === "sets" ? (
           <>
             <View

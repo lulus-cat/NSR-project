@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  collapseRepeatedSentences,
   splitSentences,
   splitSegmentIntoSentences,
   splitAllIntoSentences,
@@ -174,5 +175,37 @@ describe("세그먼트를 문장 세그먼트로", () => {
       seg({ id: "b", text: "폴리 유지 중이에요" }),
     ]);
     expect(out.map((s) => s.id)).toEqual(["a.0", "a.1", "b"]);
+  });
+});
+
+describe("연속 반복 접기", () => {
+  const s = (text: string, startSec: number, endSec: number) => ({ text, startSec, endSec });
+
+  it("세 번 이상 연달아 같은 문장은 하나로 접고 구간을 넓힌다", () => {
+    const out = collapseRepeatedSentences([
+      s("네.", 0, 1), s("네.", 1, 2), s("네.", 2, 3), s("네.", 3, 4), s("다음.", 4, 5),
+    ]);
+    expect(out.length).toBe(2);
+    expect(out[0].endSec).toBe(4);
+    expect(out[1].text).toBe("다음.");
+  });
+
+  it("두 번 반복은 사람 말일 수 있어 그대로 둔다", () => {
+    const out = collapseRepeatedSentences([s("네.", 0, 1), s("네.", 1, 2), s("갑니다.", 2, 3)]);
+    expect(out.length).toBe(3);
+  });
+
+  it("문장부호·공백만 다른 반복도 같은 문장으로 본다", () => {
+    const out = collapseRepeatedSentences([
+      s("응 응", 0, 1), s("응응.", 1, 2), s("응 응...", 2, 3),
+    ]);
+    expect(out.length).toBe(1);
+  });
+
+  it("떨어져 있는 같은 문장은 접지 않는다", () => {
+    const out = collapseRepeatedSentences([
+      s("네.", 0, 1), s("확인.", 1, 2), s("네.", 2, 3), s("확인.", 3, 4), s("네.", 4, 5),
+    ]);
+    expect(out.length).toBe(5);
   });
 });

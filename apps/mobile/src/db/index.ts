@@ -30,6 +30,23 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
     dbPromise = (async () => {
       const db = await SQLite.openDatabaseAsync("nsr.db");
       await db.execAsync(SCHEMA_SQL);
+      // 기존 설치에 새 열을 붙인다. CREATE TABLE IF NOT EXISTS 는 있는 표를
+      // 안 건드리므로 열이 없으면 ALTER 로 더한다 — 두 번 돌아도 안전하다.
+      const cols = await db.getAllAsync<{ name: string }>("PRAGMA table_info(recordings)");
+      const have = new Set(cols.map((c) => c.name));
+      if (!have.has("label")) {
+        await db.execAsync("ALTER TABLE recordings ADD COLUMN label TEXT");
+      }
+      if (!have.has("separate")) {
+        await db.execAsync(
+          "ALTER TABLE recordings ADD COLUMN separate INTEGER NOT NULL DEFAULT 0",
+        );
+      }
+      // 전사 도중 앱이 죽으면(프로세스 종료·강제 종료) 'transcribing' 이 영영
+      // 남는다. 그러면 그 기록은 '전사할 기록'에서 사라져 다시 전사할 길이
+      // 없다 — 실사용에서 콜랩 끊김 뒤 그대로 재현된 사고다. 러너는 프로세스
+      // 안에서만 돌므로, 새로 열 때 남아 있는 'transcribing' 은 전부 유령이다.
+      await db.runAsync("UPDATE recordings SET state = 'recorded' WHERE state = 'transcribing'");
       return db;
     })();
   }
@@ -141,6 +158,10 @@ export interface RecordingRow {
   size_bytes: number;
   state: RecordingState;
   discard_reason: string | null;
+  /** 가져온 파일의 원래 이름. 녹음기가 만든 파일은 null. */
+  label: string | null;
+  /** 1 이면 같은 근무의 다른 기록과 합치지 않고 따로 본다. */
+  separate: number;
   created_at: number;
 }
 
@@ -149,12 +170,24 @@ export async function createRecording(input: {
   shiftId: string | null;
   seq: number;
   startedAt: number;
+  /** 가져온 파일의 원래 이름. */
+  label?: string;
+  /** 참이면 같은 근무의 다른 기록과 합치지 않는다. */
+  separate?: boolean;
 }): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO recordings (id, shift_id, seq, started_at, created_at)
-     VALUES (?, ?, ?, ?, ?)`,
-    [input.id, input.shiftId, input.seq, input.startedAt, Date.now()],
+    `INSERT INTO recordings (id, shift_id, seq, started_at, label, separate, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      input.id,
+      input.shiftId,
+      input.seq,
+      input.startedAt,
+      input.label ?? null,
+      input.separate ? 1 : 0,
+      Date.now(),
+    ],
   );
 }
 
@@ -205,6 +238,32 @@ export async function pendingTranscriptions(): Promise<RecordingRow[]> {
   );
 }
 
+/** 학습 탭의 파일별 전사 목록 — 전사가 끝난 기록과 그 문장 수. */
+export interface TranscribedRecordingRow {
+  id: string;
+  shift_id: string | null;
+  started_at: number;
+  duration_sec: number;
+  label: string | null;
+  separate: number;
+  sentences: number;
+}
+
+export async function listTranscribedRecordings(
+  limit = 100,
+): Promise<TranscribedRecordingRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<TranscribedRecordingRow>(
+    `SELECT r.id, r.shift_id, r.started_at, r.duration_sec, r.label, r.separate,
+            (SELECT COUNT(*) FROM segments s WHERE s.recording_id = r.id) AS sentences
+       FROM recordings r
+      WHERE r.state = 'transcribed'
+      ORDER BY r.started_at DESC
+      LIMIT ?`,
+    [limit],
+  );
+}
+
 /** 보관기간이 지난 녹음의 파일 경로를 돌려주고 행을 지운다. 파일 삭제는 호출부가 한다. */
 export async function expireRecordings(olderThan: number): Promise<string[]> {
   const db = await getDb();
@@ -213,6 +272,64 @@ export async function expireRecordings(olderThan: number): Promise<string[]> {
     [olderThan],
   );
   await db.runAsync("DELETE FROM recordings WHERE started_at < ?", [olderThan]);
+  return rows.map((r) => r.file_uri).filter((u): u is string => !!u);
+}
+
+/**
+ * 전사만 지운다 — 문장(과 딸린 편집·주석)이 지워지고, 녹음은 '녹음됨'으로
+ * 돌아가 다시 전사할 수 있다. 음성 파일은 건드리지 않는다.
+ */
+export async function deleteTranscript(
+  shiftId: string,
+  /** 주면 이 기록들의 전사본만 — 따로 둔 파일은 제 화면에서 제 것만 지운다. */
+  recordingIds?: string[],
+): Promise<void> {
+  const db = await getDb();
+  if (recordingIds) {
+    for (const id of recordingIds) {
+      await db.runAsync("DELETE FROM segments WHERE shift_id = ? AND recording_id = ?", [
+        shiftId,
+        id,
+      ]);
+      await db.runAsync(
+        "UPDATE recordings SET state = 'recorded' WHERE id = ? AND state = 'transcribed'",
+        [id],
+      );
+    }
+    return;
+  }
+  await db.runAsync("DELETE FROM segments WHERE shift_id = ?", [shiftId]);
+  await db.runAsync(
+    "UPDATE recordings SET state = 'recorded' WHERE shift_id = ? AND state = 'transcribed'",
+    [shiftId],
+  );
+}
+
+/** 전사와 녹음을 함께 지운다. 지울 파일 경로를 돌려준다 — 파일 삭제는 호출부가 한다. */
+export async function deleteShiftRecordings(
+  shiftId: string,
+  recordingIds?: string[],
+): Promise<string[]> {
+  const db = await getDb();
+  if (recordingIds) {
+    const out: string[] = [];
+    for (const id of recordingIds) {
+      const row = await db.getFirstAsync<{ file_uri: string | null }>(
+        "SELECT file_uri FROM recordings WHERE id = ?",
+        [id],
+      );
+      await db.runAsync("DELETE FROM segments WHERE recording_id = ?", [id]);
+      await db.runAsync("DELETE FROM recordings WHERE id = ?", [id]);
+      if (row?.file_uri) out.push(row.file_uri);
+    }
+    return out;
+  }
+  const rows = await db.getAllAsync<{ file_uri: string | null }>(
+    "SELECT file_uri FROM recordings WHERE shift_id = ?",
+    [shiftId],
+  );
+  await db.runAsync("DELETE FROM segments WHERE shift_id = ?", [shiftId]);
+  await db.runAsync("DELETE FROM recordings WHERE shift_id = ?", [shiftId]);
   return rows.map((r) => r.file_uri).filter((u): u is string => !!u);
 }
 
@@ -315,12 +432,53 @@ export async function saveSegments(
   });
 }
 
-export async function listSegments(shiftId: string): Promise<TranscriptSegment[]> {
+/** 근무 화면의 요약용 — 수천 문장을 다 읽지 않고 개수만 센다. */
+export async function countSegments(shiftId: string): Promise<number> {
   const db = await getDb();
-  const rows = await db.getAllAsync<SegmentRow>(
-    "SELECT * FROM segments WHERE shift_id = ? ORDER BY start_sec",
+  const row = await db.getFirstAsync<{ n: number }>(
+    "SELECT COUNT(*) AS n FROM segments WHERE shift_id = ?",
     [shiftId],
   );
+  return row?.n ?? 0;
+}
+
+/** 기록별 문장 수 — 근무 화면이 파일마다 몇 문장인지 보일 때. */
+export async function segmentCountsByRecording(shiftId: string): Promise<Map<string, number>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ recording_id: string; n: number }>(
+    "SELECT recording_id, COUNT(*) AS n FROM segments WHERE shift_id = ? GROUP BY recording_id",
+    [shiftId],
+  );
+  return new Map(rows.map((r) => [r.recording_id, r.n]));
+}
+
+/**
+ * 근무의 전사 문장.
+ *
+ * 시각(start_sec)은 파일 안 기준이라, 한 근무에 파일이 여럿이면 파일 차례(seq)로
+ * 먼저 줄 세워야 한다 — start_sec 만으로 정렬하면 30분마다 잘린 두 파일이 뒤섞인다.
+ *
+ *  · recordingId: 그 기록 하나만 ('따로' 둔 파일의 결과 화면).
+ *  · mergedOnly:  '따로' 둔 기록을 뺀 나머지 (합친 전사본 화면).
+ *  · 둘 다 없으면 전부 — 카드·지표·내보내기는 근무 전체를 본다.
+ */
+export async function listSegments(
+  shiftId: string,
+  opts: { recordingId?: string; mergedOnly?: boolean } = {},
+): Promise<TranscriptSegment[]> {
+  const db = await getDb();
+  const rows = opts.recordingId
+    ? await db.getAllAsync<SegmentRow>(
+        "SELECT * FROM segments WHERE shift_id = ? AND recording_id = ? ORDER BY start_sec",
+        [shiftId, opts.recordingId],
+      )
+    : await db.getAllAsync<SegmentRow>(
+        `SELECT s.* FROM segments s
+           LEFT JOIN recordings r ON r.id = s.recording_id
+          WHERE s.shift_id = ?${opts.mergedOnly ? " AND COALESCE(r.separate, 0) = 0" : ""}
+          ORDER BY COALESCE(r.seq, 0), COALESCE(r.started_at, 0), s.start_sec`,
+        [shiftId],
+      );
   return rows.map(toSegment);
 }
 
@@ -527,6 +685,16 @@ export async function listCards(limit = 500): Promise<Card[]> {
   const rows = await db.getAllAsync<CardRow>(
     "SELECT * FROM cards WHERE suspended = 0 ORDER BY created_at DESC LIMIT ?",
     [limit],
+  );
+  return rows.map(toCard);
+}
+
+/** 한 근무에서 나온 카드만. 내보내기가 근무 단위라 따로 둔다. */
+export async function listCardsForShift(shiftId: string): Promise<Card[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<CardRow>(
+    "SELECT * FROM cards WHERE shift_id = ? ORDER BY created_at ASC",
+    [shiftId],
   );
   return rows.map(toCard);
 }
@@ -742,7 +910,7 @@ export async function saveNote(input: {
      ON CONFLICT(id) DO UPDATE SET
        title = excluded.title, body = excluded.body,
        pinned = excluded.pinned, updated_at = excluded.updated_at`,
-    [id, input.title.trim() || "제목 없음", input.body, input.pinned ? 1 : 0, now, now],
+    [id, input.title.trim() || "제목 잃어버림", input.body, input.pinned ? 1 : 0, now, now],
   );
   return id;
 }
@@ -762,6 +930,25 @@ export async function notesLinkingTo(title: string, excludeId?: string): Promise
   // LIKE 는 "[[제목..." 접두까지만 거른다. 별칭([[제목|별칭]])과 정확 일치를 여기서 판정한다.
   const re = new RegExp(`\\[\\[${title.trim().replace(/[.*+?^${}()|[\\]\\\\]/g, "\\$&")}(\\|[^\\]]*)?\\]\\]`);
   return rows.map(toNote).filter((n) => re.test(n.body));
+}
+
+/** 한 근무의 보고서 전체 — 마크다운과 분석 원본(payload)을 함께 준다. */
+export async function getShiftReport(
+  shiftId: string,
+): Promise<{ markdown: string; payload: unknown; createdAt: number } | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ markdown: string; payload: string; created_at: number }>(
+    "SELECT markdown, payload, created_at FROM shift_reports WHERE shift_id = ?",
+    [shiftId],
+  );
+  if (!row) return null;
+  let payload: unknown = null;
+  try {
+    payload = JSON.parse(row.payload);
+  } catch {
+    payload = null; // 저장이 깨졌어도 마크다운은 내보낼 수 있어야 한다.
+  }
+  return { markdown: row.markdown, payload, createdAt: row.created_at };
 }
 
 export async function listShiftReports(limit = 60): Promise<ShiftReportRow[]> {
@@ -953,4 +1140,318 @@ export async function approvePendingCorrection(
 export async function rejectPendingCorrection(key: string): Promise<void> {
   const db = await getDb();
   await db.runAsync("DELETE FROM pending_corrections WHERE key = ?", [key]);
+}
+
+// ── 심층 분석 파이프라인 ────────────────────────────────
+//
+// 배치 제출·폴링 상태를 DB에 남긴다 — 폰 앱은 언제든 죽을 수 있고,
+// Anthropic 배치는 몇 분에서 몇 시간 걸린다. 다시 열면 이어받는다.
+
+export interface PipelineJobRow {
+  shift_id: string;
+  stage: string; // 3a | 3b | 4 | done | error
+  batch_id: string | null;
+  stage3a: string | null;
+  stage3b: string | null;
+  error: string | null;
+  usage_log: string;
+  updated_at: number;
+}
+
+export async function getPipelineJob(shiftId: string): Promise<PipelineJobRow | null> {
+  const db = await getDb();
+  return db.getFirstAsync<PipelineJobRow>(
+    "SELECT * FROM pipeline_jobs WHERE shift_id = ?",
+    [shiftId],
+  );
+}
+
+export async function savePipelineJob(job: {
+  shiftId: string;
+  stage: string;
+  batchId?: string | null;
+  stage3a?: string | null;
+  stage3b?: string | null;
+  error?: string | null;
+}): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO pipeline_jobs (shift_id, stage, batch_id, stage3a, stage3b, error, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(shift_id) DO UPDATE SET
+       stage = excluded.stage,
+       batch_id = excluded.batch_id,
+       stage3a = COALESCE(excluded.stage3a, pipeline_jobs.stage3a),
+       stage3b = COALESCE(excluded.stage3b, pipeline_jobs.stage3b),
+       error = excluded.error,
+       updated_at = excluded.updated_at`,
+    [
+      job.shiftId,
+      job.stage,
+      job.batchId ?? null,
+      job.stage3a ?? null,
+      job.stage3b ?? null,
+      job.error ?? null,
+      Date.now(),
+    ],
+  );
+}
+
+/** 단계별 usage 를 누적 기록한다 — 나중에 "실제로 얼마 들었나"가 여기서 나온다. */
+export async function appendPipelineUsage(shiftId: string, entry: unknown): Promise<void> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ usage_log: string }>(
+    "SELECT usage_log FROM pipeline_jobs WHERE shift_id = ?",
+    [shiftId],
+  );
+  const log = row ? (JSON.parse(row.usage_log) as unknown[]) : [];
+  log.push(entry);
+  await db.runAsync("UPDATE pipeline_jobs SET usage_log = ? WHERE shift_id = ?", [
+    JSON.stringify(log),
+    shiftId,
+  ]);
+}
+
+// ── 확인 목록 — 웹 추정은 카드가 아니라 여기로 ─────────
+
+export interface ConfirmationRow {
+  id: string;
+  shift_id: string;
+  source_id: string | null;
+  question: string;
+  candidate: string | null;
+  sources: string;
+  resolved: number;
+  result: string | null;
+  resolve_reason: string | null;
+  created_at: number;
+  resolved_at: number | null;
+}
+
+export async function addConfirmation(input: {
+  shiftId: string;
+  sourceId?: string;
+  question: string;
+  candidate?: string;
+  sources?: string[];
+}): Promise<string> {
+  const db = await getDb();
+  const id = `cf_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+  await db.runAsync(
+    `INSERT INTO confirmations (id, shift_id, source_id, question, candidate, sources, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    [
+      id,
+      input.shiftId,
+      input.sourceId ?? null,
+      input.question,
+      input.candidate ?? null,
+      JSON.stringify(input.sources ?? []),
+      Date.now(),
+    ],
+  );
+  return id;
+}
+
+export async function listConfirmations(shiftId?: string): Promise<ConfirmationRow[]> {
+  const db = await getDb();
+  return shiftId
+    ? db.getAllAsync<ConfirmationRow>(
+        "SELECT * FROM confirmations WHERE shift_id = ? ORDER BY created_at",
+        [shiftId],
+      )
+    : db.getAllAsync<ConfirmationRow>(
+        "SELECT * FROM confirmations WHERE resolved = 0 ORDER BY created_at DESC LIMIT 200",
+      );
+}
+
+// ── 변경 이력 — 임상 판단 모드의 수정은 전부 이유와 함께 남는다 ──
+
+async function recordChange(input: {
+  target: "card" | "report" | "confirmation";
+  targetId: string;
+  action: "add" | "update" | "delete" | "resolve";
+  before?: unknown;
+  after?: unknown;
+  reason: string;
+}): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `INSERT INTO change_history (id, target, target_id, action, before_json, after_json, reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+    [
+      `ch_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`,
+      input.target,
+      input.targetId,
+      input.action,
+      input.before === undefined ? null : JSON.stringify(input.before),
+      input.after === undefined ? null : JSON.stringify(input.after),
+      input.reason,
+      Date.now(),
+    ],
+  );
+}
+
+export async function listChangeHistory(
+  target?: string,
+  targetId?: string,
+): Promise<{ id: string; target: string; target_id: string; action: string; reason: string; created_at: number }[]> {
+  const db = await getDb();
+  if (target && targetId) {
+    return db.getAllAsync(
+      "SELECT id, target, target_id, action, reason, created_at FROM change_history WHERE target = ? AND target_id = ? ORDER BY created_at DESC",
+      [target, targetId],
+    );
+  }
+  return db.getAllAsync(
+    "SELECT id, target, target_id, action, reason, created_at FROM change_history ORDER BY created_at DESC LIMIT 100",
+  );
+}
+
+/** 임상 판단 모드 도구: 카드 수정 (이유 필수, 이전 판 보관). */
+export async function clinicalUpdateCard(
+  cardId: string,
+  front: string,
+  back: string,
+  reason: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const before = await db.getFirstAsync<{ front: string; back: string }>(
+    "SELECT front, back FROM cards WHERE id = ?",
+    [cardId],
+  );
+  if (!before) return false;
+  await db.runAsync("UPDATE cards SET front = ?, back = ? WHERE id = ?", [front, back, cardId]);
+  await recordChange({
+    target: "card",
+    targetId: cardId,
+    action: "update",
+    before,
+    after: { front, back },
+    reason,
+  });
+  return true;
+}
+
+/** 임상 판단 모드 도구: 카드 삭제 — 실제로는 suspended 로 물려 두고 이력을 남긴다. */
+export async function clinicalDeleteCard(cardId: string, reason: string): Promise<boolean> {
+  const db = await getDb();
+  const before = await db.getFirstAsync<{ front: string; back: string; suspended: number }>(
+    "SELECT front, back, suspended FROM cards WHERE id = ?",
+    [cardId],
+  );
+  if (!before) return false;
+  await db.runAsync("UPDATE cards SET suspended = 1 WHERE id = ?", [cardId]);
+  await recordChange({ target: "card", targetId: cardId, action: "delete", before, reason });
+  return true;
+}
+
+/**
+ * 임상 판단 모드 도구: 카드 추가.
+ *
+ * source_id 는 필수이고, 최근 심층 분석 결과에 실제로 존재하는 id(C/U/E…)여야
+ * 한다 — 근거 없는 카드 생성을 모델 재량이 아니라 코드로 막는다(사양).
+ * 존재하지 않으면 null 을 돌려주고 아무것도 만들지 않는다.
+ */
+export async function clinicalAddCard(input: {
+  front: string;
+  back: string;
+  sourceId?: string;
+  shiftId?: string;
+  reason: string;
+}): Promise<string | null> {
+  const db = await getDb();
+  const sid = input.sourceId?.trim();
+  if (!sid) return null;
+  const rows = await db.getAllAsync<{ payload: string }>(
+    "SELECT payload FROM shift_reports ORDER BY created_at DESC LIMIT 5",
+  );
+  const validIds = new Set<string>();
+  for (const r of rows) {
+    for (const m of r.payload.matchAll(/"id"\s*:\s*"([A-Za-z]+-?\w+)"/g)) validIds.add(m[1]);
+  }
+  if (!validIds.has(sid)) return null;
+  const id = `card_cl_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
+  const now = Date.now();
+  await db.runAsync(
+    `INSERT INTO cards (id, kind, front, back, entry_id, shift_id, source_ids, created_at)
+     VALUES (?, 'definition', ?, ?, '', ?, ?, ?)`,
+    [id, input.front, input.back, input.shiftId ?? null, JSON.stringify(input.sourceId ? [input.sourceId] : []), now],
+  );
+  await db.runAsync(
+    `INSERT INTO review_states (card_id, due_at) VALUES (?, ?)
+     ON CONFLICT(card_id) DO NOTHING`,
+    [id, now],
+  );
+  await recordChange({
+    target: "card",
+    targetId: id,
+    action: "add",
+    after: { front: input.front, back: input.back, sourceId: input.sourceId },
+    reason: input.reason,
+  });
+  return id;
+}
+
+/** 임상 판단 모드 도구: 보고서 구절 교체 — 이전 마크다운 전체를 이력에 보관한다. */
+export async function clinicalUpdateReportSection(
+  shiftId: string,
+  section: string,
+  content: string,
+  reason: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<{ markdown: string }>(
+    "SELECT markdown FROM shift_reports WHERE shift_id = ?",
+    [shiftId],
+  );
+  if (!row) return false;
+  const heading = `## ${section}`;
+  let next: string;
+  if (row.markdown.includes(heading)) {
+    // 해당 섹션 머리부터 다음 섹션 머리 직전까지 교체한다.
+    const start = row.markdown.indexOf(heading);
+    const rest = row.markdown.indexOf("\n## ", start + heading.length);
+    const tail = rest >= 0 ? row.markdown.slice(rest) : "";
+    next = `${row.markdown.slice(0, start)}${heading}\n\n${content.trim()}\n${tail}`;
+  } else {
+    next = `${row.markdown.trimEnd()}\n\n${heading}\n\n${content.trim()}\n`;
+  }
+  await db.runAsync("UPDATE shift_reports SET markdown = ? WHERE shift_id = ?", [next, shiftId]);
+  await recordChange({
+    target: "report",
+    targetId: shiftId,
+    action: "update",
+    before: { markdown: row.markdown },
+    after: { section, content },
+    reason,
+  });
+  return true;
+}
+
+/** 임상 판단 모드 도구: 확인 목록 해소. */
+export async function resolveConfirmation(
+  id: string,
+  result: string,
+  reason: string,
+): Promise<boolean> {
+  const db = await getDb();
+  const before = await db.getFirstAsync<ConfirmationRow>(
+    "SELECT * FROM confirmations WHERE id = ?",
+    [id],
+  );
+  if (!before) return false;
+  await db.runAsync(
+    "UPDATE confirmations SET resolved = 1, result = ?, resolve_reason = ?, resolved_at = ? WHERE id = ?",
+    [result, reason, Date.now(), id],
+  );
+  await recordChange({
+    target: "confirmation",
+    targetId: id,
+    action: "resolve",
+    before: { question: before.question, candidate: before.candidate },
+    after: { result },
+    reason,
+  });
+  return true;
 }

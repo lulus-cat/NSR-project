@@ -270,3 +270,34 @@ export function splitAllIntoSentences(
 ): TranscriptSegment[] {
   return segments.flatMap((s) => splitSegmentIntoSentences(s, options));
 }
+
+/**
+ * 연속으로 똑같은 문장을 접는다.
+ *
+ * Whisper 는 잡음·무음 구간에서 같은 짧은 말("네.", "응 응")을 수십 번씩
+ * 반복하는 환각을 낸다 — 3시간 기록이 1,600문장으로 불어난 실사례의 주범이다.
+ * 전사본은 증거라 함부로 지우지 않지만, **같은 문장이 세 번 이상 연달아**
+ * 나오는 것은 사람 말이 아니라 디코더의 맴돌이로 본다. 한 문장으로 접고
+ * 구간(끝 시각)은 마지막 반복까지 넓혀 재생이 어긋나지 않게 한다.
+ *
+ * 두 번 반복은 그대로 둔다 — "네. 네." 는 실제로 그렇게 말한다.
+ */
+export function collapseRepeatedSentences<
+  T extends { text: string; startSec: number; endSec: number },
+>(sentences: readonly T[], minRun = 3): T[] {
+  const norm = (t: string): string => t.replace(/[\s.,!?~…]/g, "");
+  const out: T[] = [];
+  let i = 0;
+  while (i < sentences.length) {
+    let j = i + 1;
+    while (j < sentences.length && norm(sentences[j].text) === norm(sentences[i].text)) j++;
+    const run = j - i;
+    if (run >= minRun) {
+      out.push({ ...sentences[i], endSec: sentences[j - 1].endSec });
+    } else {
+      for (let k = i; k < j; k++) out.push(sentences[k]);
+    }
+    i = j;
+  }
+  return out;
+}

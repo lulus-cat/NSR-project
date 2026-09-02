@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Text } from "react-native";
@@ -6,16 +6,19 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { Body, Button, Card, Heading, Small } from "../src/components/ui";
 import { useApp } from "../src/state/AppContext";
 import { TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
-import { setSetting } from "../src/db";
+import { getSetting, setSetting } from "../src/db";
+import { SETTINGS_KEYS } from "../src/services/scheduler";
+import { getApiKey, setApiKey } from "../src/services/llm";
+import { AI_PATHS, getAiPath, setAiPath, type AiPath } from "../src/services/pipeline";
 import { searchWorkplace, setWorkplacePlace, type PlaceHit } from "../src/services/geofence";
 import { requestRecordingPermissionsAsync } from "expo-audio";
 import * as Location from "expo-location";
 
 /**
- * 초기 설정 — 근무지 → 파트 → 전사 모델 → 필수 확인.
+ * 초기 설정 — 근무지 → 파트 → 전사 방식 → AI 설정 → 필수 확인.
  *
- * 마지막 단계(법적 고지)만은 건너뛸 수 없다. 나머지는 전부 "나중에"가 된다 —
- * 첫 실행에서 막히는 앱은 두 번 열리지 않는다.
+ * AI 설정과 마지막 법적 고지는 건너뛸 수 없다(사용자 결정 — 분석·보고서·
+ * 대화가 전부 AI 필수라서). 나머지는 "나중에"가 된다.
  */
 
 const PARTS = [
@@ -27,28 +30,32 @@ const PARTS = [
   { key: "etc", label: "기타" },
 ];
 
-const MODEL_CHOICES = [
+/**
+ * 전사 방식 — 설정 → 전사 화면과 같은 갈래다. 온보딩과 설정이 다른 말을
+ * 하면 사용자는 둘 다 못 믿는다. 여기서 고른 모드가 그 화면의 기본값이 된다.
+ */
+const METHOD_CHOICES = [
   {
-    key: "small-q5_1",
-    title: "Small (추천 시작점)",
-    body: "바로 쓸 수 있지만 한국어 인식이 낮습니다. 향후 다른 모델로 바꾸십시오.",
+    key: "colab",
+    title: "구글 콜랩 (무료 GPU, 추천)",
+    body: "컴퓨터 없이 무료 GPU가 전사합니다. 준비 3분 — 자세한 연결은 설정 → 전사에서 안내합니다.",
   },
   {
-    key: "korean-medium",
-    title: "한국어 Medium (파인튜닝, 추천)",
-    body: "원본보다 한국어 인식이 뛰어납니다. 설정에서 쉽게 다운받을 수 있습니다.",
+    key: "pc",
+    title: "내 컴퓨터 (PC·노트북)",
+    body: "같은 Wi-Fi의 내 컴퓨터가 전사합니다. 기록 음성이 집 밖으로 나가지 않습니다.",
   },
   {
-    key: "server",
-    title: "노트북·PC 서버",
-    body: "노트북이 전사를 대신합니다. 같은 Wi-Fi 환경에서 가장 빠릅니다.",
+    key: "gemini",
+    title: "Gemini (구글 AI, 서버 없이)",
+    body: "API 키 하나면 콜랩도 컴퓨터도 필요 없습니다. 키 발급은 설정 → 전사에서 안내합니다.",
   },
   {
     key: "later",
     title: "나중에 정하기",
-    body: "지금 건너뛰어도 첫 전사 전에 설정에서 모델을 받을 수 있습니다.",
+    body: "지금 건너뛰어도 첫 전사 전에 설정 → 전사에서 연결하면 됩니다.",
   },
-];
+] as const;
 
 const ITEMS: { key: string; title: string; body: string }[] = [
   {
@@ -92,16 +99,37 @@ const ITEMS: { key: string; title: string; body: string }[] = [
     title: "알파 버전 안내",
     body:
       "알파 버전이라 기능이 바뀔 수 있습니다. 중요한 기록은 따로 백업하십시오. " +
-      "전사 전에 모델을 내려받아야 합니다. 화자 분리는 자동으로 되지 않으니 직접 지정하십시오.",
+      "전사 전에 콜랩 또는 내 컴퓨터 서버를 연결해야 합니다. 화자 분리는 콜랩의 " +
+      "화자 분리 옵션을 켜거나 전사 후 직접 지정합니다.",
   },
 ];
 
-const STEPS = ["근무지", "파트", "전사 모델", "필수 확인"];
+const STEPS = ["근무지", "파트", "전사 방식", "AI 설정", "필수 확인"];
+
+/**
+ * 고르던 값을 화면 밖에 남긴다.
+ *
+ * 삼성 DeX 처럼 창 크기·밀도가 바뀌는 환경에서는 안드로이드가 액티비티를 다시
+ * 만들 수 있고, 그러면 이 화면의 useState 가 전부 초기값으로 돌아간다. 몇 단계를
+ * 채워 놓고 처음으로 튕기는 것이 그동안 "다음이 안 눌린다"로 보였다. 모듈에
+ * 남겨 두면 다시 마운트돼도 이어서 진행된다.
+ */
+const draft: { step: number; part: string | null; model: string | null } = {
+  step: 0,
+  part: null,
+  model: null,
+};
 
 export default function Onboarding() {
   const t = useTheme();
   const app = useApp();
-  const [step, setStep] = useState(0);
+  const [step, setStep] = useState(draft.step);
+  // AI 필수 설정 — 조합과 키 두 개가 저장돼야 다음으로 갈 수 있다.
+  const [aiPath, setAiPathChoice] = useState<AiPath | null>(null);
+  const [hasGeminiKey, setHasGeminiKey] = useState(false);
+  const [hasPathKey, setHasPathKey] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [pathKeyInput, setPathKeyInput] = useState("");
 
   // 1단계 — 근무지
   const [query, setQuery] = useState("");
@@ -109,9 +137,28 @@ export default function Onboarding() {
   const [picked, setPicked] = useState<PlaceHit | null>(null);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   // 2단계 — 파트
-  const [part, setPart] = useState<string | null>(null);
+  const [part, setPart] = useState<string | null>(draft.part);
   // 3단계 — 모델
-  const [model, setModel] = useState<string | null>(null);
+  const [model, setModel] = useState<string | null>(draft.model);
+  // 저장이 실패해도 화면은 넘어간다. 대신 무슨 일이 있었는지는 알린다.
+  const [saveMsg, setSaveMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    draft.step = step;
+    draft.part = part;
+    draft.model = model;
+  }, [step, part, model]);
+
+  /** 이미 저장해 둔 조합·키가 있으면 그대로 읽어 온다. 다시 넣게 하지 않는다. */
+  useEffect(() => {
+    void (async () => {
+      setHasGeminiKey((await getApiKey("gemini")) !== null);
+      const saved = await getAiPath();
+      if (!saved) return;
+      setAiPathChoice(saved);
+      setHasPathKey((await getApiKey(saved === "claude" ? "anthropic" : "openai")) !== null);
+    })();
+  }, []);
   // 4단계 — 고지
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [micGranted, setMicGranted] = useState(false);
@@ -120,6 +167,26 @@ export default function Onboarding() {
   const allChecked = ITEMS.every((i) => checked[i.key]);
 
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
+
+  /**
+   * 저장은 화면 전환을 막지 않는다.
+   *
+   * 예전에는 버튼이 `await 저장()` 뒤에 다음 단계로 넘어갔다. 저장이 늦거나
+   * 실패하면 버튼을 눌러도 아무 일이 안 일어난 것처럼 보였다. 이제 저장은 뒤로
+   * 보내고, 잘못되면 그 자리에서 말로 알린다.
+   */
+  const save = async (run: () => Promise<unknown>) => {
+    try {
+      await run();
+      setSaveMsg(null);
+    } catch (e) {
+      setSaveMsg(
+        `방금 고른 값을 저장하지 못했습니다 (${
+          e instanceof Error ? e.message : "원인 미상"
+        }). 설정 화면에서 다시 지정할 수 있습니다.`,
+      );
+    }
+  };
 
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }}>
@@ -219,8 +286,9 @@ export default function Onboarding() {
             <Button
               label={picked ? "이 병원으로 선택" : "나중에 지정하기"}
               tone="primary"
-              onPress={async () => {
-                if (picked) await setWorkplacePlace(picked);
+              onPress={() => {
+                // 저장을 기다리지 않는다 — 저장이 늦거나 실패해도 화면은 넘어가야 한다.
+                if (picked) void save(() => setWorkplacePlace(picked));
                 next();
               }}
             />
@@ -263,25 +331,26 @@ export default function Onboarding() {
             <Button
               label={part ? "다음" : "나중에 정하기"}
               tone="primary"
-              onPress={async () => {
-                if (part) await setSetting("profile.part", part);
+              onPress={() => {
+                if (part) void save(() => setSetting("profile.part", part));
                 next();
               }}
             />
           </>
         ) : null}
 
-        {/* ── 3. 모델 ── */}
+        {/* ── 3. 전사 방식 ── */}
         {step === 2 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>
-  사용할 전사 모델을 선택하십시오.
+  어디서 전사할지 선택하십시오.
 </Text>
             <Small>
-              
-  여기서는 모델 유형만 선택합니다. 실제 다운로드는 설정에서 진행하십시오.
-</Small>
-            {MODEL_CHOICES.map((m) => {
+              전사는 폰이 아니라 콜랩(무료 GPU)·내 컴퓨터 또는 Gemini(구글 AI)가
+              합니다. 기록 음성이 선택한 곳으로 전송됩니다. 여기서 고르면 설정 →
+              전사에 기본으로 잡힙니다.
+            </Small>
+            {METHOD_CHOICES.map((m) => {
               const on = model === m.key;
               return (
                 <Pressable key={m.key} accessibilityRole="button" onPress={() => setModel(m.key)}>
@@ -295,16 +364,159 @@ export default function Onboarding() {
             <Button
               label="다음"
               tone="primary"
-              onPress={async () => {
-                if (model) await setSetting("profile.plannedModel", model);
+              onPress={() => {
+                if (model === "colab" || model === "pc" || model === "gemini") {
+                  // 설정 → 전사 화면이 이 모드로 열린다. 주소는 거기서 잇는다.
+                  // 통째로 덮어쓰면 이미 고른 모델·화자 분리·주소가 날아간다.
+                  void save(async () => {
+                    const prev = await getSetting<Record<string, unknown>>(
+                      SETTINGS_KEYS.cloudTranscription,
+                      {},
+                    );
+                    await setSetting(SETTINGS_KEYS.cloudTranscription, {
+                      ...prev,
+                      enabled: false,
+                      endpoint: "",
+                      mode: model,
+                    });
+                  });
+                }
                 next();
               }}
             />
+            {saveMsg ? <Small muted={false}>{saveMsg}</Small> : null}
+          </>
+        ) : null}
+
+        {/* ── 4. AI 필수 설정 — 두 조합 중 하나 + 키 두 개. 건너뛸 수 없다 ── */}
+        {step === 3 ? (
+          <>
+            <Text style={[type.title, { color: t.text }]}>AI 조합을 고르십시오</Text>
+            <Small>
+              분석·보고서·암기카드·대화가 전부 AI 로 돕니다. 이 설정 없이는 앱이
+              동작하지 않아 건너뛸 수 없습니다. 전사본은 개인정보를 가린 뒤에만
+              전송됩니다.
+            </Small>
+            {AI_PATHS.map((p) => {
+              const on = aiPath === p.path;
+              return (
+                <Pressable
+                  key={p.path}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: on }}
+                  onPress={() => {
+                    setAiPathChoice(p.path);
+                    void save(async () => {
+                      await setAiPath(p.path);
+                      setHasPathKey(
+                        (await getApiKey(p.path === "claude" ? "anthropic" : "openai")) !== null,
+                      );
+                    });
+                  }}
+                >
+                  <Card tone={on ? "accent" : "default"}>
+                    <Heading>{p.title}</Heading>
+                    <Small muted={false}>{p.models}</Small>
+                    <Small>{p.why}</Small>
+                  </Card>
+                </Pressable>
+              );
+            })}
+            {aiPath ? (
+              <Card>
+                <Small muted={false}>
+                  1. Gemini 키{hasGeminiKey ? " — 저장됨 ✓" : " (aistudio.google.com/apikey 에서 발급)"}
+                </Small>
+                <TextInput
+                  value={geminiKeyInput}
+                  onChangeText={setGeminiKeyInput}
+                  placeholder={hasGeminiKey ? "키가 저장되어 있습니다" : "AIza… 키 붙여넣기"}
+                  placeholderTextColor={t.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    color: t.text,
+                    backgroundColor: t.surfaceAlt,
+                    borderRadius: radius.md,
+                    padding: space.md,
+                    fontSize: 14,
+                  }}
+                />
+                <Button
+                  label="Gemini 키 저장"
+                  tone={hasGeminiKey ? "default" : "primary"}
+                  onPress={() => {
+                    if (!geminiKeyInput.trim()) return;
+                    void save(async () => {
+                      await setApiKey(geminiKeyInput.trim(), "gemini");
+                      setGeminiKeyInput("");
+                      setHasGeminiKey(true);
+                    });
+                  }}
+                />
+                <Small muted={false}>
+                  2. {aiPath === "claude" ? "Claude 키" : "OpenAI 키"}
+                  {hasPathKey
+                    ? " — 저장됨 ✓"
+                    : aiPath === "claude"
+                      ? " (console.anthropic.com 에서 발급)"
+                      : " (platform.openai.com 에서 발급)"}
+                </Small>
+                <TextInput
+                  value={pathKeyInput}
+                  onChangeText={setPathKeyInput}
+                  placeholder={hasPathKey ? "키가 저장되어 있습니다" : "API 키 입력"}
+                  placeholderTextColor={t.textMuted}
+                  secureTextEntry
+                  autoCapitalize="none"
+                  autoCorrect={false}
+                  style={{
+                    color: t.text,
+                    backgroundColor: t.surfaceAlt,
+                    borderRadius: radius.md,
+                    padding: space.md,
+                    fontSize: 14,
+                  }}
+                />
+                <Button
+                  label={aiPath === "claude" ? "Claude 키 저장" : "OpenAI 키 저장"}
+                  tone={hasPathKey ? "default" : "primary"}
+                  onPress={() => {
+                    if (!pathKeyInput.trim()) return;
+                    void save(async () => {
+                      await setApiKey(
+                        pathKeyInput.trim(),
+                        aiPath === "claude" ? "anthropic" : "openai",
+                      );
+                      setPathKeyInput("");
+                      setHasPathKey(true);
+                    });
+                  }}
+                />
+                <Small>키는 이 기기의 보안 저장소에만 보관되고, 설정에서 언제든 바꿀 수 있습니다.</Small>
+              </Card>
+            ) : null}
+            <Button
+              label={
+                !aiPath
+                  ? "조합을 먼저 고르십시오"
+                  : !hasGeminiKey
+                    ? "Gemini 키를 저장해야 넘어갑니다"
+                    : !hasPathKey
+                      ? (aiPath === "claude" ? "Claude" : "OpenAI") + " 키를 저장해야 넘어갑니다"
+                      : "다음"
+              }
+              tone="primary"
+              disabled={!aiPath || !hasGeminiKey || !hasPathKey}
+              onPress={next}
+            />
+            {saveMsg ? <Small muted={false}>{saveMsg}</Small> : null}
           </>
         ) : null}
 
         {/* ── 4. 필수 확인 ── */}
-        {step === 3 ? (
+        {step === 4 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>시작하기 전에</Text>
             <Small>
@@ -383,7 +595,7 @@ export default function Onboarding() {
           </>
         ) : null}
 
-        {step > 0 && step < 3 ? (
+        {step > 0 && step < 4 ? (
           <Button label="이전" onPress={() => setStep((s) => s - 1)} />
         ) : null}
       </ScrollView>

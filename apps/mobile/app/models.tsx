@@ -1,301 +1,318 @@
+/**
+ * 전사 설정 — 어디서(콜랩/내 컴퓨터/Gemini), 어떤 모델로 전사할지 고르는 화면.
+ *
+ * 폰 전사는 없앴다. 8시간 근무 기록을 폰이 삭이려면 몇 시간씩 걸리고
+ * 뜨거워지는데, 그 시간을 견딜 만큼 정확하지도 않았다. 남은 경로는 셋이고,
+ * 이 화면의 첫 번째 일은 **서로 헷갈리지 않게 가르는 것**이다 —
+ * 예전엔 한 카드에 도커·콜랩·모델 버튼이 뒤섞여 있어서, 콜랩을 쓰는
+ * 사람이 PC 용 버튼을 누르고 왜 안 바뀌는지 알 수 없었다. Gemini 는
+ * 휘스퍼 서버와 아예 다른 물건이라 카드 자체를 따로 두었다.
+ *
+ * 모델 선택은 모드와 무관하게 같은 문법이다: 목록에서 누르면 그 모델이
+ * 선택되고, 다음 전사 요청에 model 파라미터로 실려 간다. 콜랩 노트는
+ * 이 파라미터를 읽어 필요하면 모델을 갈아끼운다.
+ */
 import { useCallback, useEffect, useState } from "react";
-import { Alert, Linking, ScrollView, TextInput, View } from "react-native";
+import { Linking, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { Text } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import Ionicons from "@expo/vector-icons/Ionicons";
+import type { ComponentProps } from "react";
 import {
-  KOREAN_MODEL_GUIDE,
-  estimateMinutes,
-  checkFeasible,
-  type AsrModel,
-  type SpeedSample,
+  DEFAULT_COLAB_MODEL_ID,
+  serverModelsFor,
+  type ServerAsrModel,
 } from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, Heading, Small } from "../src/components/ui";
-import { CONTENT_MAX, radius, space, type, useTheme } from "../src/theme";
-import {
-  addCustomModel,
-  activeDownloads,
-  cancelDownload,
-  subscribeDownloads,
-  deleteModelFile,
-  downloadModel,
-  listModels,
-  loadSpeedSample,
-  removeCustomModel,
-  setActiveModel,
-  type DownloadProgress,
-  type ModelStatus,
-} from "../src/services/models";
+import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/ui";
+import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
+import { getApiKey, migrateRetiredModel, setApiKey } from "../src/services/llm";
+import { getHfToken, setHfToken } from "../src/services/asr";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
+
+type ServerMode = "colab" | "pc" | "gemini";
 
 interface ServerAsr {
   enabled: boolean;
+  /** 지금 쓰는 주소. 전사(resolveProvider)는 이 값만 본다. */
   endpoint: string;
   model?: string;
+  mode?: ServerMode;
+  /** 모드별로 기억해 두는 주소 — 모드를 오가도 붙여넣은 주소가 안 날아간다. */
+  endpoints?: Partial<Record<ServerMode, string>>;
+  /**
+   * 모드별로 기억해 두는 모델. 콜랩 전용 미러와 허깅페이스 공개판은 서로 다른
+   * 목록이라, 모드를 오갔다고 고른 모델이 사라지면 화면은 기본 모델을 가리키는데
+   * 서버는 다른 것을 받는 어긋남이 생긴다.
+   */
+  models?: Partial<Record<ServerMode, string>>;
+  /** Gemini 직접 전사에서 쓸 모델 id. 휘스퍼 모델(model)과는 다른 세계라 따로 둔다. */
+  geminiModel?: string;
+  /** 화자 분리(pyannote) — 콜랩 노트만 지원한다. 토큰은 보안 저장소에 따로 둔다. */
+  diarize?: boolean;
 }
 
-/** 노트북(speaches 등)이 받아 쓰는 한국어 CT2 모델. 러너로 파일 구성을 확인해 둔 id 다. */
-const KOREAN_SERVER_MODEL = "ghost613/faster-whisper-large-v3-turbo-korean";
-
-/** 노트북이 없을 때의 대안 — 콜랩 무료 GPU 로 같은 서버를 띄우는 노트. 저장소가 공개라 바로 열린다. */
+/**
+ * 콜랩 노트 주소. 이 브랜치의 노트를 가리켜야 앱과 노트가 같은 판으로 논다 —
+ * 드라이브 사본이 아니라 이 링크로 열어야 최신판이다.
+ */
 const COLAB_NOTEBOOK_URL =
-  "https://colab.research.google.com/github/lulus-cat/NSR-project/blob/claude/new-nurse-adaptation-app-9xuo5p/docs/colab/nsr-transcribe-server.ipynb";
+  "https://colab.research.google.com/github/lulus-cat/NSR-project/blob/claude/transcription-model-ui-niyqxa/docs/colab/nsr-transcribe-server.ipynb";
 
-/** 8시간 근무에서 VAD로 무음을 걷어내면 실제 발화는 대략 이 정도다. */
-const TYPICAL_SPEECH_MINUTES = 90;
-
-function familyLabel(model: AsrModel): { text: string; tone: "ok" | "warn" | "muted" } {
-  if (model.family === "whisper-korean") return { text: "한국어 학습됨", tone: "ok" };
-  if (model.family === "custom") return { text: "직접 넣음", tone: "muted" };
-  return { text: "원본", tone: "muted" };
+/** 저장된 설정에 mode 가 없던 옛 판 사용자 — 주소 생김새로 짐작한다. */
+function inferMode(server: ServerAsr): ServerMode {
+  if (server.mode) return server.mode;
+  if (server.endpoint && !server.endpoint.includes("trycloudflare.com")) return "pc";
+  return "colab";
 }
 
-function ProgressBar({ ratio }: { ratio: number }) {
-  const t = useTheme();
-  return (
-    <View
-      style={{
-        height: 6,
-        borderRadius: radius.sm,
-        backgroundColor: t.surfaceAlt,
-        overflow: "hidden",
-      }}
-    >
-      <View
-        style={{
-          width: `${Math.round(Math.max(0, Math.min(1, ratio)) * 100)}%`,
-          height: "100%",
-          backgroundColor: t.accent,
-        }}
-      />
-    </View>
-  );
-}
-
-function ModelCard({
-  status,
-  sample,
-  progress,
-  onDownload,
-  onCancel,
-  onDelete,
-  onUse,
+/** 전사 방식 타일 — 콜랩/내 컴퓨터를 한눈에 가르는 큰 선택지. */
+function ModeTile({
+  icon,
+  title,
+  caption,
+  selected,
+  onPress,
 }: {
-  status: ModelStatus;
-  sample?: SpeedSample;
-  progress?: DownloadProgress;
-  onDownload: () => void;
-  onCancel: () => void;
-  onDelete: () => void;
-  onUse: () => void;
+  icon: ComponentProps<typeof Ionicons>["name"];
+  title: string;
+  caption: string;
+  selected: boolean;
+  onPress: () => void;
 }) {
   const t = useTheme();
-  const { model, installed, active, actualSizeMb } = status;
-  const family = familyLabel(model);
-
-  const estimate = estimateMinutes(model, TYPICAL_SPEECH_MINUTES, sample);
-  const feasible = checkFeasible(estimate, 12);
-  const downloading = progress !== undefined;
-
   return (
-    <Card tone={active ? "accent" : "default"}>
-      <View
-        style={{
-          flexDirection: "row",
-          justifyContent: "space-between",
-          alignItems: "center",
-          gap: space.sm,
-        }}
-      >
-        <Text style={[type.heading, { color: t.text, flexShrink: 1 }]}>{model.name}</Text>
-        {active ? <Badge text="사용 중" tone="ok" /> : <Badge text={family.text} tone={family.tone} />}
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      onPress={onPress}
+      style={({ pressed }) => ({
+        flex: 1,
+        minHeight: 96,
+        borderRadius: radius.lg,
+        borderWidth: 2,
+        borderColor: selected ? t.accent : "transparent",
+        backgroundColor: selected ? t.accentSoft : t.surfaceAlt,
+        padding: space.md,
+        gap: space.xs,
+        transform: [{ scale: pressed ? 0.97 : 1 }],
+      })}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+        <Ionicons name={icon} size={20} color={selected ? t.accent : t.textMuted} />
+        {selected ? <Badge text="사용 중" tone="ok" /> : null}
       </View>
-
-      <Small>{model.guidance}</Small>
-
-      <Divider />
-
-      <View style={{ gap: space.xs }}>
-        <Small muted={false}>
-          크기 {installed && actualSizeMb > 0 ? `${actualSizeMb} MB` : `약 ${model.approxSizeMb} MB`}
-          {installed ? " · 받아 둠" : ""}
-        </Small>
-        <Small>
-          한국어 정확도{" "}
-          {model.korean
-            ? `문자 오류율 ${model.korean.cer}% (${model.korean.source})`
-            : "공개된 실측 데이터가 없습니다"}
-        </Small>
-        <Small>
-          8시간 근무 전사 예상 시간: {estimate.label}
-          {estimate.estimated && estimate.minutes > 0 ? "(타 모델 측정값 기준 환산)" : ""}
-        </Small>
-        {!feasible.ok && feasible.reason ? (
-          <Small muted={false}>⚠ {feasible.reason}</Small>
-        ) : null}
-      </View>
-
-      {downloading ? (
-        <>
-          <ProgressBar ratio={progress.ratio} />
-          <Small>
-            {progress.totalMb > 0
-              ? `${progress.receivedMb} / ${progress.totalMb} MB`
-              : `${progress.receivedMb} MB 다운로드 중`}
-          </Small>
-          <Button label="취소" onPress={onCancel} />
-        </>
-      ) : (
-        <View style={{ flexDirection: "row", gap: space.sm, flexWrap: "wrap" }}>
-          {!installed ? (
-            <View style={{ flex: 1, minWidth: 120 }}>
-              <Button
-                label={model.url ? "내려받기" : "주소 없음"}
-                tone="primary"
-                disabled={!model.url}
-                onPress={onDownload}
-              />
-            </View>
-          ) : null}
-          {installed && !active ? (
-            <View style={{ flex: 1, minWidth: 120 }}>
-              <Button label="이걸로 전사" tone="primary" onPress={onUse} />
-            </View>
-          ) : null}
-          {installed ? (
-            <View style={{ flex: 1, minWidth: 100 }}>
-              <Button label="지우기" onPress={onDelete} />
-            </View>
-          ) : null}
-          {model.family === "custom" && !installed ? (
-            <View style={{ flex: 1, minWidth: 100 }}>
-              <Button label="목록에서 빼기" onPress={onDelete} />
-            </View>
-          ) : null}
-        </View>
-      )}
-    </Card>
+      <Text style={[type.heading, { color: t.text }]}>{title}</Text>
+      <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>{caption}</Text>
+    </Pressable>
   );
 }
 
-export default function Models() {
+/**
+ * 모델 한 줄 — 누르면 그 모델이 선택된다.
+ * 설명은 딱 한 문장(한국어 정확도 + 특징)만 둔다. 표가 길어지면 안 읽는다.
+ */
+function ModelRow({
+  model,
+  selected,
+  onSelect,
+}: {
+  model: ServerAsrModel;
+  selected: boolean;
+  onSelect: () => void;
+}) {
   const t = useTheme();
-  const [statuses, setStatuses] = useState<ModelStatus[]>([]);
-  const [sample, setSample] = useState<SpeedSample | undefined>();
-  const [progress, setProgress] = useState<Record<string, DownloadProgress>>({});
-  const [adding, setAdding] = useState(false);
-  const [form, setForm] = useState({ name: "", file: "", url: "", sizeMb: "" });
-  const [formError, setFormError] = useState<string | null>(null);
-  const [server, setServer] = useState<ServerAsr>({ enabled: false, endpoint: "" });
+  return (
+    <Pressable
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      onPress={onSelect}
+      style={({ pressed }) => ({
+        minHeight: TOUCH_MIN,
+        borderRadius: radius.md,
+        backgroundColor: selected ? t.accentSoft : pressed ? t.surfaceAlt : "transparent",
+        padding: space.md,
+        gap: space.xs,
+      })}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+        <Text style={[type.body, { color: t.text, fontWeight: "700", flexShrink: 1 }]}>
+          {model.name}
+        </Text>
+        {selected ? (
+          <Badge text="선택됨" tone="ok" />
+        ) : (
+          <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>선택</Text>
+        )}
+      </View>
+      <Small>{model.summary}</Small>
+    </Pressable>
+  );
+}
 
-  const load = useCallback(async () => {
-    setStatuses(await listModels());
-    setSample(await loadSpeedSample());
-    setServer(
-      await getSetting<ServerAsr>(SETTINGS_KEYS.cloudTranscription, {
+export default function TranscriptionSetup() {
+  const t = useTheme();
+  const insets = useSafeAreaInsets();
+  const [server, setServer] = useState<ServerAsr>({ enabled: false, endpoint: "" });
+  const [check, setCheck] = useState<
+    { state: "idle" } | { state: "checking" } | { state: "done"; ok: boolean; message: string }
+  >({ state: "idle" });
+  // Gemini 키 — 보조 기능과 같은 보안 저장소 항목을 쓴다(구글 AI 키는 하나).
+  const [hasGeminiKey, setHasGeminiKey] = useState(false);
+  const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  // 화자 분리 토큰 — 앱에서 받아 전사 요청에 실어 보낸다(콜랩에서 설정하지 않는다).
+  const [hasHfToken, setHasHfToken] = useState(false);
+  const [hfTokenInput, setHfTokenInput] = useState("");
+  useEffect(() => {
+    void (async () => {
+      const saved = await getSetting<ServerAsr>(SETTINGS_KEYS.cloudTranscription, {
         enabled: false,
         endpoint: "",
-      }),
-    );
-  }, []);
-
-  const saveServer = useCallback(async (next: ServerAsr) => {
-    setServer(next);
-    await setSetting(SETTINGS_KEYS.cloudTranscription, next);
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
-
-  // 진행은 서비스가 브로드캐스트한다 — 화면을 나갔다 와도 받던 자리부터 보인다.
-  useEffect(() => {
-    setProgress(activeDownloads());
-    return subscribeDownloads((id, p) => {
-      setProgress((prev) => {
-        const next = { ...prev };
-        if (p) next[id] = p;
-        else delete next[id];
-        return next;
       });
-    });
+      // 옛 판 설정에는 모드별 기억이 없다 — 지금 주소를 지금 모드 것으로 심는다.
+      const m = inferMode(saved);
+      const endpoints = { ...saved.endpoints };
+      if (saved.endpoint && !endpoints[m]) endpoints[m] = saved.endpoint;
+      // 단종된 Gemini 모델이 저장돼 있으면 화면에서도 현행 모델로 바꿔 보여준다.
+      const geminiModel = saved.geminiModel
+        ? migrateRetiredModel(saved.geminiModel.trim())
+        : saved.geminiModel;
+      setServer({ ...saved, mode: m, endpoints, geminiModel });
+      setHasGeminiKey((await getApiKey("gemini")) !== null);
+      setHasHfToken((await getHfToken()) !== null);
+    })();
   }, []);
 
-  const start = useCallback(
-    async (model: AsrModel) => {
-      const outcome = await downloadModel(model);
-      await load();
+  const save = useCallback(async (next: ServerAsr) => {
+    // 켜고 끄는 스위치는 없다 — 전사 경로가 서버뿐이라 주소가 있으면 켜진 것이다.
+    const stored = { ...next, enabled: next.endpoint.trim().length > 0 };
+    setServer(stored);
+    await setSetting(SETTINGS_KEYS.cloudTranscription, stored);
+  }, []);
 
-      if (outcome.canceled) return;
-      if (!outcome.ok) {
-        Alert.alert("다운로드에 실패했습니다", outcome.error ?? "알 수 없는 오류입니다.");
-        return;
-      }
-      // 처음 받은 모델이면 바로 쓰게 한다. 받아 놓고 안 고르는 실수를 막는다.
-      const installedCount = (await listModels()).filter((s) => s.installed).length;
-      if (installedCount === 1) {
-        await setActiveModel(model.id);
-        await load();
-      }
+
+  const mode = inferMode(server);
+  const models = mode === "gemini" ? [] : serverModelsFor(mode);
+  // 콜랩은 비워 둬도 노트 기본값이 같은 모델이라, 화면에서는 기본 모델이 선택된 것으로 보여준다.
+  const selectedModelId =
+    server.model ?? (mode === "colab" ? DEFAULT_COLAB_MODEL_ID : undefined);
+
+  const setEndpoint = useCallback(
+    (endpoint: string) => {
+      void save({
+        ...server,
+        endpoint,
+        endpoints: { ...server.endpoints, [mode]: endpoint },
+      });
     },
-    [load],
+    [mode, save, server],
   );
 
-  const confirmDownload = useCallback(
-    (model: AsrModel) => {
-      Alert.alert(
-        `${model.name} 다운로드`,
-        `약 ${model.approxSizeMb} MB를 받습니다. Wi-Fi 사용을 권장합니다.`,
-        [
-          { text: "취소", style: "cancel" },
-          { text: "받기", onPress: () => void start(model) },
-        ],
-      );
+  const switchMode = useCallback(
+    (nextMode: ServerMode) => {
+      if (nextMode === mode) return;
+      setCheck({ state: "idle" });
+      // 주소는 모드마다 다른 물건이다(터널 주소 vs 집 IP). 콜랩 주소로 PC
+      // 전사를 시도하는 헛걸음이 없도록, 그 모드에서 마지막으로 쓰던 주소로
+      // 갈아끼운다. 모델도 모드 목록에 없는 것이면 비운다.
+      const usable = (id?: string) =>
+        nextMode !== "gemini" && id && serverModelsFor(nextMode).some((m) => m.id === id)
+          ? id
+          : undefined;
+      const keepModel = usable(server.models?.[nextMode]) ?? usable(server.model);
+      void save({
+        ...server,
+        endpoint: server.endpoints?.[nextMode] ?? "",
+        model: keepModel,
+        // 떠나는 모드의 선택은 남겨 둔다 — 돌아오면 그대로 되살아난다.
+        models:
+          mode === "gemini" ? server.models : { ...server.models, [mode]: server.model },
+        mode: nextMode,
+      });
     },
-    [start],
+    [mode, save, server],
   );
 
-  const confirmDelete = useCallback(
-    (status: ModelStatus) => {
-      const { model } = status;
-      Alert.alert(
-        `${model.name} 삭제`,
-        status.active
-          ? "사용 중인 모델입니다. 지우면 다른 모델로 전사합니다."
-          : "모델 파일만 지워지며 언제든 다시 받을 수 있습니다.",
-        [
-          { text: "취소", style: "cancel" },
-          {
-            text: "지우기",
-            style: "destructive",
-            onPress: async () => {
-              if (model.family === "custom") await removeCustomModel(model.id);
-              else deleteModelFile(model);
-              await load();
-            },
-          },
-        ],
-      );
+  /** 화자 분리 토큰 저장·삭제. 보안 저장소에만 남고, 전사 요청에만 실린다. */
+  const saveHfKey = useCallback(
+    async (raw?: string) => {
+      const token = (raw ?? hfTokenInput).trim();
+      await setHfToken(token || null);
+      setHasHfToken(token.length > 0);
+      setHfTokenInput("");
     },
-    [load],
+    [hfTokenInput],
   );
 
-  const submitCustom = useCallback(async () => {
-    const sizeMb = Number(form.sizeMb);
-    const result = await addCustomModel({
-      name: form.name,
-      file: form.file,
-      url: form.url.trim() || undefined,
-      approxSizeMb: Number.isFinite(sizeMb) && sizeMb > 0 ? sizeMb : undefined,
+  const saveGeminiKey = useCallback(async () => {
+    const key = geminiKeyInput.trim();
+    await setApiKey(key || null, "gemini");
+    setHasGeminiKey(key.length > 0);
+    setGeminiKeyInput("");
+    setCheck({
+      state: "done",
+      ok: key.length > 0,
+      message: key ? "키를 기기 보안 저장소에 넣었습니다." : "키를 지웠습니다.",
     });
-    if (!result.ok) {
-      setFormError(result.error ?? "추가하지 못했습니다.");
+  }, [geminiKeyInput]);
+
+  const checkGemini = useCallback(async () => {
+    const key = await getApiKey("gemini");
+    if (!key) {
+      setCheck({ state: "done", ok: false, message: "키를 먼저 저장하십시오." });
       return;
     }
-    setForm({ name: "", file: "", url: "", sizeMb: "" });
-    setFormError(null);
-    setAdding(false);
-    await load();
-  }, [form, load]);
+    setCheck({ state: "checking" });
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models?pageSize=1&key=${key}`,
+        { signal: controller.signal },
+      );
+      clearTimeout(timer);
+      setCheck(
+        res.ok
+          ? { state: "done", ok: true, message: "연결됐습니다. 이제 기록 화면에서 전사를 누르면 됩니다." }
+          : { state: "done", ok: false, message: `키가 거부됐습니다 (${res.status}). 키를 다시 확인하십시오.` },
+      );
+    } catch {
+      setCheck({ state: "done", ok: false, message: "구글에 연결하지 못했습니다. 네트워크를 확인하십시오." });
+    }
+  }, []);
+
+  const checkConnection = useCallback(async () => {
+    const base = server.endpoint.trim().replace(/\/+$/, "");
+    if (!base) {
+      setCheck({ state: "done", ok: false, message: "주소를 먼저 넣으십시오." });
+      return;
+    }
+    setCheck({ state: "checking" });
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(`${base}/health`, { signal: controller.signal });
+      clearTimeout(timer);
+      setCheck(
+        res.ok
+          ? { state: "done", ok: true, message: "연결됐습니다. 이제 기록 화면에서 전사를 누르면 됩니다." }
+          : {
+              state: "done",
+              ok: false,
+              message: `서버가 ${res.status}로 답했습니다. 주소를 끝까지(비밀 문자열 포함) 붙여넣었는지 확인하십시오.`,
+            },
+      );
+    } catch {
+      setCheck({
+        state: "done",
+        ok: false,
+        message:
+          mode === "colab"
+            ? "연결하지 못했습니다. 콜랩 노트가 '모두 실행' 상태인지, 주소를 통째로 붙여넣었는지 확인하십시오."
+            : "연결하지 못했습니다. 폰과 컴퓨터가 같은 Wi-Fi인지, 서버가 켜져 있는지 확인하십시오.",
+      });
+    }
+  }, [mode, server.endpoint]);
 
   const input = {
     color: t.text,
@@ -305,262 +322,410 @@ export default function Models() {
     fontSize: 14,
   };
 
-  const installedCount = statuses.filter((s) => s.installed).length;
-
   return (
     <ScrollView
       contentContainerStyle={{
         padding: space.lg,
+        // 안드로이드 내비게이션 바가 마지막 카드를 가리지 않게 안전영역만큼 띄운다.
+        paddingBottom: space.lg + insets.bottom,
         gap: space.md,
         width: "100%",
         maxWidth: CONTENT_MAX,
         alignSelf: "center",
       }}
     >
+      {/* ── 방식 선택: 이 화면의 첫 질문 ── */}
+      <Card>
+        <Heading>어디서 전사합니까</Heading>
+        <Small>
+          전사는 폰이 아니라 아래 셋 중 한 곳이 합니다. 콜랩·내 컴퓨터는 휘스퍼
+          모델을 돌리는 서버 방식이고, Gemini 는 서버 없이 구글 AI 에 직접 보내는
+          다른 방식입니다. 기록 음성이 선택한 곳으로 전송됩니다.
+        </Small>
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <ModeTile
+            icon="logo-google"
+            title="콜랩"
+            caption="GPU 노트 · 휘스퍼"
+            selected={mode === "colab"}
+            onPress={() => switchMode("colab")}
+          />
+          <ModeTile
+            icon="laptop-outline"
+            title="내 컴퓨터"
+            caption="같은 Wi-Fi · 휘스퍼"
+            selected={mode === "pc"}
+            onPress={() => switchMode("pc")}
+          />
+          <ModeTile
+            icon="sparkles-outline"
+            title="Gemini"
+            caption="API 키 하나 · 서버 없이"
+            selected={mode === "gemini"}
+            onPress={() => switchMode("gemini")}
+          />
+        </View>
+      </Card>
+
+      {/* ── 화자 분리 — 콜랩 전용. 토큰까지 여기서 받는다(콜랩엔 설정 없음) ── */}
+      {mode === "colab" ? (
+        <Card>
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              minHeight: TOUCH_MIN,
+            }}
+          >
+            <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>화자 분리 사용</Text>
+            <Switch
+              value={!!server.diarize}
+              onValueChange={(v) => void save({ ...server, diarize: v })}
+            />
+          </View>
+          <Small>
+            전사와 함께 누가 말했는지(화자 1·2·3…)를 자동으로 나눕니다 — 문장 중간에
+            화자가 바뀌어도 단어 단위로 경계를 맞춥니다. 기록 화면에서 화자별 역할을
+            한 번에 지정할 수 있고, 전사가 몇 분 더 걸립니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>
+            허깅페이스 토큰{hasHfToken ? " — 저장됨" : " — 아직 없음"}
+          </Small>
+          <Small>
+            화자를 나누는 모델(pyannote)은 무료지만 허깅페이스 계정 확인을 요구합니다.
+            토큰을 여기 한 번 넣어 두면 전사할 때마다 콜랩으로 함께 보냅니다 —
+            콜랩에서는 아무것도 설정하지 않습니다. 토큰은 이 기기의 보안 저장소에만
+            남고, 다른 곳으로는 나가지 않습니다.
+          </Small>
+          <TextInput
+            value={hfTokenInput}
+            onChangeText={setHfTokenInput}
+            placeholder={hasHfToken ? "저장된 토큰이 있습니다" : "hf_ 로 시작하는 Read 토큰"}
+            placeholderTextColor={t.textMuted}
+            secureTextEntry
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              color: t.text,
+              backgroundColor: t.surfaceAlt,
+              borderRadius: radius.md,
+              padding: space.md,
+              minHeight: TOUCH_MIN,
+              fontSize: 14,
+            }}
+          />
+          <Button
+            label="토큰 저장"
+            tone={hasHfToken ? "default" : "primary"}
+            onPress={() => void saveHfKey()}
+          />
+          {hasHfToken ? (
+            <Button label="저장된 토큰 지우기" onPress={() => void saveHfKey("")} />
+          ) : null}
+          <Divider />
+          <Small muted={false}>토큰 만들기 — 무료, 한 번만 (약 5분)</Small>
+          <Small>
+            누르면 각 쪽이 열립니다. 로그인한 뒤 &lsquo;Agree&rsquo;(동의)를 한 번씩 누르면
+            됩니다 — 승인은 즉시입니다.
+          </Small>
+          <Button
+            label="1. 분리 모델 동의 — community-1"
+            onPress={() =>
+              void Linking.openURL(
+                "https://huggingface.co/pyannote/speaker-diarization-community-1",
+              )
+            }
+          />
+          <Button
+            label="2. 분리 모델 동의 — 3.1 (예비)"
+            onPress={() =>
+              void Linking.openURL("https://huggingface.co/pyannote/speaker-diarization-3.1")
+            }
+          />
+          <Button
+            label="3. 구간 모델 동의 — segmentation-3.0"
+            onPress={() =>
+              void Linking.openURL("https://huggingface.co/pyannote/segmentation-3.0")
+            }
+          />
+          <Button
+            label="4. Read 토큰 발급 → 위 칸에 붙여넣기"
+            onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
+          />
+          <Small>
+            토큰 없이 켜면 그 전사는 화자 없이 전사만 돌아옵니다 — 실패하지 않습니다.
+          </Small>
+        </Card>
+      ) : null}
+
+      {/* ── 모델 선택(휘스퍼 경로): 콜랩·PC 는 같은 문법, Gemini 는 자기 카드에서 ── */}
+      {mode !== "gemini" ? (
       <Card>
         <Heading>전사 모델</Heading>
-        <Body muted>
-          
-  전사는 기기에서 직접 처리합니다. 성능에 맞는 모델을 선택하십시오.
-</Body>
-        <Divider />
-        <Small muted={false}>
-  모델 크기보다 한국어 최적화가 중요합니다
-</Small>
         <Small>
-          {KOREAN_MODEL_GUIDE.why} 
-  모델 크기를 키우는 것보다 한국어 파인튜닝 모델을 쓰는 편이 훨씬 정확합니다.
-</Small>
-        {installedCount === 0 ? (
-          <>
-            <Divider />
-            <Small muted={false}>
-              
-  설치된 모델이 없습니다. 음성을 전사하려면 모델을 받아주십시오.
-</Small>
-          </>
-        ) : null}
-      </Card>
-
-      {/* 노트북·서버 전사 — 폰이 느릴 때의 탈출구 */}
-      <Card tone={server.enabled ? "accent" : "default"}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-          <Heading>노트북·서버로 전사</Heading>
-          {server.enabled ? <Badge text="사용 중" tone="ok" /> : null}
-        </View>
-        <Small>
-          같은 Wi-Fi의 노트북이 전사를 대신합니다. 폰보다 몇 배 빠르고 배터리를 아낍니다.
-          기록 음성이 그 서버로 전송되므로 <Text style={{ fontWeight: "700" }}>내 컴퓨터에만</Text>{" "}
-          연결하십시오.
+          {mode === "colab"
+            ? "누르면 다음 전사부터 그 모델을 씁니다. 콜랩이 처음 쓰는 모델은 내려받느라 몇 분 더 걸립니다 — 폰에는 아무것도 받지 않습니다."
+            : "누르면 다음 전사부터 그 모델을 씁니다. 컴퓨터가 첫 전사 때 알아서 내려받습니다 — 폰에는 아무것도 받지 않습니다."}
         </Small>
         <Divider />
-        <Small muted={false}>노트북에서 한 번만 하면 됩니다</Small>
-        <Small>1. Docker(docker.com) 설치 후 터미널에 입력:</Small>
-        <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.md, padding: space.md }}>
-          <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
-            docker run -d -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
-          </Text>
-        </View>
-        <Small>
-          2. 노트북의 Wi-Fi IP(예: 192.168.0.10)를 확인해 아래에 넣으십시오. 3. 모델 칸은
-          비워도 됩니다 — 서버 기본값을 씁니다. OpenAI 호환(/v1/audio/transcriptions) 서버라면
-          무엇이든 붙습니다. 집 밖에서도 쓰려면 Tailscale 이 가장 쉽습니다.
-        </Small>
-        <Divider />
-        <Small muted={false}>노트북이 없다면 — 구글 콜랩 (무료 GPU)</Small>
-        <Small>
-          아래 버튼으로 콜랩 노트를 열고 &lsquo;모두 실행&rsquo;하면 몇 분 안에 전사 서버가
-          만들어지고, 마지막 출력의 주소를 여기 주소 칸에 넣으면 됩니다. 기록 음성이 구글
-          서버를 지나는 경로입니다 — 내 컴퓨터가 아닙니다. 콜랩 탭을 닫으면 서버도 꺼집니다.
-        </Small>
-        <Button label="콜랩 노트 열기" onPress={() => void Linking.openURL(COLAB_NOTEBOOK_URL)} />
-        <Button
-          label={server.enabled ? "서버 전사 끄기" : "서버 전사 켜기"}
-          tone={server.enabled ? "default" : "primary"}
-          onPress={() => void saveServer({ ...server, enabled: !server.enabled })}
-        />
-        {server.enabled ? (
-          <>
-            <TextInput
-              value={server.endpoint}
-              onChangeText={(endpoint) => void saveServer({ ...server, endpoint })}
-              placeholder="http://192.168.0.10:8000"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={input}
-            />
-            <TextInput
-              value={server.model ?? ""}
-              onChangeText={(model) => void saveServer({ ...server, model: model || undefined })}
-              placeholder="모델 (선택, 예: Systran/faster-whisper-medium)"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={input}
-            />
-            <Divider />
-            <Small muted={false}>한국어 파인튜닝 모델을 노트북에 설치할까요?</Small>
-            <Small>
-              누르면 서버 모델이 한국어 파인튜닝판(ghost613 turbo)으로 지정됩니다. 첫 전사 때
-              노트북이 알아서 내려받습니다(약 3.2GB, 한 번만). 폰에는 아무것도 안 받습니다.
-            </Small>
-            <Button
-              label={
-                server.model === KOREAN_SERVER_MODEL
-                  ? "한국어 모델 사용 중"
-                  : "노트북에 한국어 모델 쓰기"
+        {models.map((m, i) => (
+          <View key={m.id}>
+            {i > 0 ? <Divider /> : null}
+            <ModelRow
+              model={m}
+              selected={selectedModelId === m.id}
+              onSelect={() =>
+                void save({
+                  ...server,
+                  model: m.id,
+                  models: { ...server.models, [mode]: m.id },
+                })
               }
-              tone="primary"
-              disabled={server.model === KOREAN_SERVER_MODEL}
-              onPress={() => void saveServer({ ...server, model: KOREAN_SERVER_MODEL })}
             />
-          </>
-        ) : null}
-      </Card>
-
-      {sample ? (
-        <Card>
-          <Small>
-
-  현재 기기 속도를 기준으로 추정합니다. 환산값에는 오차가 있을 수 있습니다.
-</Small>
-        </Card>
-      ) : (
-        <Card>
-          <Small>
-            
-  이력이 없어 예상 시간을 알 수 없습니다. 첫 전사를 마치면 표시됩니다.
-</Small>
-        </Card>
-      )}
-
-      {statuses.map((status) => (
-        <ModelCard
-          key={status.model.id}
-          status={status}
-          sample={sample}
-          progress={progress[status.model.id]}
-          onDownload={() => confirmDownload(status.model)}
-          onCancel={() => cancelDownload(status.model.id)}
-          onDelete={() => confirmDelete(status)}
-          onUse={async () => {
-            await setActiveModel(status.model.id);
-            await load();
-          }}
-        />
-      ))}
-
-      {/* 직접 넣기 */}
-      <Card>
-        <Heading>
-  한국어 파인튜닝 모델 추가
-</Heading>
-        <Small>
-          
-  다운로드 링크 변경에 대비해 직접 등록을 지원합니다. 주소나 파일을 입력하십시오.
-</Small>
-        <Divider />
-        <Small muted={false}>1. 찾기</Small>
-        <Small>{KOREAN_MODEL_GUIDE.searchHint}</Small>
-        {KOREAN_MODEL_GUIDE.known.map((m) => (
-          <View key={m.id} style={{ gap: space.xxs, paddingVertical: space.tight }}>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-              <Badge text={m.ready ? "변환 불필요" : "변환 필요"} tone={m.ready ? "ok" : "muted"} />
-              <Small muted={false}>{m.base}</Small>
-            </View>
-            <Text selectable style={[type.small, { color: t.text, fontFamily: "monospace" }]}>
-              {m.id}
-            </Text>
-            <Small>{m.note}</Small>
           </View>
         ))}
-        <Small muted={false}>
-  2. ggml 변환 및 양자화
-</Small>
-        <View
-          style={{
-            backgroundColor: t.surfaceAlt,
-            borderRadius: radius.md,
-            padding: space.md,
-          }}
-        >
-          <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
-            {KOREAN_MODEL_GUIDE.convertCommand}
-          </Text>
-          <Text
-            selectable
-            style={{ color: t.text, fontFamily: "monospace", fontSize: 12, marginTop: 8 }}
-          >
-            {KOREAN_MODEL_GUIDE.quantizeCommand}
-          </Text>
-        </View>
-        <Small muted={false}>
-  3. 아래 항목 등록 후 모델 폴더에 파일 이동 또는 URL 입력
-</Small>
-
-        {adding ? (
+        {mode === "pc" ? (
           <>
             <Divider />
-            <TextInput
-              value={form.name}
-              onChangeText={(name) => setForm((f) => ({ ...f, name }))}
-              placeholder="이름 (예: 한국어 Small 재학습)"
-              placeholderTextColor={t.textMuted}
-              style={input}
-            />
-            <TextInput
-              value={form.file}
-              onChangeText={(file) => setForm((f) => ({ ...f, file }))}
-              placeholder="파일 이름 (예: ggml-ko-small-q5_1.bin)"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={input}
-            />
-            <TextInput
-              value={form.url}
-              onChangeText={(url) => setForm((f) => ({ ...f, url }))}
-              placeholder="다운로드 URL (https://…, 미입력 가능)"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={input}
-            />
-            <TextInput
-              value={form.sizeMb}
-              onChangeText={(sizeMb) => setForm((f) => ({ ...f, sizeMb }))}
-              placeholder="예상 크기 (MB, 선택 사항)"
-              placeholderTextColor={t.textMuted}
-              keyboardType="number-pad"
-              style={input}
-            />
-            {formError ? <Small muted={false}>{formError}</Small> : null}
-            <View style={{ flexDirection: "row", gap: space.sm }}>
-              <View style={{ flex: 1 }}>
-                <Button label="추가" tone="primary" onPress={() => void submitCustom()} />
+            <Pressable
+              accessibilityRole="radio"
+              accessibilityState={{ selected: selectedModelId === undefined }}
+              onPress={() =>
+                void save({
+                  ...server,
+                  model: undefined,
+                  models: { ...server.models, [mode]: undefined },
+                })
+              }
+              style={({ pressed }) => ({
+                minHeight: TOUCH_MIN,
+                borderRadius: radius.md,
+                backgroundColor:
+                  selectedModelId === undefined
+                    ? t.accentSoft
+                    : pressed
+                      ? t.surfaceAlt
+                      : "transparent",
+                padding: space.md,
+                gap: space.xs,
+              })}
+            >
+              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
+                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>서버 기본값</Text>
+                {selectedModelId === undefined ? (
+                  <Badge text="선택됨" tone="ok" />
+                ) : (
+                  <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>선택</Text>
+                )}
               </View>
-              <View style={{ flex: 1 }}>
-                <Button
-                  label="취소"
-                  onPress={() => {
-                    setAdding(false);
-                    setFormError(null);
-                  }}
-                />
-              </View>
-            </View>
+              <Small>모델을 지정하지 않고 서버가 미리 실어 둔 모델을 그대로 씁니다.</Small>
+            </Pressable>
           </>
-        ) : (
-          <Button label="직접 추가" onPress={() => setAdding(true)} />
-        )}
+        ) : null}
       </Card>
+
+      ) : null}
+
+      {/* ── 선택한 방식의 연결 ── */}
+      {mode === "colab" ? (
+        <Card tone="accent">
+          <Heading>콜랩 연결</Heading>
+          <Small>
+            기록 음성이 구글(콜랩) 서버와 Cloudflare 터널을 지나갑니다 — 내 컴퓨터가
+            아닙니다. 전사하는 동안 콜랩 탭을 열어 두십시오. 탭을 닫으면 서버도 꺼집니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>1. 콜랩 노트를 열고 &lsquo;런타임 → 모두 실행&rsquo;</Small>
+          <Button label="콜랩 노트 열기" tone="primary" onPress={() => void Linking.openURL(COLAB_NOTEBOOK_URL)} />
+          <Small muted={false}>
+            2. 마지막 셀의 &lsquo;NSR 앱에 연결&rsquo; 버튼(컴퓨터라면 QR 스캔)을 누르면
+            주소가 자동으로 저장됩니다
+          </Small>
+          <Small>버튼이 안 되면 그때만 주소를 복사해 아래에 붙여넣으십시오.</Small>
+          <Small>
+            콜랩에서 고칠 것은 없습니다 — 모델·화자 분리·토큰은 전부 이 화면에서 정하고,
+            전사할 때 함께 보냅니다.
+          </Small>
+          <TextInput
+            value={server.endpoint}
+            onChangeText={setEndpoint}
+            placeholder="https://….trycloudflare.com/비밀문자열"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={input}
+          />
+          <Small>
+            콜랩 세션이 꺼졌다 켜지면 주소가 새로 나옵니다 — 그때마다 다시 붙여넣으십시오.
+          </Small>
+          <Button
+            label={check.state === "checking" ? "확인 중" : "연결 확인"}
+            busy={check.state === "checking"}
+            onPress={() => void checkConnection()}
+          />
+          {check.state === "done" ? (
+            <Text style={[type.small, { color: check.ok ? t.ok : t.danger, fontWeight: "600" }]}>
+              {check.message}
+            </Text>
+          ) : null}
+        </Card>
+      ) : mode === "pc" ? (
+        <Card tone="accent">
+          <Heading>내 컴퓨터 연결</Heading>
+          <Small>
+            같은 Wi-Fi의 내 컴퓨터가 전사합니다. 음성이 그 컴퓨터로만 가므로,{" "}
+            <Text style={{ fontWeight: "700" }}>내 컴퓨터에만</Text> 연결하십시오.
+          </Small>
+          <Divider />
+          <Small muted={false}>1. 컴퓨터에서 한 번만: Docker(docker.com) 설치 후 터미널에 입력</Small>
+          <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.md, padding: space.md }}>
+            <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
+              docker run -d -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
+            </Text>
+          </View>
+          <Small muted={false}>2. 컴퓨터의 Wi-Fi IP를 확인해 주소로 넣기</Small>
+          <TextInput
+            value={server.endpoint}
+            onChangeText={setEndpoint}
+            placeholder="http://192.168.0.10:8000"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={input}
+          />
+          <Small>
+            OpenAI 호환(/v1/audio/transcriptions) 서버라면 무엇이든 붙습니다. 집 밖에서도
+            쓰려면 Tailscale 이 가장 쉽습니다.
+          </Small>
+          <Button
+            label={check.state === "checking" ? "확인 중" : "연결 확인"}
+            busy={check.state === "checking"}
+            onPress={() => void checkConnection()}
+          />
+          {check.state === "done" ? (
+            <Text style={[type.small, { color: check.ok ? t.ok : t.danger, fontWeight: "600" }]}>
+              {check.message}
+            </Text>
+          ) : null}
+        </Card>
+      ) : null}
+
+      {/* ── Gemini 직접 전사 — 휘스퍼와 다른 세계라 설정도 따로 논다 ── */}
+      {mode === "gemini" ? (
+        <Card tone="accent">
+          <Heading>Gemini 직접 전사</Heading>
+          <Small>
+            콜랩도 서버도 없습니다 — 구글 AI 키 하나면 폰이 기록을 Gemini 로 보내
+            전사와 화자 라벨까지 받아 옵니다. 일반 모델(3.7-flash 등)의{" "}
+            <Text style={{ fontWeight: "700" }}>시각은 추정치</Text>라 문장 탭 재생이 몇 초
+            어긋날 수 있고, 전문 전사 모델(3.5-transcribe)은 단어 단위 실측이라
+            정확합니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>알고 쓰십시오</Small>
+          <Small>
+            기록 음성이 구글 Gemini 서버로 전송됩니다.{" "}
+            <Text style={{ fontWeight: "700" }}>
+              무료 티어는 입력이 구글의 모델 개선에 쓰일 수 있습니다
+            </Text>{" "}
+            — 병동 음성이라면 결제를 연결한(유료) 키를 권합니다. 올린 파일은 전사
+            직후 앱이 지웁니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>
+            1. API 키{hasGeminiKey ? " — 저장돼 있습니다" : ""}
+          </Small>
+          <Button
+            label="키 발급 열기 (aistudio.google.com)"
+            onPress={() => void Linking.openURL("https://aistudio.google.com/apikey")}
+          />
+          <TextInput
+            value={geminiKeyInput}
+            onChangeText={setGeminiKeyInput}
+            placeholder="AIza… 키 붙여넣기"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            style={input}
+          />
+          <Button
+            label={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "키 지우기" : "키 저장"}
+            tone={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "default" : "primary"}
+            onPress={() => void saveGeminiKey()}
+          />
+          <Small>
+            키는 기기 보안 저장소에만 보관되고, 설정 → 보조 기능의 Gemini 와 같은
+            키를 씁니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>2. 모델</Small>
+          <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
+            {[
+              ["gemini-3.7-flash", "기본 — 긴 기록도 통짜로"],
+              ["gemini-3.5-transcribe", "전문 전사 — 30분 이하"],
+              ["gemini-3.1-pro-preview", "가장 정확 — 유료 키 전용"],
+            ].map(([id, hint]) => {
+              const on = (server.geminiModel?.trim() || "gemini-3.7-flash") === id;
+              return (
+                <Pressable
+                  key={id}
+                  accessibilityRole="button"
+                  accessibilityState={{ selected: on }}
+                  onPress={() => void save({ ...server, geminiModel: id })}
+                  style={{
+                    paddingVertical: space.xs,
+                    paddingHorizontal: space.md,
+                    borderRadius: radius.sm,
+                    backgroundColor: on ? t.accent : t.surfaceAlt,
+                    minHeight: 36,
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text style={[type.caption, { color: on ? "#FFFFFF" : t.text }]}>
+                    {id} · {hint}
+                  </Text>
+                </Pressable>
+              );
+            })}
+          </View>
+          <TextInput
+            value={server.geminiModel ?? ""}
+            onChangeText={(geminiModel) => void save({ ...server, geminiModel })}
+            placeholder="모델 id 직접 입력 (새 모델이 나오면)"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={input}
+          />
+          <Divider />
+          <Button
+            label={check.state === "checking" ? "확인 중" : "연결 확인"}
+            busy={check.state === "checking"}
+            onPress={() => void checkGemini()}
+          />
+          {check.state === "done" ? (
+            <Text style={[type.small, { color: check.ok ? t.ok : t.danger, fontWeight: "600" }]}>
+              {check.message}
+            </Text>
+          ) : null}
+          <Small>
+            모델마다 성격이 다릅니다. <Text style={{ fontWeight: "700" }}>3.5-transcribe</Text> 는
+            받아쓰기 전용 모델이라 화자와 단어 시각이 실측으로 정확하지만, 화자 분리를 켠
+            요청은 30분 한도가 있습니다 — 30분 분할 기록과 짝입니다. 긴 통짜 기록은
+            3.7-flash(시각은 추정치)나 콜랩이 안전하고, 3.1-pro 는 무료 티어가 없어 결제
+            연결 키에서만 돕니다.
+          </Small>
+        </Card>
+      ) : null}
 
       <Card>
         <Small>
-          
-  모델 파일은 기기 내부 저장소에만 보관되며, 앱 삭제 시 함께 제거됩니다.
-</Small>
+          전사가 끝난 전사본은 폰에만 저장됩니다. 콜랩은 세션을 닫으면 서버 쪽 사본도 함께
+          사라집니다.
+        </Small>
       </Card>
     </ScrollView>
   );

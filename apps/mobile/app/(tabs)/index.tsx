@@ -12,7 +12,6 @@ import { useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps, ReactNode } from "react";
 import {
-  createSchedule,
   dailyQuote,
   dueStates,
   laborStats,
@@ -28,6 +27,7 @@ import {
   Card,
   DashedDivider,
   Enter,
+  GaugeBar,
   HeaderScreen,
   Small,
 } from "../../src/components/ui";
@@ -35,15 +35,19 @@ import { Thermometer } from "../../src/components/thermometer";
 import { useApp } from "../../src/state/AppContext";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
+  getSetting,
   listDutyEntries,
   listReviewStates,
   listTaeumScores,
   pendingTranscriptions,
 } from "../../src/db";
-import { startManual, stopManual } from "../../src/services/scheduler";
+import { SETTINGS_KEYS, buildSchedule, startManual, stopManual } from "../../src/services/scheduler";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
-import { listModels } from "../../src/services/models";
-import { importAudioFile } from "../../src/services/import-audio";
+import {
+  runnerState,
+  subscribeRunner,
+  type RunnerState,
+} from "../../src/services/transcribe-runner";
 
 function formatClock(epochMs: number): string {
   const d = new Date(epochMs);
@@ -302,8 +306,20 @@ export default function Home() {
   const [dueCount, setDueCount] = useState(0);
   const [pendingCount, setPendingCount] = useState(0);
   const [pendingShiftId, setPendingShiftId] = useState<string | null>(null);
+  // 미전사 녹음 파일들 — 건수만이 아니라 어떤 녹음인지 보여준다.
+  const [pendingRows, setPendingRows] = useState<
+    {
+      id: string;
+      shift_id: string | null;
+      started_at: number;
+      duration_sec: number;
+      label?: string | null;
+    }[]
+  >([]);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
-  const [needsModel, setNeedsModel] = useState(false);
+  const [needsServer, setNeedsServer] = useState(false);
+  const [needsAi, setNeedsAi] = useState(false);
+  const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [weekStrip, setWeekStrip] = useState<
     { date: string; day: number; code?: string; label?: string }[]
@@ -312,7 +328,7 @@ export default function Home() {
   const load = useCallback(async () => {
     const today = toDateString(Date.now());
     const entries = await listDutyEntries();
-    const shifts = resolveAll(createSchedule(entries));
+    const shifts = resolveAll(await buildSchedule(entries));
     setTodayShift(shifts.find((s) => s.date === today) ?? null);
 
     const weekStart = Date.now() - 3 * 24 * 3600_000;
@@ -336,6 +352,7 @@ export default function Home() {
     setDueCount(dueStates(await listReviewStates(), Date.now(), 9999).length);
     const pending = await pendingTranscriptions();
     setPendingCount(pending.length);
+    setPendingRows(pending);
     // 전사 실행 화면으로 가는 문 — 미전사 기록이 실제로 있는 근무를 가리킨다.
     setPendingShiftId(pending[0]?.shift_id ?? null);
     const scores = await listTaeumScores(30);
@@ -345,7 +362,30 @@ export default function Home() {
       if (!map.has(date)) map.set(date, taeumTemperature(sc.score));
     }
     setTemps(map);
-    setNeedsModel((await listModels()).every((m) => !m.installed));
+    // 전사는 서버(콜랩·내 컴퓨터)나 Gemini가 한다. 준비가 안 됐으면 연결부터 안내한다.
+    const server = await getSetting<{ endpoint?: string; mode?: string }>(
+      SETTINGS_KEYS.cloudTranscription,
+      {},
+    );
+    if (server.mode === "gemini") {
+      const { getApiKey } = await import("../../src/services/llm");
+      setNeedsServer(!(await getApiKey("gemini")));
+    } else {
+      setNeedsServer(!server.endpoint);
+    }
+    // AI 필수 설정 — 기존 사용자(온보딩을 이미 지난)는 여기서 안내받는다.
+    const { pipelineReady } = await import("../../src/services/pipeline");
+    setNeedsAi(!(await pipelineReady()).ok);
+    // 마지막 전사가 끝났는데 아직 결과를 안 열어봤으면 알려 준다.
+    const last = await getSetting<{ shiftId?: string; sentences?: number; seen?: boolean }>(
+      "transcribe.lastResult",
+      {},
+    );
+    setNewResult(
+      last.shiftId && !last.seen
+        ? { shiftId: last.shiftId, sentences: last.sentences ?? 0 }
+        : null,
+    );
   }, []);
 
   useEffect(() => {
@@ -353,6 +393,17 @@ export default function Home() {
   }, []);
   useEffect(() => {
     void load();
+  }, [load]);
+
+  // 전사 러너 — 돌고 있으면 기록 폴더에 막대로 보이고, 끝나면 목록을 다시 읽는다.
+  const [runner, setRunner] = useState<RunnerState | null>(null);
+  useEffect(() => {
+    const now = runnerState();
+    setRunner(now.running ? now : null);
+    return subscribeRunner((s) => {
+      setRunner(s.running ? s : null);
+      if (!s.running && s.completedAt) void load();
+    });
   }, [load]);
 
   const onRefresh = useCallback(async () => {
@@ -400,7 +451,7 @@ export default function Home() {
           <DashedDivider />
           <BriefRow
             icon="time-outline"
-            label="오늘 근무표 밖"
+            label="오늘 인계 체류 (설정 기준 추정)"
             value={overtimeToday > 0 ? `+${overtimeToday}시간` : "없음"}
             valueColor={overtimeToday > 0 ? t.warn : undefined}
           />
@@ -422,7 +473,7 @@ export default function Home() {
         <>
           <BriefRow
             icon="albums-outline"
-            label="이번 주 근무표 밖"
+            label="이번 주 인계 체류 (추정)"
             value={`${stats.offTheBooksHours}시간`}
             valueColor={stats.offTheBooksHours > 0 ? t.warn : undefined}
           />
@@ -483,30 +534,97 @@ export default function Home() {
     {
       key: "records",
       label: "기록",
-      alert: pendingCount > 0 || needsModel,
+      alert: pendingCount > 0 || needsServer || needsAi || newResult !== null,
       body: (
         <>
+          {newResult ? (
+            <>
+              <BriefRow
+                icon="checkmark-circle-outline"
+                label="새 전사 결과가 나왔습니다."
+                value={`${newResult.sentences}문장 · 보기`}
+                valueColor={t.accent}
+                onPress={() =>
+                  router.push(`/transcript/${encodeURIComponent(newResult.shiftId)}`)
+                }
+              />
+              <DashedDivider />
+            </>
+          ) : null}
           <BriefRow
             icon="document-text-outline"
             label="전사할 기록"
-            value={pendingCount > 0 ? `${pendingCount}건 · 전사하기` : "없음"}
+            value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
             valueColor={pendingCount > 0 ? t.warn : undefined}
-            onPress={() => {
-              // 미전사 기록이 있는 근무로 바로 간다 — 거기 '전사하기' 버튼이 있다.
-              const target = pendingShiftId ?? todayShift?.id ?? recent[0]?.id;
-              if (target) router.push(`/shift/${encodeURIComponent(target)}`);
-              else router.push("/duty");
-            }}
+            // 미전사 기록이 있는 근무로 바로 간다 — 거기 '전사하기' 버튼이 있다.
+            // 기록이 없으면 눌리지 않는다: 예전엔 듀티표로 보내서, 전사하러
+            // 들어온 사람이 영문 모를 화면에 떨어졌다.
+            onPress={
+              pendingShiftId
+                ? () => router.push(`/shift/${encodeURIComponent(pendingShiftId)}`)
+                : undefined
+            }
           />
-          {needsModel ? (
+          {runner ? (
+            <View style={{ gap: space.xs, paddingBottom: space.sm }}>
+              <BriefRow
+                icon="sync-outline"
+                label={`텍스트 변환 중 (${runner.fileIndex}/${runner.fileCount})`}
+                value={`${runner.percent}%`}
+                valueColor={t.accent}
+                onPress={
+                  runner.shiftId
+                    ? () => router.push(`/shift/${encodeURIComponent(runner.shiftId!)}`)
+                    : undefined
+                }
+              />
+              <GaugeBar ratio={runner.percent / 100} color={t.accent} />
+              {runner.note ? <Small>{runner.note}</Small> : null}
+            </View>
+          ) : null}
+          {/* 건수 뒤에 실제 녹음 파일이 보인다 — 무엇이 전사를 기다리는지 세지 않아도 안다. */}
+          {pendingRows.slice(0, 3).map((r) => {
+            const d = new Date(r.started_at);
+            const mins = Math.round(r.duration_sec / 60);
+            return (
+              <BriefRow
+                key={r.id}
+                icon="mic-outline"
+                label={r.label ?? `${d.getMonth() + 1}월 ${d.getDate()}일 ${formatClock(r.started_at)} 녹음`}
+                value={mins > 0 ? `${mins}분 · 전사` : "전사"}
+                valueColor={t.accent}
+                onPress={
+                  r.shift_id
+                    ? () => router.push(`/shift/${encodeURIComponent(r.shift_id!)}`)
+                    : undefined
+                }
+              />
+            );
+          })}
+          {pendingCount > 3 ? (
+            <Small>외 {pendingCount - 3}건 — 근무 화면에서 파일별로 보입니다.</Small>
+          ) : null}
+          {needsServer ? (
             <>
               <DashedDivider />
               <BriefRow
-                icon="cloud-download-outline"
-                label="전사 모델을 설치해 주십시오."
-                value="받기"
+                icon="cloud-outline"
+                label="전사 방법을 설정해 주십시오."
+                value="연결"
                 valueColor={t.warn}
                 onPress={() => router.push("/models")}
+              />
+            </>
+          ) : null}
+          {needsAi ? (
+            <>
+              <DashedDivider />
+              <BriefRow
+                icon="sparkles-outline"
+                label="AI 필수 설정이 아직 없습니다."
+                value="설정"
+                valueColor={t.warn}
+                onPress={() => router.push("/settings")}
               />
             </>
           ) : null}
@@ -515,13 +633,7 @@ export default function Home() {
             icon="folder-open-outline"
             label="다른 앱에서 음성 가져오기"
             value="선택"
-            onPress={async () => {
-              const r = await importAudioFile();
-              if (r.ok && r.shiftId) {
-                await load();
-                router.push(`/shift/${encodeURIComponent(r.shiftId)}`);
-              }
-            }}
+            onPress={() => router.push("/import-audio")}
           />
         </>
       ),
@@ -578,7 +690,7 @@ export default function Home() {
       rows={[
         { label: "이번 주 근무", value: `${stats.onSiteHours}시간` },
         {
-          label: "근무표 밖 · 주 40시간 초과",
+          label: "인계 체류 · 주 40시간 초과",
           value: `${stats.offTheBooksHours} · ${stats.overtimeHours}시간`,
           tone: stats.offTheBooksHours + stats.overtimeHours > 0 ? "alert" : "default",
         },
@@ -774,7 +886,7 @@ export default function Home() {
         <View style={{ flexDirection: "row", gap: space.sm }}>
           {[
             { label: "병동 사전", to: "/ward-dict" },
-            { label: "전사 모델", to: "/models" },
+            { label: "전사 설정", to: "/models" },
           ].map((c) => (
             <Pressable
               key={c.label}

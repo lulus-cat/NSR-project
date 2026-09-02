@@ -14,7 +14,7 @@
  * 그때 남은 파일은 '전사할 기록'으로 되돌아온다.
  */
 
-import { setRecordingState, type RecordingRow } from "../db";
+import { setRecordingState, setSetting, type RecordingRow } from "../db";
 import { processRecording, resolveProvider } from "./asr";
 import { logDebug } from "./debug";
 import { beginWork, notifyDone, notifyProgress } from "./progress-notify";
@@ -25,8 +25,14 @@ export interface RunnerState {
   /** 지금 몇 번째 파일인가 (1부터). */
   fileIndex: number;
   fileCount: number;
+  /** 지금 돌리는 기록의 id — 화면이 파일별 배지를 이걸로 맞춘다. */
+  fileId: string | null;
+  /** 지금 파일 기준 0~100. */
+  filePercent: number;
   /** 전체 작업 기준 0~100. */
   percent: number;
+  /** %가 안 움직이는 이유(서버가 모델 준비 중 등). 움직이기 시작하면 지워진다. */
+  note: string | null;
   /** 끝난 뒤 한 번 보여줄 오류. 새 작업을 시작하면 지워진다. */
   error: string | null;
   /** 마지막 완료 작업의 문장 수 합계. 화면 새로고침 신호로도 쓴다. */
@@ -38,7 +44,10 @@ let state: RunnerState = {
   shiftId: null,
   fileIndex: 0,
   fileCount: 0,
+  fileId: null,
+  filePercent: 0,
   percent: 0,
+  note: null,
   error: null,
   completedAt: null,
 };
@@ -75,42 +84,56 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
     shiftId,
     fileIndex: 1,
     fileCount: files.length,
+    fileId: files[0]?.id ?? null,
+    filePercent: 0,
     percent: 0,
+    note: null,
     error: null,
   });
 
   void (async () => {
     // 포그라운드 서비스를 잡는다 — 다른 앱으로 넘어가도 얼리지 않게.
     // notifyDone(성공·실패 공통)이 endWork 라서 여기와 짝이 맞는다.
-    await beginWork("전사 준비 중", "화면을 닫아도 계속됩니다");
+    await beginWork("뚝딱뚝딱 변환 준비 중", "폰 화면 꺼도 뒤에서 몰래 열일함");
     // 캐시 정리 등으로 파일이 사라진 기록은 건너뛰고 마지막에 알린다.
     let missing = 0;
     try {
       const { File } = await import("expo-file-system");
       const provider = await resolveProvider();
+      let sentenceTotal = 0;
       for (let i = 0; i < files.length; i++) {
         const rec = files[i];
-        emit({ fileIndex: i + 1, percent: Math.round((i / files.length) * 100) });
+        emit({
+          fileIndex: i + 1,
+          fileId: rec.id,
+          filePercent: 0,
+          percent: Math.round((i / files.length) * 100),
+        });
         if (!rec.file_uri || !new File(rec.file_uri).exists) {
           missing += 1;
-          await setRecordingState(rec.id, "discarded", "파일이 기기 저장 공간 정리로 사라짐");
+          await setRecordingState(rec.id, "discarded", "엥 폰 용량 없다고 파일 증발함 휑~");
           continue;
         }
         await notifyProgress(
           NOTIF_ID,
           state.percent,
-          `전사 중 ${state.percent}%`,
-          `파일 ${i + 1}/${files.length} · 화면을 닫아도 계속됩니다`,
+          `영차영차 변환 중 ${state.percent}%`,
+          `파일 ${i + 1}/${files.length}개 뽀개는 중 · 화면 꺼도 알아서 열일함`,
         );
-        await processRecording(rec, provider, (filePct) => {
+        sentenceTotal += await processRecording(rec, provider, (filePct, note) => {
           const overall = Math.round(((i + filePct / 100) / files.length) * 100);
-          if (overall !== state.percent) {
-            emit({ percent: overall });
+          const mine = Math.round(Math.max(0, Math.min(100, filePct)));
+          if (
+            overall !== state.percent ||
+            mine !== state.filePercent ||
+            (note ?? null) !== state.note
+          ) {
+            emit({ percent: overall, filePercent: mine, note: note ?? null });
             void notifyProgress(
               NOTIF_ID,
               overall,
-              `전사 중 ${overall}%`,
-              `파일 ${i + 1}/${files.length} · 화면을 닫아도 계속됩니다`,
+              `전체 변환 중 ${overall}%`,
+              note ?? `파일 ${i + 1}/${files.length}개 뽀개는 중 · 화면 꺼도 알아서 열일함`,
             );
           }
         });
@@ -118,20 +141,30 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
       const doneCount = files.length - missing;
       const summary =
         missing > 0
-          ? `기록 ${doneCount}건 전사 완료 · ${missing}건은 파일이 사라져 건너뜀`
-          : `기록 ${doneCount}건을 전사했습니다.`;
+          ? `녹음 ${doneCount}건 글자로 싹 뽑았어요 · ${missing}건은 파일 증발해서 패스`
+          : `눈물 젖은 녹음 ${doneCount}건을 글로 쏵 뽑아냈습니다!`;
+      // 앱 안 알림 — 홈의 기록 폴더가 이 값을 읽어 '새 전사 결과'를 띄운다.
+      // 전사 결과 화면을 열면 seen 이 된다.
+      await setSetting("transcribe.lastResult", {
+        shiftId,
+        sentences: sentenceTotal,
+        at: Date.now(),
+        seen: false,
+      });
       emit({
         running: false,
         percent: 100,
-        error: missing > 0 ? `${missing}건은 파일이 저장 공간 정리로 사라져 건너뛰었습니다.` : null,
+        fileId: null,
+        note: null,
+        error: missing > 0 ? `엥 ${missing}건은 폰 용량 정리하다 파일이 증발해서 걍 쿨하게 패스했어요` : null,
         completedAt: Date.now(),
       });
-      await notifyDone(NOTIF_ID, "전사 완료", summary);
+      await notifyDone(NOTIF_ID, "글자 변환 피니시!", summary);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "전사에 실패했습니다.";
-      void logDebug(`전사 실패: ${msg}`);
-      emit({ running: false, error: msg, completedAt: Date.now() });
-      await notifyDone(NOTIF_ID, "전사 중단", msg);
+      const msg = e instanceof Error ? e.message : "앗 텍스트 변환 엎어졌어요 대참사 ㅠㅠ";
+      void logDebug(`텍스트 변환 폭망 ㅠㅠ: ${msg}`);
+      emit({ running: false, fileId: null, note: null, error: msg, completedAt: Date.now() });
+      await notifyDone(NOTIF_ID, "가다 자빠짐 (변환 중단)", msg);
     }
   })();
 

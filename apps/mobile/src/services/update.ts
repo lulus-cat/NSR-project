@@ -52,7 +52,7 @@ export interface UpdateCheck extends UpdateDecision {
 const EMPTY: UpdateCheck = {
   show: false,
   reason: "none",
-  message: "확인하지 못했습니다.",
+  message: "앗 확인 못 했어요 ㅠㅠ 눈물",
   release: null,
   highlights: [],
   failed: true,
@@ -68,12 +68,12 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
 
   if (!force) {
     const auto = await getSetting<boolean>(UPDATE_KEYS.autoCheck, true);
-    if (!auto) return { ...EMPTY, message: "자동 확인이 꺼져 있습니다.", failed: false };
+    if (!auto) return { ...EMPTY, message: "알아서 확인하는 거 꺼놨어용", failed: false };
 
     const lastAt = await getSetting<number>(UPDATE_KEYS.lastCheckedAt, 0);
     // 토큰 없이 부르면 한 시간에 60번까지다. 자주 부르면 정작 필요할 때 막힌다.
     if (!isCheckDue(lastAt, now)) {
-      return { ...EMPTY, message: "최근에 확인했습니다.", failed: false };
+      return { ...EMPTY, message: "방금 찔러보고 왔어용", failed: false };
     }
   }
 
@@ -92,8 +92,8 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
         ...EMPTY,
         message:
           response.status === 404
-            ? "저장소에 접근하지 못했습니다 (404). 저장소가 비공개 상태면 새 버전 확인과 모델 받기가 동작하지 않습니다."
-            : `확인하지 못했습니다 (${response.status}).`,
+            ? "창고문이 안 열려요 (404 쾅!). 창고(저장소) 닫혀 있으면 업데이트도 안 되고 모델도 못 훔쳐 와요 ㅠㅠ"
+            : `앗 확인 실패 ㅠㅠ (${response.status})`,
       };
     }
     release = pickLatestRelease(await response.json());
@@ -118,7 +118,7 @@ export async function checkForUpdate(force = false): Promise<UpdateCheck> {
   // 숫자 없이 '없습니다'만 보이면 버그로 읽힌다.
   const message =
     force && !decision.show && release
-      ? `현재 ${currentVersion() ?? "?"} · 최신 ${release.version} — 업데이트가 없습니다.`
+      ? `내 폰은 ${currentVersion() ?? "?"} · 젤 신상은 ${release.version} — 신상 없뜸! 퇴근!`
       : decision.message;
 
   return {
@@ -176,7 +176,7 @@ export async function downloadAndInstall(
 ): Promise<{ ok: boolean; error?: string }> {
   if (Platform.OS !== "android" || !release.apkUrl) {
     const opened = await openDownload(release);
-    return opened ? { ok: true } : { ok: false, error: "다운로드 페이지를 열 수 없습니다." };
+    return opened ? { ok: true } : { ok: false, error: "앗 다운로드 페이지가 안 열려요 폭망 ㅠㅠ" };
   }
   const notifId = "nsr-app-update";
   // 받는 동안 포그라운드 서비스를 잡는다(beginWork) — 다른 앱을 봐도 안 끊기게.
@@ -193,7 +193,7 @@ export async function downloadAndInstall(
   try {
     const { File, Paths } = await import("expo-file-system");
     progress = await import("./progress-notify");
-    await progress.beginWork("새 판 받는 중", `NSR ${release.version} · 화면을 닫아도 계속됩니다`);
+    await progress.beginWork("영차영차 신상 받는 중", `삐까뻔쩍 NSR ${release.version} · 화면 꺼도 알아서 받아옴`);
 
     const target = new File(Paths.cache, `nsr-${release.version}.apk`);
     try {
@@ -209,16 +209,16 @@ export async function downloadAndInstall(
         void progress?.notifyProgress(
           notifId,
           pct,
-          `새 판 받는 중 ${pct}%`,
-          `NSR ${release.version} · 받은 뒤 설치 확인이 뜹니다`,
+          `신상 받는 중 으쌰 ${pct}%`,
+          `삐까뻔쩍 NSR ${release.version} · 다 받으면 설치할 거냐고 찌를게용`,
         );
       },
     });
     if (!target.exists || target.size === 0) {
-      await finish("새 판 받기 실패", "받은 파일이 온전하지 않습니다.");
-      return { ok: false, error: "받은 파일이 온전하지 않습니다. 다시 시도해 주십시오." };
+      await finish("신상 받기 폭망", "받아온 파일이 썩었어요 (불량품)");
+      return { ok: false, error: "받아온 파일이 썩었어요 ㅠㅠ 심호흡하고 다시 시도!" };
     }
-    await finish("새 판 받기 완료", "설치 화면을 엽니다.");
+    await finish("신상 다운로드 겟또", "두근두근 설치 창 열어드림");
 
     const IntentLauncher = await import("expo-intent-launcher");
     await IntentLauncher.startActivityAsync("android.intent.action.VIEW", {
@@ -233,6 +233,6 @@ export async function downloadAndInstall(
     // 인앱 경로가 무엇에든 막히면 브라우저로라도 받게 한다.
     const fallback = await openDownload(release);
     if (fallback) return { ok: true };
-    return { ok: false, error: e instanceof Error ? e.message : "다운로드에 실패했습니다." };
+    return { ok: false, error: e instanceof Error ? e.message : "앗 다운로드 엎어짐 ㅠㅠ" };
   }
 }

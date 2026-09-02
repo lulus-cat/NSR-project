@@ -1,0 +1,173 @@
+{
+  "$comment": "NSR 분석 파이프라인 출력 스키마 정본. 세 경로(Claude/GPT/하이브리드)가 공유한다.",
+  "stage3a": {
+    "type": "object",
+    "required": ["교정목록", "판독불가", "교육포인트", "근무요약", "근무환경분석", "용어사전"],
+    "properties": {
+      "교정목록": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "타임스탬프", "원문인용", "교정전", "교정후", "판단근거", "확신도"],
+          "properties": {
+            "id": { "type": "string", "$comment": "C001 형식" },
+            "타임스탬프": { "type": "string", "$comment": "HH:MM:SS" },
+            "원문인용": { "type": "string", "$comment": "전사본에서 글자 그대로 복사. 3v 가 문자열 대조한다." },
+            "교정전": { "type": "string" },
+            "교정후": { "type": "string" },
+            "판단근거": { "type": "string" },
+            "확신도": { "enum": ["상", "중", "하"] }
+          }
+        }
+      },
+      "판독불가": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "타임스탬프", "들린대로", "앞뒤맥락", "추정범주"],
+          "properties": {
+            "id": { "type": "string", "$comment": "U001 형식" },
+            "타임스탬프": { "type": "string" },
+            "들린대로": { "type": "string" },
+            "앞뒤맥락": { "type": "string" },
+            "추정범주": { "enum": ["약품", "검사", "처치", "불명"] }
+          }
+        }
+      },
+      "교육포인트": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["id", "내용", "근거_교정ID", "중요도"],
+          "properties": {
+            "id": { "type": "string", "$comment": "E001 형식" },
+            "내용": { "type": "string" },
+            "근거_교정ID": { "type": "array", "items": { "type": "string" } },
+            "중요도": { "enum": ["상", "중", "하"] }
+          }
+        }
+      },
+      "근무요약": { "type": "string", "$comment": "시간순 사실 정리" },
+      "근무환경분석": { "type": "string" },
+      "용어사전": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["용어", "설명", "분류"],
+          "properties": {
+            "용어": { "type": "string" },
+            "설명": { "type": "string" },
+            "분류": { "enum": ["약품", "검사", "처치", "기타"] }
+          }
+        }
+      }
+    }
+  },
+  "stage3v": {
+    "$comment": "하이브리드 경로 전용. 기계 검증(문자열 대조) 통과 항목만 LLM 판정을 받는다.",
+    "type": "object",
+    "required": ["검증결과"],
+    "properties": {
+      "검증결과": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["교정_id", "판정", "사유", "인용일치"],
+          "properties": {
+            "교정_id": { "type": "string" },
+            "판정": { "enum": ["유지", "강등", "기각"] },
+            "사유": { "type": "string" },
+            "인용일치": { "type": "boolean" }
+          }
+        }
+      }
+    }
+  },
+  "stage3b": {
+    "type": "object",
+    "required": ["재해석", "지식보강", "교육포인트_보강"],
+    "properties": {
+      "재해석": {
+        "$comment": "교정목록에 병합 금지. 확인필요는 항상 true.",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["판독불가_id", "추정", "확신도", "근거", "출처", "확인필요"],
+          "properties": {
+            "판독불가_id": { "type": "string" },
+            "추정": { "type": "string" },
+            "확신도": { "enum": ["상", "중", "하"] },
+            "근거": { "type": "string" },
+            "출처": { "type": "array", "items": { "type": "string" } },
+            "확인필요": { "const": true }
+          }
+        }
+      },
+      "지식보강": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["대상_id", "내용", "출처"],
+          "properties": {
+            "대상_id": { "type": "string" },
+            "내용": { "type": "string" },
+            "출처": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      },
+      "교육포인트_보강": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["교육포인트_id", "참고자료", "출처"],
+          "properties": {
+            "교육포인트_id": { "type": "string" },
+            "참고자료": { "type": "string" },
+            "출처": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  },
+  "stage4": {
+    "type": "object",
+    "required": ["보고서", "카드", "확인목록"],
+    "properties": {
+      "보고서": {
+        "type": "object",
+        "required": ["사실정리", "해석과교육", "근무환경분석"],
+        "properties": {
+          "사실정리": { "type": "string" },
+          "해석과교육": { "type": "string" },
+          "근무환경분석": { "type": "string" }
+        }
+      },
+      "카드": {
+        "$comment": "하이브리드에서는 3v 유지 판정 교정만 카드가 된다. 확인필요 항목 금지.",
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["앞면", "뒷면"],
+          "properties": {
+            "앞면": { "type": "string", "$comment": "자연스러운 한국어 의문문" },
+            "뒷면": { "type": "string" },
+            "출처ID": { "type": "string" }
+          }
+        }
+      },
+      "확인목록": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "required": ["질문"],
+          "properties": {
+            "질문": { "type": "string" },
+            "후보": { "type": "string" },
+            "근거ID": { "type": "string" },
+            "출처": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      }
+    }
+  }
+}

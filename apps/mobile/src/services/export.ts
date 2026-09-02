@@ -36,15 +36,15 @@ export const PRIVACY_KEYS = {
 
 /** 화면에서 켜고 끌 수 있는 항목들. 순서가 곧 화면 순서다. */
 export const MASKABLE_KINDS: { kind: PiiKind; label: string; hint: string }[] = [
-  { kind: "name", label: PII_LABELS.name, hint: "호칭이 포함된 성명 (\"김○○ 님\", \"○○ 선생님\")" },
-  { kind: "phone", label: PII_LABELS.phone, hint: "휴대전화 및 지역번호" },
-  { kind: "rrn", label: PII_LABELS.rrn, hint: "주민등록번호" },
-  { kind: "mrn", label: PII_LABELS.mrn, hint: "등록번호·차트번호" },
+  { kind: "name", label: PII_LABELS.name, hint: "환자/슨생님 이름 (\"김○○ 님\", \"○○ 선생님\")" },
+  { kind: "phone", label: PII_LABELS.phone, hint: "폰 번호랑 지역 번호" },
+  { kind: "rrn", label: PII_LABELS.rrn, hint: "주민번호 (제일 위험)" },
+  { kind: "mrn", label: PII_LABELS.mrn, hint: "환자 번호/차트 번호" },
   { kind: "dob", label: PII_LABELS.dob, hint: "생년월일" },
   {
     kind: "location",
     label: PII_LABELS.location,
-    hint: "병실·침상 번호 (기본 비활성화 — 기록 필요 시 설정)",
+    hint: "병실·침대 번호 (평소엔 냅두는데, 원하면 셋팅에서 가려드림)",
   },
 ];
 
@@ -110,7 +110,7 @@ export async function redactForExport(
               /[을를] 가렸습니다\.$/,
               "이 그대로 포함됩니다.",
             )}`
-          : "마스킹이 비활성화되어 있습니다.",
+          : "모자이크 기능 꺼져 있음 (쌩얼 노출 주의)",
       warnings,
     };
   }
@@ -165,6 +165,17 @@ function safeFileName(name: string): string {
   );
 }
 
+/** 내보낼 수 있는 파일 꼴. 확장자·MIME·(iOS)UTI 를 한 자리에서 정한다. */
+export type ExportFormat = "md" | "txt" | "csv" | "json";
+
+const FORMATS: Record<ExportFormat, { mime: string; uti: string }> = {
+  md: { mime: "text/markdown", uti: "net.daringfireball.markdown" },
+  txt: { mime: "text/plain", uti: "public.plain-text" },
+  // 엑셀·앙키가 바로 읽는 꼴. UTF-8 이라 한글이 깨지지 않게 BOM 을 붙인다.
+  csv: { mime: "text/csv", uti: "public.comma-separated-values-text" },
+  json: { mime: "application/json", uti: "public.json" },
+};
+
 /**
  * 텍스트를 파일로 만들어 공유 시트를 연다.
  *
@@ -175,26 +186,31 @@ export async function shareText(input: {
   text: string;
   fileName: string;
   title: string;
+  /** 안 주면 마크다운. 기존 호출부의 뜻을 그대로 지킨다. */
+  format?: ExportFormat;
 }): Promise<{ shared: boolean; message?: string }> {
   const Sharing = await import("expo-sharing");
   const dir = new Directory(Paths.cache, EXPORT_DIR);
   if (!dir.exists) dir.create({ intermediates: true, idempotent: true });
 
-  const file = new File(dir, `${safeFileName(input.fileName)}.md`);
+  const format = input.format ?? "md";
+  const spec = FORMATS[format];
+  const file = new File(dir, `${safeFileName(input.fileName)}.${format}`);
   if (file.exists) file.delete();
   file.create();
-  file.write(input.text);
+  // 엑셀이 CSV 를 열 때 UTF-8 임을 알아채도록 BOM 을 앞에 둔다. 없으면 한글이 깨진다.
+  file.write(format === "csv" ? `\uFEFF${input.text}` : input.text);
 
   if (!(await Sharing.isAvailableAsync())) {
     return {
       shared: false,
-      message: `이 기기에서는 공유 기능을 실행할 수 없습니다. 파일 위치: ${file.uri}`,
+      message: `앗 이 폰에선 공유 창을 못 띄워요 ㅠㅠ 파일 여기 짱박혀 있음: ${file.uri}`,
     };
   }
   await Sharing.shareAsync(file.uri, {
-    mimeType: "text/markdown",
+    mimeType: spec.mime,
     dialogTitle: input.title,
-    UTI: "net.daringfireball.markdown",
+    UTI: spec.uti,
   });
   return { shared: true };
 }
