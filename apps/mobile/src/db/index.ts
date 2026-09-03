@@ -356,9 +356,17 @@ interface SegmentRow {
   asr_confidence: number | null;
 }
 
-function toSegment(row: SegmentRow): TranscriptSegment {
+/**
+ * 화면이 쓰는 세그먼트 — core 의 TranscriptSegment 에 **어느 기록(파일)의 문장인지**를 얹는다.
+ * 합친 전사본은 여러 파일의 문장이 한 목록에 섞이므로, 재생할 파일을 문장 id 의 생김새로
+ * 추측하지 않고 DB 의 recording_id 로 정확히 안다.
+ */
+export type AppSegment = TranscriptSegment & { recordingId: string };
+
+function toSegment(row: SegmentRow): AppSegment {
   return {
     id: row.id,
+    recordingId: row.recording_id,
     startSec: row.start_sec,
     endSec: row.end_sec,
     rawText: row.raw_text,
@@ -465,7 +473,7 @@ export async function segmentCountsByRecording(shiftId: string): Promise<Map<str
 export async function listSegments(
   shiftId: string,
   opts: { recordingId?: string; mergedOnly?: boolean } = {},
-): Promise<TranscriptSegment[]> {
+): Promise<AppSegment[]> {
   const db = await getDb();
   const rows = opts.recordingId
     ? await db.getAllAsync<SegmentRow>(

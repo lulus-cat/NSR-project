@@ -536,4 +536,33 @@ export const CLINICAL_TERMS: LexiconEntry[] = [
     pitfall: "발적이 눌러도 사라지지 않으면 이미 1단계다. 입원 시 전신 피부 상태를 기록해야 원내 발생 여부를 가릴 수 있다.",
     sources: ["khna-guideline"],
   },
+
+  // ── 2026-09-02 실제 전사본 검토에서 사용자가 확정한 것 ──────────────────
+  {
+    id: "crossmatch",
+    ko: "크로스매칭",
+    en: "cross-matching",
+    aliases: ["크로스매치", "교차시험", "크로스"],
+    category: "lab",
+    definition: "수혈 전에 환자 혈액과 혈액제제를 맞춰 보는 교차시험. 혈액 번호가 나오면 그 번호로 제제를 받아 온다.",
+    pitfall: "번호와 환자를 두 사람이 맞춘다. 크로스매칭 검체와 수혈 동의서가 먼저다.",
+  },
+  {
+    id: "removal",
+    ko: "리무벌",
+    en: "removal",
+    aliases: ["리무버", "제거", "뽑기"],
+    category: "procedure",
+    definition: "라인·튜브·배액관을 빼는 것. 'C-line 리무벌' 처럼 기구 이름 뒤에 붙는다.",
+    pitfall: "중심정맥관은 뺄 때 팁 컬처를 낼지 오더를 확인한다. 뺀 뒤 압박과 출혈 확인.",
+  },
+  {
+    id: "tip-culture",
+    ko: "팁 컬처",
+    en: "catheter tip culture",
+    aliases: ["팁컬처", "팁 배양", "카테터 팁 배양"],
+    category: "lab",
+    definition: "카테터를 뺀 뒤 끝(tip)을 잘라 배양 검사에 내는 것. 감염이 의심될 때 리무벌과 함께 한다.",
+    pitfall: "'팁 컬처 없이 리무벌' 은 검체를 안 냈다는 뜻이다. 오더에 있는데 빠뜨리면 다시 못 낸다.",
+  },
 ];

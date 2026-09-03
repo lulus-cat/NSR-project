@@ -223,4 +223,55 @@ export const MEDICATION_TERMS: LexiconEntry[] = [
     pitfall: "DUR 경고가 뜨면 그냥 넘기지 말고 사유를 확인한다. 팝업을 습관적으로 닫는 것이 위험 신호다.",
     sources: ["mfds-drug"],
   },
+
+  // ── 2026-09-02 실제 전사본 검토에서 사용자가 확정한 것 ──────────────────
+  // 병동에서는 성분명보다 상표명으로 부른다. 상표명을 별칭으로 두어야 인계가 읽힌다.
+  {
+    id: "norepinephrine",
+    ko: "노르에피네프린",
+    en: "norepinephrine",
+    aliases: ["노르에피", "노르핀", "큐프린", "노르에피네프린 주입"],
+    category: "medication",
+    definition:
+      "혈압을 올리는 승압제. 지속 주입하며 혈압 목표(예: SBP 90)에 맞춰 속도를 올리고 내린다. '큐프린' 은 이 병동에서 쓰는 상표명.",
+    pitfall:
+      "말초로 새면 조직 괴사가 난다 — 가능하면 중심정맥으로. 속도를 바꿀 때마다 혈압을 다시 재고, '스톱' 과 '유지' 의 기준 혈압을 인계에서 확인한다.",
+  },
+  {
+    id: "pip-tazo",
+    ko: "타조피신",
+    en: "piperacillin/tazobactam",
+    aliases: ["타조신", "타조페란", "피페라실린타조박탐", "타조"],
+    category: "medication",
+    definition: "광범위 항생제(피페라실린/타조박탐). '타조피신' 은 이 병동에서 쓰는 상표명. 보통 하루 3~4회(TID·QID) 정맥 투여.",
+    pitfall: "'타조' 만 말해도 이 약이다. 신기능에 따라 용량이 조절되니 감량 오더가 있는지 본다.",
+  },
+  {
+    id: "epoetin",
+    ko: "에포카인",
+    en: "erythropoietin (EPO)",
+    aliases: ["에포", "이피오", "조혈제", "에리스로포이에틴"],
+    category: "medication",
+    definition: "빈혈 치료용 조혈 호르몬 주사. '에포카인' 은 상표명. 투석 환자에게 흔하다.",
+    pitfall: "정규 오더가 아니라 별도 스케줄(하루 1회 / 주 1회)로 들어오는 경우가 있어 빠뜨리기 쉽다.",
+  },
+  {
+    id: "fospenem",
+    ko: "포스페넴",
+    en: "fospenem",
+    aliases: ["포스페넴 주"],
+    category: "medication",
+    definition: "주사 항생제 상표명 (2026-09-02 사용자 확정). 성분·용법은 병동 약제 정보로 확인한다.",
+    pitfall: "주사제를 미리 만들어 두는 약이라 연장 오더 여부를 인계에서 같이 확인한다.",
+  },
+  {
+    id: "di-suppository",
+    ko: "DI(좌변약)",
+    en: "DI (laxative suppository)",
+    aliases: ["다이아이", "디아이", "디아이 좌약"],
+    category: "medication",
+    definition:
+      "이 병동에서 좌변약(변비 좌약)을 부르는 말. 글리세린 관장과 나란히 쓴다 (2026-09-02 사용자 확정).",
+    pitfall: "DI 는 다른 곳에서 약물중독(drug intoxication)의 약어로도 쓰인다. 여기서는 좌약이다 — 문맥이 배변이면 이쪽.",
+  },
 ];

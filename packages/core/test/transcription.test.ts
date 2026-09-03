@@ -290,3 +290,42 @@ describe("실제 전사본(7,559문장)에서 앱이 잘못 고친 흔한 말들
     });
   }
 });
+
+describe("2026-09-02 세션에서 사용자가 확정한 것 (상표명·처치 용어)", () => {
+  it("코스피칭 → 크로스매칭 (수혈 교차시험)", () => {
+    const r = correctTranscript("번호 나와서 코스피칭 가져가셨고요.");
+    expect(r.text).toContain("크로스매칭");
+    expect(r.termIds).toContain("crossmatch");
+  });
+  it("에프카인 → 에포카인 (EPO 상표명)", () => {
+    expect(correctTranscript("에프카인은 하루씩 주잖아요.").text).toContain("에포카인");
+  });
+  it("포스펜 → 포스페넴 (상표명)", () => {
+    expect(correctTranscript("포스펜에 주사제는 만들어야 된다고").text).toContain("포스페넴");
+  });
+  it("타조 피신(띄어쓰기만 다름)은 주석만, 사조 피신 → 타조피신 (상표명)", () => {
+    const spaced = correctTranscript("타조 피신이 지금 원래 하나씩 들어갔는데");
+    expect(spaced.termIds).toContain("pip-tazo");
+    expect(correctTranscript("사조 피신 들어가는 거").text).toContain("타조피신");
+  });
+  it("티콜처 없이 리모컬 → 팁 컬처 없이 리무벌 (C-line removal)", () => {
+    const r = correctTranscript("체납기 리모컬 해 주라고 그래서 티콜처 없이 리모컬을 했고요.");
+    expect(r.text).toContain("팁 컬처");
+    expect(r.text).toContain("리무벌");
+    expect(r.termIds).toContain("tip-culture");
+    expect(r.termIds).toContain("removal");
+  });
+  it("큐프린은 노르에피네프린 상표명 — 고치지 않고 주석만", () => {
+    const r = correctTranscript("큐프린 유지 중에는 90으로 모실 거거든요.");
+    expect(r.text).toContain("큐프린");
+    expect(r.termIds).toContain("norepinephrine");
+  });
+  it("다이아이(DI) 는 이 병동의 좌변약 — 고치지 않고 주석만", () => {
+    const r = correctTranscript("그러면 다이아이 좀 해주고 올게요.");
+    expect(r.text).toContain("다이아이");
+    expect(r.termIds).toContain("di-suppository");
+  });
+  it("오토 스타트는 그대로 (STAT 오인식이 아니다)", () => {
+    expect(correctTranscript("오토 스타트를 온으로 바꾸면 돼요.").text).toBe("오토 스타트를 온으로 바꾸면 돼요.");
+  });
+});

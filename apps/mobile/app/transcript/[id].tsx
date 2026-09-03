@@ -76,9 +76,13 @@ function formatTime(sec: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-/** 세그먼트 id 는 `${recordingId}#s{n}.{m}` 꼴이다 — 앞부분이 재생할 기록이다. */
-function recordingIdOf(segment: TranscriptSegment): string {
-  return segment.id.split("#s")[0];
+/**
+ * 이 문장이 어느 기록(파일)의 것인가. DB 가 준 recording_id 를 쓴다.
+ * 예전 판은 세그먼트 id(`${recordingId}#s{n}.{m}`)의 앞부분을 잘라 썼는데, 합친 전사본에서
+ * 그 추측이 빗나가면 재생할 파일을 못 찾았다. id 파싱은 recording_id 가 없을 때의 예비다.
+ */
+function recordingIdOf(segment: TranscriptSegment & { recordingId?: string }): string {
+  return segment.recordingId ?? segment.id.split("#s")[0];
 }
 
 /** 화자 분리 결과의 라벨(SPEAKER_00 등)을 사람이 부를 이름으로. */
@@ -324,6 +328,7 @@ export default function TranscriptView() {
   // ── 재생 ──────────────────────────────────────────────
   const playerRef = useRef<AudioPlayer | null>(null);
   const pendingSeekRef = useRef<number | null>(null);
+  const pendingSeekTriesRef = useRef(0);
   const [playback, setPlayback] = useState<
     { recordingId: string; positionSec: number; durationSec: number; playing: boolean } | null
   >(null);
@@ -341,10 +346,18 @@ export default function TranscriptView() {
       const p = playerRef.current;
       if (!p) return;
       try {
-        if (pendingSeekRef.current !== null && p.duration > 0) {
+        // 파일이 실릴 때까지 기다렸다가 원하는 지점으로 옮긴다. 소스를 갈아 끼운 직후에는
+        // isLoaded 가 잠깐 거짓이고 duration 이 이전 파일 값일 수 있어 둘 다 본다.
+        // 한 번 옮겨서 안 맞으면 몇 틱 더 시도한다 (실기기에서 첫 seek 가 먹지 않는 일이 있다).
+        if (pendingSeekRef.current !== null && p.isLoaded && p.duration > 0) {
           const target = pendingSeekRef.current;
-          pendingSeekRef.current = null;
-          if (Math.abs(p.currentTime - target) > 2) void p.seekTo(target);
+          if (Math.abs(p.currentTime - target) > 2) {
+            void p.seekTo(target);
+            pendingSeekTriesRef.current += 1;
+            if (pendingSeekTriesRef.current >= 6) pendingSeekRef.current = null;
+          } else {
+            pendingSeekRef.current = null;
+          }
         }
         setPlayback((prev) => {
           if (!prev) return prev;
@@ -394,21 +407,17 @@ export default function TranscriptView() {
   const playRecording = useCallback(
     (recId: string, atSec: number) => {
       const rec = recordings.find((r) => r.id === recId);
-      if (!rec?.file_uri) {
-        setNotice("어라? 녹음 파일 원본이 폰에서 증발했어요! 재생 불가");
+      if (!rec) {
+        setNotice("이 문장이 속한 파일이 이 화면의 목록에 없어요. 근무 기록에서 파일을 확인해 주세요.");
+        return;
+      }
+      if (!rec.file_uri) {
+        setNotice(`녹음 파일(${rec.label ?? "원본"})이 폰에서 증발했어요! 재생 불가`);
         return;
       }
       try {
-        if (playerRef.current && playback?.recordingId === recId) {
-          pendingSeekRef.current = null;
-          void playerRef.current.seekTo(atSec);
-          playerRef.current.play();
-        } else {
-          try {
-            playerRef.current?.remove();
-          } catch {
-            // 이전 플레이어 해제 실패는 재생을 막지 않는다.
-          }
+        const sameFile = playerRef.current !== null && playback?.recordingId === recId;
+        if (!playerRef.current) {
           const player = createAudioPlayer({ uri: rec.file_uri });
           playerRef.current = player;
           try {
@@ -416,15 +425,25 @@ export default function TranscriptView() {
           } catch {
             // 배속 미지원 기기 — 1배속으로 계속한다.
           }
-          pendingSeekRef.current = atSec;
-          void player.seekTo(atSec);
-          player.play();
+        } else if (!sameFile) {
+          // 합친 전사본에서 다른 파일의 문장을 누른 경우. 플레이어를 해제하고 새로 만들면
+          // 안드로이드에서 소리 없이 실패하는 일이 있어, 하나의 플레이어에 소스만 갈아 끼운다.
+          playerRef.current.replace({ uri: rec.file_uri });
         }
+        const player = playerRef.current;
+        pendingSeekTriesRef.current = 0;
+        if (sameFile && player.isLoaded) {
+          pendingSeekRef.current = null;
+          void player.seekTo(atSec);
+        } else {
+          // 아직 실리지 않았다. 실리면 위의 주기 확인이 원하는 지점으로 옮긴다.
+          pendingSeekRef.current = atSec;
+        }
+        player.play();
         setPlayback((prev) => ({
           recordingId: recId,
           positionSec: atSec,
-          durationSec:
-            prev?.recordingId === recId ? prev.durationSec : rec.duration_sec || 0,
+          durationSec: sameFile && prev ? prev.durationSec : rec.duration_sec || 0,
           playing: true,
         }));
       } catch (e) {

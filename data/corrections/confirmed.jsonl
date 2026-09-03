@@ -1,0 +1,12 @@
+{"from":"코스피칭","to":"크로스매칭","kind":"B","entryId":"crossmatch","decidedAt":"2026-09-02","note":"수혈 번호 문맥. 사용자 확정"}
+{"from":"티콜처","to":"팁 컬처","kind":"B","entryId":"tip-culture","decidedAt":"2026-09-02","note":"C-line 리무벌 문맥. 사용자 확정"}
+{"from":"리모컬","to":"리무벌","kind":"B","entryId":"removal","decidedAt":"2026-09-02","note":"사용자 확정"}
+{"from":"체납기","to":"씨라인","kind":"B","entryId":"central-line","decidedAt":"2026-09-02","note":"C-line removal. 사용자 확정"}
+{"from":"에프카인","to":"에포카인","kind":"B","entryId":"epoetin","decidedAt":"2026-09-02","note":"EPO 상표명. 사용자 확정"}
+{"from":"포스펜","to":"포스페넴","kind":"B","entryId":"fospenem","decidedAt":"2026-09-02","note":"주사 항생제 상표명. 사용자 확정"}
+{"from":"사조 피신","to":"타조피신","kind":"B","entryId":"pip-tazo","decidedAt":"2026-09-02","note":"타조피신 상표명. '타조 피신' 은 띄어쓰기만 다르므로 그대로"}
+{"kind":"note","surface":"큐프린","decidedAt":"2026-09-02","note":"노르에피네프린 상표명. 오류 아님 — 사전 별칭으로 등록. 상표명은 학습 대상"}
+{"kind":"note","surface":"다이아이","decidedAt":"2026-09-02","note":"DI = 이 병동의 좌변약(좌약). 약물중독 아님. 사전 항목 di-suppository 로 주석"}
+{"kind":"note","surface":"스타트","decidedAt":"2026-09-02","note":"'오토 스타트' 는 그대로. STAT 오인식 아님 — misheard 에서 제거 확정"}
+{"kind":"note","surface":"자약","decidedAt":"2026-09-02","note":"문맥에 따라 자가약 또는 좌약. '넣다' 면 좌약, '있나·가져오다' 면 자가약. 규칙으로 만들지 않음"}
+{"kind":"note","surface":"(환자 이름 오인식)","decidedAt":"2026-09-02","note":"질문 1은 환자 성함의 오인식이었다. 사전에 없는 3~4음절이 이름 자리(님 없이)에 오면 이름을 의심한다. 가리기 규칙이 호칭 없는 이름을 못 잡음"}

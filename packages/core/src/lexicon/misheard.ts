@@ -27,7 +27,7 @@ export const ASR_MISHEARD: Record<string, string[]> = {
   "braden-scale": ["브래이든"],
   "foley-catheter": ["폴리 카데타", "폴리카데터", "포리"],
   "levin-tube": ["엘트유브"],
-  "central-line": ["시라인"],
+  "central-line": ["시라인", "체납기"], // 체납기: 2026-09-02 실제 전사본, 사용자 확인 (C-line removal 문맥)
   abga: ["에비지에이"],
   "cardiac-arrest": ["아레스트"],
   expire: ["엑스파이어"],
@@ -54,4 +54,12 @@ export const ASR_MISHEARD: Record<string, string[]> = {
   dnr: ["디앤알"],
   "night-shift": ["나번"],
   taeum: ["태우다"],
+  // ── 2026-09-02 실제 전사본(7,559문장)에서 사용자가 확정한 오인식 ──
+  crossmatch: ["코스피칭"],
+  removal: ["리모컬"],
+  "tip-culture": ["티콜처"],
+  epoetin: ["에프카인"],
+  fospenem: ["포스펜"],
+  "pip-tazo": ["사조 피신"], // "타조 피신"(띄어쓰기만 다름)은 표제어와 같은 말로 보고 주석만 단다
+
 };
