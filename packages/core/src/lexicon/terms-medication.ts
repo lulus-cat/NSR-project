@@ -274,4 +274,13 @@ export const MEDICATION_TERMS: LexiconEntry[] = [
       "이 병동에서 좌변약(변비 좌약)을 부르는 말. 글리세린 관장과 나란히 쓴다 (2026-09-02 사용자 확정).",
     pitfall: "DI 는 다른 곳에서 약물중독(drug intoxication)의 약어로도 쓰인다. 여기서는 좌약이다 — 문맥이 배변이면 이쪽.",
   },
+  {
+    id: "pantoline",
+    ko: "판토라인",
+    en: "pantoprazole",
+    aliases: ["판토프라졸", "판토"],
+    category: "medication",
+    definition: "위산분비억제제(PPI). 이 병동은 상표명 판토라인으로 부른다.",
+    pitfall: "BID 처방인데 기록에 1회로만 적히는 일이 있었다. 횟수를 오더와 맞춰 본다.",
+  },
 ];

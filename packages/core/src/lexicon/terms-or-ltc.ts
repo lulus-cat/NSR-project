@@ -364,6 +364,25 @@ export const LTC_TERMS: LexiconEntry[] = [
       "매트를 깔았다고 낙상을 막은 것이 아니다. 침상 높이를 낮추고 호출벨을 손 닿는 곳에 두는 것이 먼저다.",
     sources: ["koiha"],
   },
+{
+    id: "warmer",
+    ko: "워머",
+    en: "warmer",
+    aliases: ["가온기", "온열기", "베어허거"],
+    category: "device",
+    definition: "체온이 떨어진 환자를 덥히는 기구. 이불 밑으로 더운 바람을 넣는 형태가 흔하다.",
+    pitfall: "덥히는 동안에도 체온을 다시 재야 한다. 켜 두고 잊으면 과열로 화상이 난다.",
+  },
+  {
+    id: "diet",
+    ko: "식이",
+    en: "diet",
+    aliases: ["식이표", "식단", "밥"],
+    category: "documentation",
+    definition: "환자에게 나가는 음식의 종류와 형태. 오더로 정해지고 바뀌면 전날 근무가 받는다.",
+    pitfall:
+      "식이가 바뀌는 오더는 바뀌는 날 전날 근무가 받는다. 당일 근무가 받으면 하루 어긋난다.",
+  },
 ];
 
 export const OR_LTC_TERMS: LexiconEntry[] = [...OR_TERMS, ...LTC_TERMS];
