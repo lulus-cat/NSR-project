@@ -82,6 +82,9 @@ function parseExport(text) {
   const out = [];
   let prev = -1;
   let part = 1;
+  // 클로바노트 내보내기(`참석자 N / mm:ss` 머리줄 + 문장 줄들)도 읽는다.
+  let clova = null;
+  const pad = (n) => String(n).padStart(2, "0");
   for (const line of lines) {
     const orig = line.match(/^\s+\(원문\)\s*(.*)$/);
     if (orig && out.length > 0) {
@@ -89,8 +92,20 @@ function parseExport(text) {
       out[out.length - 1].text = orig[1].trim();
       continue;
     }
+    const head = line.trim().match(/^(참석자\s*\d+)\s*\/\s*(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (head) {
+      const sec = head[4] === undefined ? +head[2] * 60 + +head[3] : +head[2] * 3600 + +head[3] * 60 + +head[4];
+      if (prev >= 0 && sec < prev - 60) part++;
+      prev = sec;
+      clova = { speaker: head[1].replace(/\s+/g, " "), time: `${pad(Math.floor(sec / 3600))}:${pad(Math.floor((sec % 3600) / 60))}:${pad(sec % 60)}` };
+      continue;
+    }
     const m = line.match(/^\[(\d+):(\d+):(\d+)\]\s*(?:([^|]{1,20})\s*\|\s*)?(.*)$/);
-    if (!m) continue;
+    if (!m) {
+      if (clova && line.trim()) out.push({ part, time: clova.time, speaker: clova.speaker, text: line.trim() });
+      continue;
+    }
+    clova = null;
     const sec = +m[1] * 3600 + +m[2] * 60 + +m[3];
     if (prev >= 0 && sec < prev - 60) part++;
     prev = sec;

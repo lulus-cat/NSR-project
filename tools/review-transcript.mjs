@@ -134,6 +134,10 @@ function parseSrt(text) {
 function parseLines(text) {
   const out = [];
   let part = 1;
+  // 클로바노트 내보내기: `참석자 N / mm:ss` 머리줄 뒤에 문장이 줄마다 온다. 머리줄의 화자·시각을
+  // 다음 머리줄까지 물려준다.
+  let clovaSpeaker;
+  let clovaSec;
   for (const rawLine of text.replace(/\r/g, "").split("\n")) {
     const orig = rawLine.match(/^\s+\(원문\)\s*(.*)$/);
     if (orig && out.length > 0) {
@@ -144,8 +148,16 @@ function parseLines(text) {
     }
     let line = rawLine.trim().replace(/^[-*]\s+/, "").replace(/\*\*/g, "");
     if (!line || line.startsWith("#")) continue;
-    let startSec = out.length > 0 ? out[out.length - 1].startSec : 0;
-    let speaker;
+    const clova = line.match(/^(참석자\s*\d+)\s*\/\s*(\d{1,2}:\d{2}(?::\d{2})?)$/);
+    if (clova) {
+      const t = parseTime(clova[2]);
+      if (out.length > 0 && t < out[out.length - 1].startSec - 60) part++;
+      clovaSpeaker = clova[1].replace(/\s+/g, " ");
+      clovaSec = t;
+      continue;
+    }
+    let startSec = clovaSec ?? (out.length > 0 ? out[out.length - 1].startSec : 0);
+    let speaker = clovaSpeaker;
     const m = line.match(/^[[(]?(\d{1,2}:\d{2}(?::\d{2})?(?:[.,]\d+)?)[\])]?\s*(.*)$/);
     if (m) {
       const t = parseTime(m[1]);
