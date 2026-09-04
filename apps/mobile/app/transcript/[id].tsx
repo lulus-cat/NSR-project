@@ -59,22 +59,22 @@ import { redactForExport, shareText } from "../../src/services/export";
 import { exportBaseName, transcriptToText } from "../../src/services/export-bundle";
 
 const ROLE_OPTIONS: { role: SpeakerRole; label: string }[] = [
-  { role: "self", label: "나 (쭈굴)" },
-  { role: "senior", label: "무서운 선배" },
-  { role: "doctor", label: "의사(쌤)" },
+  { role: "self", label: "나" },
+  { role: "senior", label: "선배" },
+  { role: "doctor", label: "의사" },
   { role: "patient", label: "환자" },
   { role: "guardian", label: "보호자" },
   { role: "other", label: "기타" },
 ];
 
 const ROLE_LABELS: Record<SpeakerRole, string> = {
-  self: "나 (쭈굴)",
-  senior: "무서운 선배",
-  doctor: "의사(쌤)",
+  self: "나",
+  senior: "선배",
+  doctor: "의사",
   patient: "환자",
   guardian: "보호자",
   other: "기타",
-  unknown: "누군지 모름",
+  unknown: "모름",
 };
 
 function formatTime(sec: number): string {
@@ -132,7 +132,7 @@ const SentenceRow = memo(function SentenceRow({
       {showHeader ? (
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${headerLabel} — 꾹 눌러서 이 사람 정체 밝히기`}
+          accessibilityLabel={`${headerLabel} — 눌러서 누구인지 정하기`}
           onPress={() => onPressHeader(segment.id)}
           style={{
             flexDirection: "row",
@@ -151,7 +151,7 @@ const SentenceRow = memo(function SentenceRow({
       ) : null}
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="누르면 여기서부터 플레이"
+        accessibilityLabel="여기부터 듣기"
         onPress={() => onPressSentence(segment)}
         style={{
           flexDirection: "row",
@@ -187,7 +187,7 @@ const SentenceRow = memo(function SentenceRow({
                 <Pressable
                   key={i}
                   accessibilityRole="button"
-                  accessibilityLabel={`${word} — 꾹 눌러서 뜯어고치기`}
+                  accessibilityLabel={`${word} — 길게 눌러 고치기`}
                   onPress={() => onPressSentence(segment)}
                   onLongPress={() => onPressWord(segment.id, word)}
                   delayLongPress={300}
@@ -233,7 +233,7 @@ function SeekBar({
   return (
     <View
       accessibilityRole="adjustable"
-      accessibilityLabel="지금 듣는 데"
+      accessibilityLabel="듣는 위치"
       onLayout={(e) => setWidth(e.nativeEvent.layout.width)}
       onStartShouldSetResponder={() => durationSec > 0}
       onMoveShouldSetResponder={() => durationSec > 0}
@@ -361,7 +361,7 @@ export default function TranscriptView() {
     try {
       setDeep(await startDeepAnalysis(shiftId));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "심층 분석을 시작하지 못했습니다.");
+      setError(e instanceof Error ? e.message : "분석을 시작하지 못했어요. 잠시 뒤 다시 눌러 주세요.");
     } finally {
       setDeepBusy(false);
     }
@@ -491,11 +491,11 @@ export default function TranscriptView() {
     (recId: string, atSec: number) => {
       const rec = recordings.find((r) => r.id === recId);
       if (!rec) {
-        setNotice("이 문장이 속한 파일이 이 화면의 목록에 없어요. 근무 기록에서 파일을 확인해 주세요.");
+        setNotice("이 문장의 음성 파일이 목록에 없어요. 근무 기록에서 파일을 확인해 주세요.");
         return;
       }
       if (!rec.file_uri) {
-        setNotice(`녹음 파일(${rec.label ?? "원본"})이 폰에서 증발했어요! 재생 불가`);
+        setNotice(`${rec.label ?? "음성 파일"}이 폰에 없어요. 파일을 다시 가져와 주세요.`);
         return;
       }
       try {
@@ -530,7 +530,7 @@ export default function TranscriptView() {
           playing: true,
         }));
       } catch (e) {
-        setError(e instanceof Error ? e.message : "재생 엎어짐 ㅠㅠ");
+        setError(e instanceof Error ? e.message : "소리를 열지 못했어요. 다시 눌러 주세요.");
       }
     },
     [playback?.recordingId, rate, recordings],
@@ -644,7 +644,7 @@ export default function TranscriptView() {
     if (!wordTarget) return;
     const surface = wordTarget.word.trim();
     if (surface.length < 2) {
-      setError("두 글자 이상은 쳐주셔야죠!");
+      setError("두 글자 이상 적어 주세요.");
       return;
     }
     await saveUserTerm({
@@ -652,11 +652,11 @@ export default function TranscriptView() {
       ko: surface,
       aliases: [],
       category: "workflow",
-      definition: "오 우리 병동 찐 은어네요! 뜻을 적어주세용",
+      definition: "우리 병동 말이에요. 뜻을 적어 주세요.",
     });
     setWordTarget(null);
     setError(null);
-    setNotice(`'${surface}'${josa(surface, "을")} 우리 족보에 모셔왔습니다! 자세한 뜻은 이따 단어장에서 예쁘게 다듬어주세요`);
+    setNotice(`'${surface}'${josa(surface, "을")} 단어장에 넣었어요. 뜻은 단어장에서 적어요.`);
     await loadDictInfo();
   }, [loadDictInfo, wordTarget]);
 
@@ -668,21 +668,20 @@ export default function TranscriptView() {
   const runPolish = useCallback(async () => {
     const ready = await llmReady();
     if (!ready.ok) {
-      setError(ready.reason ?? "설정 → AI 선배 셋팅에서 열쇠(키)부터 꽂고 오세용");
+      setError(ready.reason ?? "AI 설정이 아직이에요. 설정에서 열쇠를 먼저 넣어 주세요.");
       return;
     }
     Alert.alert(
-      "AI 슨생님한테 교정 맡기기",
-      "내 부끄러운 녹음본, 환자 정보 싹 지우고 AI 센세한테 쏴서 예쁘게 다듬어 올게요 " +
-        "삐- 처리된 문장은 안 건드리고 쌩얼(원본) 그대로 둘게요! 기록은 소중하니까",
+      "AI에게 다듬기를 맡길까요",
+      "환자 정보를 가린 뒤에 AI에게 보내요.\n가려진 문장은 그대로 두고, 원문도 남겨요.",
       [
-        { text: "앗차차 (취소)", style: "cancel" },
+        { text: "그만두기", style: "cancel" },
         {
-          text: "슝 보내버려",
+          text: "보내기",
           onPress: () => {
             void (async () => {
               setError(null);
-              setBusy("AI 슨생님 폭풍 첨삭 중");
+              setBusy("AI가 다듬는 중");
               try {
                 const lexicon = await loadLexicon();
                 // 확정된 내 교정 기록도 함께 보낸다 — 사전에 없는 이 병동만의
@@ -691,7 +690,7 @@ export default function TranscriptView() {
                 const changed = await polishTranscriptSegments(
                   segments.map((s) => ({ id: s.id, text: s.text })),
                   lexicon,
-                  (done, total) => setBusy(`AI 슨생님 첨삭 중... ${done}/${total} 문장 갈기기 완`),
+                  (done, total) => setBusy(`AI가 다듬는 중 ${done}/${total}`),
                   memory,
                 );
                 for (const [id, text] of changed) {
@@ -702,11 +701,11 @@ export default function TranscriptView() {
                 );
                 setNotice(
                   changed.size > 0
-                    ? `짠! ${changed.size}문장이나 예쁘게 뜯어고쳤어요 각 문장의 '쌩얼(원문)'이랑 비교해 보세요!`
-                    : "어라 다듬을 게 없네? 이미 완벽쓰",
+                    ? `${changed.size}문장을 다듬었어요. 문장 아래 원문과 비교해 봐요.`
+                    : "다듬을 문장이 없었어요.",
                 );
               } catch (e) {
-                setError(e instanceof Error ? e.message : "앗 AI 슨생님 파업 ㅠㅠ 교정 실패");
+                setError(e instanceof Error ? e.message : "AI가 답하지 않았어요. 잠시 뒤 다시 해 주세요.");
               } finally {
                 setBusy(null);
               }
@@ -727,18 +726,18 @@ export default function TranscriptView() {
   const runExport = useCallback(async () => {
     setError(null);
     setNotice(null);
-    setBusy("내보낼 것 챙기는 중");
+    setBusy("파일 만드는 중");
     try {
       const red = await redactForExport(transcriptToText(segments, { date, dutyLabel }));
       const warn = red.warnings.map((w) => `· ${w.message}`).join("\n");
       Alert.alert(
-        "전사본 파일로 빼내기",
+        "전사본을 파일로 만들까요",
         `${red.summary}\n${warn ? `${warn}\n` : ""}\n` +
-          "이 파일은 폰 밖으로 나갑니다. 보낼 곳을 고르는 창이 열려요.",
+          "파일을 만들면 보낼 곳을 고르는 창이 열려요.",
         [
-          { text: "앗차차 (취소)", style: "cancel" },
+          { text: "그만두기", style: "cancel" },
           {
-            text: "슝 보내버려",
+            text: "보내기",
             onPress: () => {
               void (async () => {
                 try {
@@ -748,12 +747,12 @@ export default function TranscriptView() {
                       recLabel ? `-${recLabel.replace(/\.[^.]+$/, "")}` : ""
                     }`,
                     format: "txt",
-                    title: `${dutyLabel} 전사본 밖으로 슝`,
+                    title: `${dutyLabel} 전사본`,
                   });
                   if (!out.shared && out.message) setError(out.message);
-                  else setNotice("전사본을 텍스트 파일로 빼냈습니다.");
+                  else setNotice("전사본 파일을 만들었어요.");
                 } catch (e) {
-                  setError(e instanceof Error ? e.message : "앗 공유 엎어짐");
+                  setError(e instanceof Error ? e.message : "공유 창을 열지 못했어요. 다시 눌러 주세요.");
                 }
               })();
             },
@@ -761,7 +760,7 @@ export default function TranscriptView() {
         ],
       );
     } catch (e) {
-      setError(e instanceof Error ? e.message : "내보낼 것을 챙기지 못했습니다.");
+      setError(e instanceof Error ? e.message : "파일을 만들지 못했어요. 잠시 뒤 다시 해 주세요.");
     } finally {
       setBusy(null);
     }
@@ -769,13 +768,13 @@ export default function TranscriptView() {
 
   const runDelete = useCallback(() => {
     Alert.alert(
-      "글자 변환본만 쓱싹 지우기",
-      "글자만 펑 날리고 녹음 파일은 살려둬요. 이 녹음은 다시 '변환 대기줄'로 돌아갑니다\n" +
-        "녹음 파일까지 싹 다 날리기 — 음성이랑 글자 전부 우주 저 너머로!\n지우면 두 번 다시 못 살려요",
+      "무엇을 지울까요",
+      "글자만 지우면 음성 파일은 남아요. 그 녹음은 다시 안 바꾼 상태가 돼요.\n" +
+        "음성까지 지우면 글자와 소리가 모두 사라져요. 되살릴 수 없어요.",
       [
-        { text: "앗차차 (취소)", style: "cancel" },
+        { text: "그만두기", style: "cancel" },
         {
-          text: "글자만 쓱싹 지우기",
+          text: "글자만 지우기",
           onPress: () => {
             void (async () => {
               stopPlayback();
@@ -785,7 +784,7 @@ export default function TranscriptView() {
           },
         },
         {
-          text: "녹음까지 영원히 ㅃㅃ",
+          text: "음성까지 지우기",
           style: "destructive",
           onPress: () => {
             void (async () => {
@@ -813,29 +812,31 @@ export default function TranscriptView() {
         <Heading>
           {date} · {dutyLabel} 전사{recLabel ? ` · ${recLabel}` : ""}
         </Heading>
-        <Small>
-          {segments.length}문장 · 문장을 누르면 그 시점부터 재생, 단어를 길게 누르면 수정.
-        </Small>
+        <Small>문장 {segments.length}개예요.</Small>
+        <Small>문장을 누르면 그 자리부터 들려요.</Small>
+        <Small>단어를 길게 누르면 고칠 수 있어요.</Small>
         {segments.length > 0 ? (
           <>
             <Button
-              label={busy?.startsWith("AI") ? busy : "AI 슨생님한테 교정 맡기기"}
+              label={busy?.startsWith("AI") ? "다듬는 중" : "AI로 다듬기"}
               busy={busy?.startsWith("AI") ?? false}
               disabled={busy !== null}
               onPress={() => void runPolish()}
             />
             {dictInfo ? (
-              <Small>
-                AI 에게 같이 보내는 것: 내 단어장 {dictInfo.terms}개 · 내가 고쳐 확정한 교정{" "}
-                {dictInfo.confirmed}건 · 병동 기본 사전.
-                {dictInfo.confirmed === 0
-                  ? " 단어를 길게 눌러 고치면 확정 목록이 쌓이고, 다음부터 AI 도 같이 씁니다."
-                  : ""}
-              </Small>
+              <>
+                <Small>
+                  같이 보내요: 내 단어 {dictInfo.terms}개 · 확정한 고침 {dictInfo.confirmed}건 ·
+                  병동 사전
+                </Small>
+                {dictInfo.confirmed === 0 ? (
+                  <Small>같은 단어를 두 번 고치면 확정 목록에 쌓여요.</Small>
+                ) : null}
+              </>
             ) : null}
             <Button
-              label="텍스트 파일로 빼내기 (.txt)"
-              busy={busy === "내보낼 것 챙기는 중"}
+              label="전사본 보내기"
+              busy={busy === "파일 만드는 중"}
               disabled={busy !== null}
               onPress={() => void runExport()}
             />
@@ -846,7 +847,7 @@ export default function TranscriptView() {
             {recordings.some((r) => r.file_uri) ? (
               <View style={{ flex: 1 }}>
                 <Button
-                  label="처음부터 다시 듣기"
+                  label="처음부터 듣기"
                   onPress={() => {
                     const rec = recordings.find((r) => r.file_uri);
                     if (rec) playRecording(rec.id, 0);
@@ -855,7 +856,7 @@ export default function TranscriptView() {
               </View>
             ) : null}
             <View style={{ flex: 1 }}>
-              <Button label="기록 날려버려" tone="danger" onPress={runDelete} />
+              <Button label="기록 지우기" tone="danger" onPress={runDelete} />
             </View>
           </View>
         ) : null}
@@ -866,15 +867,13 @@ export default function TranscriptView() {
       {/* ── 심층 분석 — Claude 추출·조사 + Gemini 보고서. 배치라 몇 분~몇 십 분 ── */}
       {segments.length > 0 ? (
         <Card>
-          <Heading>초정밀 심층 분석 (AI 3단 콤보)</Heading>
-          <Small>
-            똑순이 Claude 5가 피드백 포인트 딱 짚어내고, Claude Fable 5가 폭풍 구글링으로 팩트 체크
-            갈기고, Gemini가 리포트랑 단어장으로 예쁘게 빚어냅니다. 이 콤보 돌아가는 데 몇 분~몇 십 분
-            걸려요. 화면 꺼도 알아서 열일하니까 이따 와서 결과만 쏙 빼먹으세요
-          </Small>
+          <Heading>깊이 분석하기</Heading>
+          <Small>AI 셋이 나눠서 이 근무를 살펴봐요.</Small>
+          <Small>배울 점을 찾고, 사실을 확인하고, 보고서와 단어장을 만들어요.</Small>
+          <Small>몇 분에서 몇 십 분 걸려요. 화면을 꺼도 계속돼요.</Small>
           {recId ? (
             <Small muted={false}>
-              분석은 이 파일만이 아니라 {date} {dutyLabel} 근무 전체 문장으로 돕니다.
+              분석은 이 파일만이 아니라 그날 근무 전체 문장으로 해요.
             </Small>
           ) : null}
           {deepGate && !deepGate.ok ? (
@@ -884,10 +883,10 @@ export default function TranscriptView() {
               <Badge
                 text={
                   deep.stage === "done"
-                    ? "갓벽하게 끝"
+                    ? "분석 완료"
                     : deep.stage === "error"
-                      ? "엎어짐"
-                      : `열일 중 땀뻘뻘 · ${deep.stage} 단계`
+                      ? "실패"
+                      : `분석 중 · ${deep.stage} 단계`
                 }
                 tone={deep.stage === "done" ? "ok" : deep.stage === "error" ? "danger" : "warn"}
               />
@@ -896,13 +895,13 @@ export default function TranscriptView() {
                 <Text style={[type.small, { color: t.danger }]}>{deep.error}</Text>
               ) : null}
               {deep.stage === "done" ? (
-                <Small>보고서·단어장·파일로 빼내기는 근무 기록 화면(뒤로 가기)에 있어요.</Small>
+                <Small>보고서와 단어장은 근무 기록 화면에 있어요.</Small>
               ) : null}
               {["3a", "3b", "4"].includes(deep.stage) ? (
-                <Button label="어디쯤 왔나 찌르기" busy={deepBusy} onPress={() => void pokeDeep()} />
+                <Button label="진행 확인" busy={deepBusy} onPress={() => void pokeDeep()} />
               ) : (
                 <Button
-                  label={deep.stage === "error" ? "재시동 부릉" : "처음부터 다시 갈기기"}
+                  label={deep.stage === "error" ? "다시 시작" : "다시 분석"}
                   busy={deepBusy}
                   onPress={() => void runDeep()}
                 />
@@ -910,7 +909,7 @@ export default function TranscriptView() {
             </>
           ) : (
             <Button
-              label="심층 분석 풀악셀 시작!"
+              label="분석 시작"
               tone="primary"
               busy={deepBusy}
               onPress={() => void runDeep()}
@@ -921,16 +920,14 @@ export default function TranscriptView() {
 
       {segments.length > 0 ? (
         <Card tone={coverage.readyForScoring ? "default" : "warn"}>
-          <Heading>
-  발언자 지정
-</Heading>
+          <Heading>누가 말했는지 정하기</Heading>
           <Badge
-            text={`전체 ${coverage.total}개 중에 ${coverage.labeled}개 정체 파악 완`}
+            text={`${coverage.total}개 중 ${coverage.labeled}개 정함`}
             tone={coverage.readyForScoring ? "ok" : "warn"}
           />
           <Small muted={false}>{coverage.message}</Small>
           <Divider />
-          <Small>먼저 밑에서 이 사람 누군지 콕 찝은 다음 —</Small>
+          <Small>먼저 아래에서 누구인지 골라요.</Small>
           <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
             {ROLE_OPTIONS.map((opt) => {
               const on = pendingRole === opt.role;
@@ -956,9 +953,10 @@ export default function TranscriptView() {
           </View>
           {speakerOrder.length > 0 ? (
             <>
-              <Small>
-                요건 AI가 목소리 찢어놓은(화자 분리) 변환본이에요! 텍스트 누르면 그 목소리 주인이 뱉은 문장 싹 다 방금 고른 역할로 한 큐에 도배됩니다
-              </Small>
+              <>
+                <Small>목소리별로 나뉜 전사본이에요.</Small>
+                <Small>목소리를 누르면 그 사람 문장이 한 번에 정해져요.</Small>
+              </>
               <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
                 {speakerOrder.map((sid) => {
                   const count = segments.filter((s) => s.speakerId === sid).length;
@@ -988,23 +986,24 @@ export default function TranscriptView() {
               </View>
             </>
           ) : (
-            <Small>
-              <Text style={{ fontWeight: "700" }}>문장 위 배지(머리줄)</Text>텍스트 시작이랑 끝 두 번 띡띡 누르면 그 사이 몽땅 도배! 목소리 자동 찢기(화자 분리)는 설정의 콜랩 셋팅에서 켤 수 있어용
-            </Small>
+            <>
+              <Small>문장 위 이름표를 시작과 끝, 두 번 누르면 그 사이가 한 번에 정해져요.</Small>
+              <Small>목소리 자동 나누기는 전사 설정에서 켜요.</Small>
+            </>
           )}
           {rangeStart ? (
             <>
               <Small muted={false}>
-                시작 문장이 선택되었습니다. 끝 문장의 배지를 누르면 &lsquo;
-                {ROLE_LABELS[pendingRole]}&rsquo;(으)로 일괄 지정됩니다.
+                시작 문장을 골랐어요. 끝 문장의 이름표를 누르면 &lsquo;
+                {ROLE_LABELS[pendingRole]}&rsquo;(으)로 한 번에 정해져요.
               </Small>
-              <Button label="정체 밝히기 취소" onPress={() => setRangeStart(null)} />
+              <Button label="고르기 취소" onPress={() => setRangeStart(null)} />
             </>
           ) : null}
         </Card>
       ) : (
         <Card>
-          <Body muted>엥 변환된 텍스트가 없어요! 녹음 화면 가서 먼저 글자로 바꿔오세용</Body>
+          <Body muted>아직 글자로 바뀐 문장이 없어요. 근무 기록 화면에서 녹음을 먼저 바꿔 주세요.</Body>
         </Card>
       )}
     </View>
@@ -1080,7 +1079,7 @@ export default function TranscriptView() {
             <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={playback.playing ? "잠깐 스탑" : "플레이"}
+                accessibilityLabel={playback.playing ? "잠깐 멈추기" : "듣기"}
                 onPress={togglePause}
                 style={{ minWidth: TOUCH_MIN, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
               >
@@ -1092,7 +1091,7 @@ export default function TranscriptView() {
               </Text>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`${rate}배속 — 찌르면 스피드업!`}
+                accessibilityLabel={`${rate}배속 — 누르면 빨라져요`}
                 onPress={cycleRate}
                 style={{
                   minWidth: TOUCH_MIN,
@@ -1110,7 +1109,7 @@ export default function TranscriptView() {
               </Pressable>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel="재생 끝"
+                accessibilityLabel="그만 듣기"
                 onPress={stopPlayback}
                 style={{ minWidth: TOUCH_MIN, minHeight: TOUCH_MIN, alignItems: "center", justifyContent: "center" }}
               >
@@ -1130,9 +1129,10 @@ export default function TranscriptView() {
             }}
           >
             <Heading>&ldquo;{wordTarget.word}&rdquo;</Heading>
-            <Small>
-              오타 난 거 직접 뜯어고쳐요! 똑같은 거 2번 고치면 다음부턴 AI가 눈치껏 알아서 고쳐드림 (개꿀띠)
-            </Small>
+            <>
+              <Small>잘못 적힌 말을 직접 고쳐요.</Small>
+              <Small>같은 말을 두 번 고치면 다음부터 알아서 고쳐요.</Small>
+            </>
             <TextInput
               value={wordTarget.replacement}
               onChangeText={(replacement) =>
@@ -1151,7 +1151,7 @@ export default function TranscriptView() {
             <View style={{ flexDirection: "row", gap: space.sm }}>
               <View style={{ flex: 1 }}>
                 <Button
-                  label="뜯어고치기"
+                  label="이 단어 고치기"
                   tone="primary"
                   disabled={
                     wordTarget.replacement.trim().length === 0 ||
@@ -1161,10 +1161,10 @@ export default function TranscriptView() {
                 />
               </View>
               <View style={{ flex: 1 }}>
-                <Button label="줍줍! 내 단어장에 킵" onPress={() => void addToMyDict()} />
+                <Button label="단어장에 넣기" onPress={() => void addToMyDict()} />
               </View>
               <View style={{ flex: 1 }}>
-                <Button label="덮어 (닫기)" onPress={() => setWordTarget(null)} />
+                <Button label="닫기" onPress={() => setWordTarget(null)} />
               </View>
             </View>
           </View>

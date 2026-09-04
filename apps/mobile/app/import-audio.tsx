@@ -88,7 +88,7 @@ export default function ImportAudio() {
       });
       return got.length;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "파일 선택창을 못 열었습니다.");
+      setError(e instanceof Error ? e.message : "파일 창을 열지 못했어요. 다시 눌러 주세요.");
       return 0;
     } finally {
       setPicking(false);
@@ -123,7 +123,7 @@ export default function ImportAudio() {
   const applyDateText = useCallback(() => {
     const v = dateText.trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(v) || Number.isNaN(new Date(`${v}T00:00:00`).getTime())) {
-      setError("날짜는 2026-08-24 처럼 적어 주세요.");
+      setError("날짜 모양이 달라요. 2026-08-24 처럼 적어 주세요.");
       return;
     }
     setError(null);
@@ -151,7 +151,7 @@ export default function ImportAudio() {
       if (already.length === 0) await upsertDutyEntries([{ date, code }]);
       router.replace(`/shift/${encodeURIComponent(out.shiftId)}`);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "파일을 가져오지 못했습니다.");
+      setError(e instanceof Error ? e.message : "파일을 가져오지 못했어요. 다시 눌러 주세요.");
       setBusy(false);
     }
   }, [askMerge, busy, code, date, files, mode, router]);
@@ -159,16 +159,16 @@ export default function ImportAudio() {
   const options: { key: Mode; title: string; hint: string }[] = [
     {
       key: "merge",
-      title: "한 전사본으로 합치기",
+      title: "하나로 합치기",
       hint:
         existing.length > 0
-          ? "이 근무에 있던 기록 뒤에 이어 붙입니다. 30분마다 잘린 녹음처럼 사실은 한 흐름일 때."
-          : "고른 파일들을 차례로 이어 한 전사본으로 봅니다. 30분마다 잘린 녹음처럼 사실은 한 흐름일 때.",
+          ? "이 근무 기록 뒤에 이어 붙여요. 잘린 녹음이 사실 한 흐름일 때 골라요."
+          : "고른 파일을 차례로 이어 한 전사본으로 봐요. 잘린 녹음이 사실 한 흐름일 때 골라요.",
     },
     {
       key: "separate",
       title: "파일마다 따로 두기",
-      hint: "파일마다 전사본이 따로 생기고, 학습 탭에도 따로 보입니다. 다른 대화·다른 시간대일 때.",
+      hint: "파일마다 전사본이 따로 생겨요. 다른 대화일 때 골라요.",
     },
   ];
 
@@ -189,7 +189,7 @@ export default function ImportAudio() {
       <Card>
         <Heading>가져올 파일</Heading>
         {files.length === 0 ? (
-          <Body muted>아직 고른 파일이 없습니다.</Body>
+          <Body muted>아직 고른 파일이 없어요.</Body>
         ) : (
           files.map((f, i) => (
             <View key={f.uri}>
@@ -230,7 +230,7 @@ export default function ImportAudio() {
           ))
         )}
         <Button
-          label={files.length > 0 ? "파일 더 고르기" : "파일 고르기"}
+          label={files.length > 0 ? "더 고르기" : "파일 고르기"}
           busy={picking}
           onPress={() => void pick()}
         />
@@ -238,8 +238,9 @@ export default function ImportAudio() {
 
       {/* 2. 어느 근무 */}
       <Card>
-        <Heading>어느 날 근무 기록인가요?</Heading>
-        <Small>날짜를 고르면 듀티표의 그날 듀티가 따라옵니다. 다르면 아래에서 바꾸세요.</Small>
+        <Heading>어느 날 근무인가요</Heading>
+        <Small>날짜를 고르면 그날 듀티가 따라와요.</Small>
+        <Small>다르면 아래에서 바꿔요.</Small>
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -282,7 +283,7 @@ export default function ImportAudio() {
           <TextInput
             value={dateText}
             onChangeText={setDateText}
-            placeholder="더 오래된 날은 2026-08-24 처럼"
+            placeholder="2026-08-24 처럼 적어요"
             placeholderTextColor={t.textMuted}
             onSubmitEditing={applyDateText}
             style={{
@@ -295,7 +296,7 @@ export default function ImportAudio() {
               fontSize: 15,
             }}
           />
-          <Button label="적용" onPress={applyDateText} />
+          <Button label="날짜 적용" onPress={applyDateText} />
         </View>
         <Divider />
         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.xs }}>
@@ -330,7 +331,7 @@ export default function ImportAudio() {
       {/* 3. 합치기 / 따로 */}
       {askMerge ? (
         <Card>
-          <Heading>합칠까요, 따로 둘까요?</Heading>
+          <Heading>합칠까요, 따로 둘까요</Heading>
           {options.map((opt) => {
             const on = mode === opt.key;
             return (
@@ -366,17 +367,14 @@ export default function ImportAudio() {
 
       {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
       <Button
-        label={
-          files.length > 0
-            ? `${files.length}개 파일을 ${dutyLabel} 기록으로 가져오기`
-            : "먼저 파일을 고르세요"
-        }
+        label={files.length > 0 ? `${files.length}개 가져오기` : "파일부터 고르기"}
         tone="primary"
         busy={busy}
         disabled={files.length === 0}
         onPress={() => void submit()}
       />
-      <Small>가져온 파일은 폰 안에만 복사됩니다. 전사는 근무 기록 화면에서 시작합니다.</Small>
+      <Small>가져온 파일은 폰 안에만 저장돼요.</Small>
+      <Small>글자로 바꾸기는 근무 기록 화면에서 해요.</Small>
     </ScrollView>
   );
 }

@@ -51,7 +51,7 @@ export async function exportMonthToCalendar(
   month0: number,
 ): Promise<{ ok: boolean; count: number; message: string }> {
   const calId = await ensureCalendar();
-  if (!calId) return { ok: false, count: 0, message: "폰 달력 보려면 허락(권한) 좀" };
+  if (!calId) return { ok: false, count: 0, message: "달력 사용이 꺼져 있어요. 폰 설정에서 켜 주세요." };
 
   const monthStart = new Date(year, month0, 1);
   const monthEnd = new Date(year, month0 + 1, 1);
@@ -65,16 +65,16 @@ export async function exportMonthToCalendar(
   );
   for (const s of shifts) {
     await Calendar.createEventAsync(calId, {
-      title: `${s.label} 출근 (눈물)`,
+      title: `${s.label} 출근`,
       startDate: new Date(s.startAt),
       endDate: new Date(s.endAt),
-      notes: "NSR 듀티표에서 쏴줌",
+      notes: "NSR 듀티표에서 보냈어요",
     });
   }
   return {
     ok: true,
     count: shifts.length,
-    message: `짠! ${month0 + 1}월 듀티 ${shifts.length}개 '${CAL_NAME}' 달력에 예쁘게 꽂아놨어요`,
+    message: `${month0 + 1}월 듀티 ${shifts.length}개를 '${CAL_NAME}' 달력에 넣었어요.`,
   };
 }
 
@@ -91,7 +91,7 @@ export async function importMonthFromCalendar(
   month0: number,
 ): Promise<{ ok: boolean; count: number; message: string }> {
   const { granted } = await Calendar.requestCalendarPermissionsAsync();
-  if (!granted) return { ok: false, count: 0, message: "폰 달력 보려면 허락(권한) 좀" };
+  if (!granted) return { ok: false, count: 0, message: "달력 사용이 꺼져 있어요. 폰 설정에서 켜 주세요." };
 
   const calendars = await Calendar.getCalendarsAsync(Calendar.EntityTypes.EVENT);
   // 우리가 내보낸 캘린더는 제외 — 되돌아 들어오면 메아리가 된다.
@@ -125,8 +125,8 @@ export async function importMonthFromCalendar(
     count: entries.length,
     message:
       entries.length > 0
-        ? `오! ${month0 + 1}월 달력에서 듀티 ${entries.length}개 털어왔어요`
-        : "달력에 훔쳐 올 듀티가 없어요 ㅠㅠ 달력 일정이 '데이', 'N'처럼 듀티 암호여야 가져올 수 있뜸!",
+        ? `${month0 + 1}월 달력에서 듀티 ${entries.length}개를 가져왔어요.`
+        : "가져올 듀티가 없어요. 달력 일정 이름이 '데이'나 'N' 처럼 듀티여야 해요.",
     ...(entries.length > 0 ? { entries } : {}),
   } as { ok: boolean; count: number; message: string; entries?: DutyEntry[] };
 }

@@ -38,27 +38,27 @@ const METHOD_CHOICES = [
   {
     key: "tiro",
     title: "티로 (한국어 전용, 추천)",
-    body: "API 키 하나면 끝입니다. 한국어 받아쓰기 정확도가 가장 좋았습니다 — 병동 말도 문장 꼴이 살아 있습니다. 키 발급은 설정 → 전사에서 안내합니다.",
+    body: "열쇠 하나만 넣으면 돼요. 한국어를 가장 잘 받아적었어요. 열쇠 받는 길은 설정에서 알려드려요.",
   },
   {
     key: "colab",
     title: "구글 콜랩 (무료 GPU, 휘스퍼)",
-    body: "컴퓨터 없이 무료 GPU가 전사합니다. 준비 3분 — 자세한 연결은 설정 → 전사에서 안내합니다.",
+    body: "컴퓨터 없이 무료로 돌아가요. 준비는 3분쯤 걸려요. 잇는 법은 설정에서 알려드려요.",
   },
   {
     key: "pc",
     title: "내 컴퓨터 (PC·노트북)",
-    body: "같은 Wi-Fi의 내 컴퓨터가 전사합니다. 기록 음성이 집 밖으로 나가지 않습니다.",
+    body: "같은 Wi-Fi 의 내 컴퓨터가 바꿔요. 녹음이 집 밖으로 나가지 않아요.",
   },
   {
     key: "gemini",
-    title: "Gemini (구글 AI, 서버 없이)",
-    body: "API 키 하나면 콜랩도 컴퓨터도 필요 없습니다. 키 발급은 설정 → 전사에서 안내합니다.",
+    title: "Gemini (구글 AI)",
+    body: "열쇠 하나면 콜랩도 컴퓨터도 필요 없어요. 열쇠 받는 길은 설정에서 알려드려요.",
   },
   {
     key: "later",
     title: "나중에 정하기",
-    body: "지금 건너뛰어도 첫 전사 전에 설정 → 전사에서 연결하면 됩니다.",
+    body: "지금 건너뛰어도 나중에 설정에서 정하면 돼요.",
   },
 ] as const;
 
@@ -67,45 +67,43 @@ const ITEMS: { key: string; title: string; body: string }[] = [
     key: "wiretap",
     title: "당사자가 아닌 타인 간 대화 기록 금지",
     body:
-      "타인 간 대화 녹음은 불법(징역형)입니다. 앱은 목소리로 사람을 구분하지 못하므로, 자리를 비울 때는 기록을 끄고 기기를 꼭 휴대하십시오.",
+      "내가 끼지 않은 대화를 녹음하면 불법이에요. 자리를 비울 때는 기록을 끄고 폰을 꼭 들고 다녀요.",
   },
   {
     key: "medical",
     title: "기록 내 민감 정보 포함 주의",
     body:
-      "비밀 누설은 의료법 위반입니다. 모든 데이터는 기기 내 처리되며 외부 송신은 차단됩니다.",
+      "환자 정보를 흘리면 의료법 위반이에요. 기록은 폰 안에서 다뤄요.",
   },
   {
     key: "hospital",
     title: "원내 규정에 따른 기록 금지 확인",
     body:
-      "무단 녹음은 취업규칙 징계 사유가 될 수 있습니다. 병원 내규를 사전에 꼭 확인하십시오.",
+      "몰래 녹음하면 병원 규정 위반이 될 수 있어요. 병원 내규를 먼저 확인해요.",
   },
   {
     key: "indicator",
     title: "OS 마이크 상태 표시 안내",
     body:
-      "마이크 아이콘 표시는 OS 필수 정책이라 숨길 수 없습니다. (앱 자체 소리나 진동은 없음)",
+      "녹음 중 마이크 표시는 폰이 켜는 거라 숨길 수 없어요. 앱이 소리를 내지는 않아요.",
   },
   {
     key: "score",
-    title: "태움 지표는 판정이 아니라 기록입니다",
+    title: "온도는 판정이 아니라 기록이에요",
     body:
-      "점수는 참고용입니다. 어조가 담기지 않으니, 실제 인용문을 꼭 직접 확인하십시오.",
+      "점수는 참고용이에요. 말투는 담기지 않으니 실제 문장을 꼭 직접 봐요.",
   },
   {
     key: "device",
     title: "기기 분실 시 데이터 유출 주의",
     body:
-      "개인정보 보호를 위해 앱 잠금을 권장합니다. 보관 기한이 지난 파일은 지워집니다.",
+      "폰을 잃어버릴 때를 대비해 앱 잠금을 켜요. 오래된 파일은 저절로 지워져요.",
   },
   {
     key: "alpha",
     title: "알파 버전 안내",
     body:
-      "알파 버전이라 기능이 바뀔 수 있습니다. 중요한 기록은 따로 백업하십시오. " +
-      "전사 전에 콜랩 또는 내 컴퓨터 서버를 연결해야 합니다. 화자 분리는 콜랩의 " +
-      "화자 분리 옵션을 켜거나 전사 후 직접 지정합니다.",
+      "아직 시험 판이라 기능이 바뀔 수 있어요. 중요한 기록은 따로 챙겨 둬요.",
   },
 ];
 
@@ -185,11 +183,7 @@ export default function Onboarding() {
       await run();
       setSaveMsg(null);
     } catch (e) {
-      setSaveMsg(
-        `방금 고른 값을 저장하지 못했습니다 (${
-          e instanceof Error ? e.message : "원인 미상"
-        }). 설정 화면에서 다시 지정할 수 있습니다.`,
-      );
+      setSaveMsg("방금 고른 값을 저장하지 못했어요. 설정 화면에서 다시 정해 주세요.");
     }
   };
 
@@ -235,11 +229,11 @@ export default function Onboarding() {
         {step === 0 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>
-  근무하는 병원을 선택하십시오.
+  근무하는 병원을 골라요
 </Text>
             <Small>
-              근무지를 지정하면 병원에 들어설 때 기록이 자동으로 켜지고 나설 때 꺼집니다.
-              검색어만 지도 서버(OpenStreetMap)로 가고, 내 위치는 보내지 않습니다.
+              근무지를 정하면 병원에 들어설 때 기록이 켜지고 나올 때 꺼져요. 찾는 말만
+              지도로 가고, 내 위치는 보내지 않아요.
             </Small>
             <View style={{ flexDirection: "row", gap: space.sm }}>
               <TextInput
@@ -267,12 +261,12 @@ export default function Onboarding() {
                     setSearchMsg(
                       r.hits.length === 0
                         ? r.source === "kakao"
-                          ? "찾지 못했습니다. 지점명을 빼거나 철자를 바꿔 보십시오."
-                          : "찾지 못했습니다. 정식 명칭(요양기관명)으로 다시 시도해 보십시오."
+                          ? "찾지 못했어요. 지점 이름을 빼고 다시 찾아 주세요."
+                          : "찾지 못했어요. 병원 정식 이름으로 다시 찾아 주세요."
                         : null,
                     );
                   } catch (e) {
-                    setSearchMsg(e instanceof Error ? e.message : "검색에 실패했습니다.");
+                    setSearchMsg(e instanceof Error ? e.message : "찾지 못했어요. 인터넷 연결을 확인해 주세요.");
                   }
                 }}
               />
@@ -304,10 +298,10 @@ export default function Onboarding() {
         {step === 1 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>
-  근무 파트를 선택하십시오.
+  근무 파트를 골라요
 </Text>
             <Small>
-  파트에 따라 해당 사전의 우선순위가 적용됩니다.
+  고른 파트의 말이 사전에서 먼저 나와요.
 </Small>
             <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
               {PARTS.map((p) => {
@@ -348,12 +342,11 @@ export default function Onboarding() {
         {step === 2 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>
-  어디서 전사할지 선택하십시오.
+  어디서 글자로 바꿀까요
 </Text>
             <Small>
-              전사는 폰이 아니라 티로·콜랩(무료 GPU)·내 컴퓨터 또는 Gemini(구글 AI)가
-              합니다. 기록 음성이 선택한 곳으로 전송됩니다. 여기서 고르면 설정 →
-              전사에 기본으로 잡힙니다.
+              글자로 바꾸는 일은 폰이 아니라 아래 넷 중 한 곳이 해요. 녹음한 소리가 고른
+              곳으로 전송돼요. 나중에 설정에서 바꿀 수 있어요.
             </Small>
             {METHOD_CHOICES.map((m) => {
               const on = model === m.key;
@@ -401,11 +394,10 @@ export default function Onboarding() {
         {/* ── 4. AI 필수 설정 — 두 조합 중 하나 + 키 두 개. 건너뛸 수 없다 ── */}
         {step === 3 ? (
           <>
-            <Text style={[type.title, { color: t.text }]}>AI 조합을 고르십시오</Text>
+            <Text style={[type.title, { color: t.text }]}>AI 조합을 골라요</Text>
             <Small>
-              분석·보고서·암기카드·대화가 전부 AI 로 돕니다. 이 설정 없이는 앱이
-              동작하지 않아 건너뛸 수 없습니다. 전사본은 개인정보를 가린 뒤에만
-              전송됩니다.
+              분석·보고서·단어장·대화가 모두 AI 로 돌아요. 이 설정이 없으면 앱이 돌지
+              않아서 건너뛸 수 없어요. 전사본은 개인정보를 가린 뒤에만 전송돼요.
             </Small>
             {AI_PATHS.map((p) => {
               const on = aiPath === p.path;
@@ -440,7 +432,7 @@ export default function Onboarding() {
                 <TextInput
                   value={geminiKeyInput}
                   onChangeText={setGeminiKeyInput}
-                  placeholder={hasGeminiKey ? "키가 저장되어 있습니다" : "AIza… 키 붙여넣기"}
+                  placeholder={hasGeminiKey ? "넣어 둔 열쇠가 있어요" : "AIza… 로 시작하는 열쇠"}
                   placeholderTextColor={t.textMuted}
                   secureTextEntry
                   autoCapitalize="none"
@@ -476,7 +468,7 @@ export default function Onboarding() {
                 <TextInput
                   value={pathKeyInput}
                   onChangeText={setPathKeyInput}
-                  placeholder={hasPathKey ? "키가 저장되어 있습니다" : "API 키 입력"}
+                  placeholder={hasPathKey ? "넣어 둔 열쇠가 있어요" : "열쇠 붙여넣기"}
                   placeholderTextColor={t.textMuted}
                   secureTextEntry
                   autoCapitalize="none"
@@ -504,17 +496,17 @@ export default function Onboarding() {
                     });
                   }}
                 />
-                <Small>키는 이 기기의 보안 저장소에만 보관되고, 설정에서 언제든 바꿀 수 있습니다.</Small>
+                <Small>열쇠는 이 폰 안에만 남아요. 설정에서 언제든 바꿔요.</Small>
               </Card>
             ) : null}
             <Button
               label={
                 !aiPath
-                  ? "조합을 먼저 고르십시오"
+                  ? "조합 먼저 고르기"
                   : !hasGeminiKey
-                    ? "Gemini 키를 저장해야 넘어갑니다"
+                    ? "Gemini 열쇠 저장하기"
                     : !hasPathKey
-                      ? (aiPath === "claude" ? "Claude" : "OpenAI") + " 키를 저장해야 넘어갑니다"
+                      ? (aiPath === "claude" ? "Claude" : "OpenAI") + " 열쇠 저장하기"
                       : "다음"
               }
               tone="primary"
@@ -530,7 +522,7 @@ export default function Onboarding() {
           <>
             <Text style={[type.title, { color: t.text }]}>시작하기 전에</Text>
             <Small>
-  모든 항목을 확인하고 동의해 주십시오.
+  모든 항목을 읽고 눌러 주세요.
 </Small>
             {ITEMS.map((item) => {
               const on = !!checked[item.key];
@@ -571,11 +563,11 @@ export default function Onboarding() {
             <Card>
               <Heading>권한 허용</Heading>
               <Small>
-                마이크는 필수입니다. 위치는 근무지 자동 기록을 쓸 때만 필요하고,
-                지금 건너뛰어도 설정에서 켤 수 있습니다.
+                마이크는 꼭 필요해요. 위치는 근무지 자동 기록을 쓸 때만 필요하고, 나중에
+                설정에서 켤 수 있어요.
               </Small>
               <Button
-                label={micGranted ? "✓ 마이크 허용됨" : "마이크 허용 (필수)"}
+                label={micGranted ? "마이크 켜짐" : "마이크 켜기"}
                 tone={micGranted ? "default" : "primary"}
                 onPress={async () => {
                   const r = await requestRecordingPermissionsAsync();
@@ -583,7 +575,7 @@ export default function Onboarding() {
                 }}
               />
               <Button
-                label={locGranted ? "✓ 위치 허용됨" : "위치 허용 (선택 — 근무지 자동 기록)"}
+                label={locGranted ? "위치 켜짐" : "위치 켜기"}
                 onPress={async () => {
                   const r = await Location.requestForegroundPermissionsAsync();
                   setLocGranted(r.granted);
@@ -592,7 +584,7 @@ export default function Onboarding() {
             </Card>
 
             <Button
-              label={starting ? "준비 중" : allChecked ? "확인했습니다 — 시작" : "위 항목을 모두 확인해 주십시오."}
+              label={starting ? "준비 중" : allChecked ? "시작하기" : "항목 모두 확인"}
               tone="primary"
               disabled={!allChecked || starting}
               busy={starting}
@@ -601,7 +593,7 @@ export default function Onboarding() {
                 void app.completeOnboarding();
               }}
             />
-            <Small>기록 기능은 기본적으로 꺼져 있습니다. 필요 시 설정에서 직접 켜 주십시오.</Small>
+            <Small>기록 기능은 처음에 꺼져 있어요. 설정에서 켜요.</Small>
           </>
         ) : null}
 

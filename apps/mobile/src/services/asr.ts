@@ -187,17 +187,17 @@ export function createSelfHostedProvider(
       // 지난번 "재연결하니 취소됐다" 사고의 정체가 이 530 이었다.
       const gatewayDown = (status: number): string | null => {
         if (status === 502 || status === 503 || status === 504) {
-          return `앗 서버 놈이 대답을 안 해요 (${status}). 콜랩이 졸고 있는 듯? 노트 가서 '모두 실행' 눌러 깨우고 주소 쌔벼오세용`;
+          return "서버가 답하지 않아요. 콜랩에서 '모두 실행'을 누르고 주소를 다시 넣어 주세요.";
         }
         if (status >= 500) {
-          return `서버로 가는 비밀 터널이 무너졌어요 (${status}). 콜랩 죽은 거 같으니 '모두 실행'으로 다시 살려내고 주소 따와요!`;
+          return "연결이 끊겼어요. 콜랩에서 '모두 실행'을 누르고 주소를 다시 넣어 주세요.";
         }
         return null;
       };
       if (response.status < 200 || response.status >= 300) {
         throw new Error(
           gatewayDown(response.status) ??
-            `서버 놈 뻘소리 시전 중 ${response.status}: ${response.body.slice(0, 300)}`,
+            `글자로 바꾸지 못했어요 (${response.status}). 연결을 확인하고 다시 해 주세요.`,
         );
       }
       type ServerResult = {
@@ -229,14 +229,14 @@ export function createSelfHostedProvider(
         // 출렁이고, 그동안 작업은 서버에 살아 있다. 폰 네트워크 단절이든
         // 5xx 든 한 바구니로 재고, 3분을 넘기면 그때 죽은 것으로 판단한다.
         let outageSince: number | null = null;
-        let lastFailure = "서버랑 멱살 놓침 뚝";
+        let lastFailure = "연결이 끊겼어요. 인터넷을 확인해 주세요.";
 
         // 죽음이 확정됐을 때: 받아 둔 것이 있으면 부분 회수, 없으면 그냥 실패.
         const giveUp = (reason: string): void => {
           if (collected.length === 0) throw new Error(reason);
           partialNote =
-            `앗 서버 놈이 도망가서 약 ${Math.round(lastProgress * 100)}%까지만 간신히 살렸어요 ` +
-            "남은 건 '변환 대기줄'에 모셔뒀으니, 서버 다시 패서 깨운 다음에 첨부터 다시 돌리면 됩니다! " +
+            `연결이 끊겨서 ${Math.round(lastProgress * 100)}% 까지만 건졌어요. ` +
+            "남은 녹음은 그대로 있어요. 다시 이은 뒤에 한 번 더 눌러 주세요. " +
             `(도망간 이유: ${reason})`;
           json = {
             segments: collected,
@@ -246,7 +246,7 @@ export function createSelfHostedProvider(
 
         poll_loop: for (;;) {
           if (Date.now() > deadline) {
-            giveUp("서버 놈이 한 시간째 쩔쩔매고 있어요 ㅠㅠ 죽었나 살았나 한 번 찔러보세요");
+            giveUp("한 시간 넘게 끝나지 않았어요. 연결을 확인하고 다시 해 주세요.");
             break;
           }
           await new Promise((resolve) => setTimeout(resolve, 3000));
@@ -254,10 +254,10 @@ export function createSelfHostedProvider(
           try {
             poll = await fetch(`${jobUrl}?since=${sinceIndex}`, { headers: authHeaders });
           } catch {
-            lastFailure = "앗 서버에 빨대가 안 꽂혀요 ㅠㅠ 폰 와이파이나 콜랩 살아있나 쳌쳌!";
+            lastFailure = "연결하지 못했어요. Wi-Fi 와 콜랩이 켜져 있는지 확인해 주세요.";
           }
           if (poll && poll.status >= 500) {
-            lastFailure = gatewayDown(poll.status) ?? `서버 놈 에러 뱉음 ${poll.status}`;
+            lastFailure = gatewayDown(poll.status) ?? `서버가 답하지 못했어요 (${poll.status}).`;
             poll = null;
           }
           if (!poll) {
@@ -270,14 +270,14 @@ export function createSelfHostedProvider(
           if (poll.status === 404) {
             // 작업 목록은 콜랩 세션 메모리에 있다. 404 는 세션이 재시작됐다는 뜻.
             giveUp(
-              "엥? 서버 놈이 혼자 재부팅해서 열심히 하던 거 싹 다 날려먹었어요 " +
-                "심호흡 한 번 하고 콜랩 '모두 실행'으로 깨운 뒤, 새 주소 박고 다시 돌려요 우리...",
+              "콜랩이 다시 켜지면서 하던 일이 사라졌어요. " +
+                "콜랩을 '모두 실행'으로 켜고 새 주소를 넣은 뒤 다시 해 주세요.",
             );
             break;
           }
           if (!poll.ok) {
             throw new Error(
-              `서버 놈이 뻘소리를 해요 ${poll.status}: ${(await poll.text()).slice(0, 300)}`,
+              `서버 답을 읽지 못했어요 (${poll.status}). 다시 해 주세요.`,
             );
           }
           const status = (await poll.json()) as {
@@ -293,7 +293,7 @@ export function createSelfHostedProvider(
           };
           switch (status.status) {
             case "error":
-              throw new Error(`변환 엎어짐 대참사: ${status.error ?? "원인 모름 (귀신 곡할 노릇)"}`);
+              throw new Error(`글자로 바꾸지 못했어요: ${status.error ?? "원인을 알 수 없어요"}`);
             case "done":
               if (status.result) {
                 json = status.result;
@@ -313,13 +313,13 @@ export function createSelfHostedProvider(
               Math.round(lastProgress * 100),
               // %가 안 움직이는 구간의 이유를 말해 준다 — 모델 준비와 화자 분리.
               status.stage === "model"
-                ? `${status.model ?? "모델"} 싣는 중`
+                ? `${status.model ?? "모델"} 준비하는 중`
                 : status.stage === "transcribe"
-                  ? "서버 놈이 폭풍 받아적는 중"
+                  ? "받아적는 중"
                   : status.stage === "align"
-                    ? "단어마다 초시계 재서 줄 세우는 중"
+                    ? "단어마다 시각 맞추는 중"
                     : status.stage === "diarize"
-                      ? "서버 놈이 목소리 갈라치기(화자 분리) 중"
+                      ? "목소리 나누는 중"
                       : undefined,
             );
           }
@@ -374,11 +374,11 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
       const FileSystem = await import("expo-file-system/legacy");
       const info = await FileSystem.getInfoAsync(fileUri);
       const size = info.exists && "size" in info ? (info.size ?? 0) : 0;
-      if (size <= 0) throw new Error("엥? 녹음 파일이 안 읽혀요 ㅠㅠ 고장 남");
+      if (size <= 0) throw new Error("녹음 파일을 읽지 못했어요. 파일이 남아 있는지 확인해 주세요.");
       const mime = /\.wav$/i.test(fileUri) ? "audio/wav" : "audio/mp4";
 
       // 1) 재개형 업로드를 연다. 인라인(base64)은 20MB 상한이라 못 쓴다.
-      onProgress?.(2, "구글 슨생님한테 파일 던지는 중");
+      onProgress?.(2, "파일 올리는 중");
       const start = await fetch(`${GEMINI_API.replace("/v1beta", "/upload/v1beta")}/files?key=${apiKey}`, {
         method: "POST",
         headers: {
@@ -390,9 +390,9 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
         },
         body: JSON.stringify({ file: { display_name: `nsr-${Date.now()}` } }),
       });
-      if (!start.ok) throw new Error(await geminiError(start, "업로드 슛 골인 대기 중"));
+      if (!start.ok) throw new Error(await geminiError(start, "파일 올리기"));
       const uploadUrl = start.headers.get("x-goog-upload-url");
-      if (!uploadUrl) throw new Error("앗 구글 AI가 받을 주소를 안 줘요 (먹튀?)");
+      if (!uploadUrl) throw new Error("구글이 올릴 주소를 주지 않았어요. 잠시 뒤 다시 해 주세요.");
 
       // 2) 파일 본문을 올린다. 진행률은 여기(0~40%)가 대부분이다.
       const task = FileSystem.createUploadTask(
@@ -410,36 +410,36 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
         (p) => {
           if (p.totalBytesExpectedToSend > 0) {
             const ratio = p.totalBytesSent / p.totalBytesExpectedToSend;
-            onProgress?.(Math.round(2 + ratio * 38), "구글 슨생님한테 파일 던지는 중");
+            onProgress?.(Math.round(2 + ratio * 38), "파일 올리는 중");
           }
         },
       );
       const uploaded = await task.uploadAsync();
       if (!uploaded || uploaded.status < 200 || uploaded.status >= 300) {
-        throw new Error(`구글 업로드 폭망 ㅠㅠ (${uploaded?.status ?? "?"}).`);
+        throw new Error("파일을 올리지 못했어요. 인터넷 연결을 확인해 주세요.");
       }
       const fileMeta = (JSON.parse(uploaded.body) as {
         file?: { name?: string; uri?: string; state?: string };
       }).file;
-      if (!fileMeta?.uri || !fileMeta.name) throw new Error("구글 슨생님이 파일을 뱉어냈어요");
+      if (!fileMeta?.uri || !fileMeta.name) throw new Error("구글이 파일을 받지 못했어요. 잠시 뒤 다시 해 주세요.");
 
       try {
         // 3) 파일 처리 완료 대기.
-        onProgress?.(45, "구글 슨생님이 요리 준비 중");
+        onProgress?.(45, "구글이 파일 준비하는 중");
         let state = fileMeta.state ?? "PROCESSING";
         const stateDeadline = Date.now() + 5 * 60 * 1000;
         while (state === "PROCESSING") {
-          if (Date.now() > stateDeadline) throw new Error("엥 구글 슨생님이 5분 넘게 파일만 쪼물딱거려요");
+          if (Date.now() > stateDeadline) throw new Error("구글이 5분 넘게 파일을 준비만 해요. 다시 해 주세요.");
           await new Promise((r) => setTimeout(r, 2000));
           const check = await fetch(`${GEMINI_API}/${fileMeta.name}?key=${apiKey}`);
-          if (!check.ok) throw new Error(await geminiError(check, "파일 안녕한지 찌르기"));
+          if (!check.ok) throw new Error(await geminiError(check, "파일 상태 확인"));
           state = ((await check.json()) as { state?: string }).state ?? "ACTIVE";
         }
-        if (state !== "ACTIVE") throw new Error("구글 슨생님이 이 음성 파일을 못 씹겠대요 뱉음");
+        if (state !== "ACTIVE") throw new Error("구글이 이 음성 파일을 읽지 못했어요. 다른 파일로 해 주세요.");
 
         // 4a) 전용 전사 모델 — Interactions API. 화자·단어 시각이 실측이다.
         if (isGeminiTranscribeModel(model)) {
-          onProgress?.(55, "찐 전문 모델이 폭풍 받아적기 시전 중");
+          onProgress?.(55, "전문 모델이 받아적는 중");
           const out = await geminiTranscribeInteraction({
             apiKey,
             model,
@@ -453,7 +453,7 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
         }
 
         // 4) 전사 요청 — 구조화 출력(JSON 배열)으로 강제한다.
-        onProgress?.(55, "구글 AI가 폭풍 타건 중 (여기선 진행률이 안 떠요)");
+        onProgress?.(55, "구글이 받아적는 중");
         const prompt =
           "이 음성은 한국 병원 병동의 근무 중 대화 기록이다. 전체를 한국어로 전사하라.\n" +
           "- 문장 단위로 나누고, 각 항목에 시작(start)·끝(end) 시각을 초 단위 숫자로 붙여라.\n" +
@@ -493,7 +493,7 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
             },
           }),
         });
-        if (!gen.ok) throw new Error(await geminiError(gen, "글자로 풀기"));
+        if (!gen.ok) throw new Error(await geminiError(gen, "글자로 바꾸기"));
         const data = (await gen.json()) as {
           candidates?: {
             content?: { parts?: { text?: string }[] };
@@ -508,8 +508,8 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
         } catch {
           throw new Error(
             cand?.finishReason === "MAX_TOKENS"
-              ? "녹음이 너무 길어서 구글 AI가 쓰다 지쳐 잘라먹었어요 30분씩 토막 쳐서 돌리거나 콜랩 형님 부르세요!"
-              : "구글 AI가 뭐라는지 못 알아먹겠어요 ㅠㅠ 한 번 더 돌려볼까요?",
+              ? "녹음이 너무 길어서 중간에 끊겼어요. 30분씩 나눠서 다시 해 주세요."
+              : "구글이 보낸 답을 읽지 못했어요. 한 번 더 해 주세요.",
           );
         }
         const segments = parsed
@@ -520,7 +520,7 @@ export function createGeminiProvider(apiKey: string, model: string): AsrProvider
             text: s.text.trim(),
             speakerId: s.speaker?.trim() || undefined,
           }));
-        if (segments.length === 0) throw new Error("엥 구글 AI가 글자로 바꾼 걸 안 돌려줘요 (먹튀 2차전)");
+        if (segments.length === 0) throw new Error("구글이 결과를 주지 않았어요. 다시 해 주세요.");
         onProgress?.(100);
         return { segments, durationSec: segments[segments.length - 1].endSec };
       } finally {
@@ -576,11 +576,11 @@ async function geminiTranscribeInteraction(input: {
     const detail = await res.text().catch(() => "");
     if (res.status === 400 && /duration|length|too.?long|minute|hour/i.test(detail)) {
       throw new Error(
-        "찐 전문 모델 체력(화자 분리 시 30분 조루)을 넘겨버린 짱 긴 녹음이에요! " +
-          "30분 미만 짤짤이에만 쓰거나, 모델을 gemini-3.7-flash 놈으로 갈아끼우거나, 콜랩 형님 부르세용!",
+        "이 모델이 받는 30분을 넘겼어요. " +
+          "30분 아래로 나누거나 gemini-3.7-flash 로 바꿔 주세요.",
       );
     }
-    throw new Error(await geminiErrorText(res.status, detail, "찐 전문 전사"));
+    throw new Error(await geminiErrorText(res.status, detail, "전문 모델 전사"));
   }
 
   interface WordInfo {
@@ -601,12 +601,12 @@ async function geminiTranscribeInteraction(input: {
   const deadline = Date.now() + 20 * 60 * 1000;
   while (data.status && data.status !== "completed" && data.id) {
     if (data.status === "failed" || data.status === "cancelled") {
-      throw new Error("구글 AI 전문 모델이 뻗었어요 ㅠㅠ 물 한잔 먹고 이따 다시 찔러보세요");
+      throw new Error("구글 전문 모델이 멈췄어요. 잠시 뒤 다시 해 주세요.");
     }
-    if (Date.now() > deadline) throw new Error("구글 AI 전문 모델이 20분 넘게 뻘짓하다 파업 선언");
+    if (Date.now() > deadline) throw new Error("20분 넘게 끝나지 않았어요. 잠시 뒤 다시 해 주세요.");
     await new Promise((r) => setTimeout(r, 3000));
     const check = await fetch(`${GEMINI_API}/${data.id}`, { headers });
-    if (!check.ok) throw new Error(await geminiError(check, "변환 안녕한지 찌르기"));
+    if (!check.ok) throw new Error(await geminiError(check, "진행 상태 확인"));
     data = (await check.json()) as InteractionData;
   }
 
@@ -619,7 +619,7 @@ async function geminiTranscribeInteraction(input: {
   if (words.length === 0) {
     // 시각 주석이 없으면 본문이라도 살린다 — 실패보다 낫다.
     const text = contents.map((c) => c.text ?? "").join(" ").trim();
-    if (!text) throw new Error("구글 AI가 다 바꾼 글자를 안 돌려줘요 ㅠㅠ 먹튀!");
+    if (!text) throw new Error("구글이 결과를 주지 않았어요. 다시 해 주세요.");
     return { segments: [{ startSec: 0, endSec: 0, text }], durationSec: 0 };
   }
 
@@ -661,10 +661,10 @@ async function geminiTranscribeInteraction(input: {
 
 function geminiErrorText(status: number, detail: string, doing: string): string {
   if (status === 400 && detail.includes("API_KEY")) {
-    return "구글 AI 열쇠(키)가 안 맞아요! 설정 → 텍스트 변환 가서 Gemini 키 짝퉁 아닌지 쳌쳌";
+    return "구글 열쇠가 맞지 않아요. 설정에서 열쇠를 다시 넣어 주세요.";
   }
   if (status === 429) {
-    return "헐 구글 공짜 한도 털림! 쿨타임 차면 다시 하거나, 카드 긁거나, 콜랩 형님 부르세요!";
+    return "구글 무료 한도를 다 썼어요. 잠시 뒤 다시 하거나 결제를 연결해 주세요.";
   }
   return `구글 AI 뻘짓 ${doing} 오류 ${status}: ${detail.slice(0, 200)}`;
 }
@@ -760,7 +760,7 @@ export async function processRecording(
       perSegment.push({ edits: corrected.edits, annotations: corrected.annotations });
     }
 
-    onProgress?.(100, `다 쓴 글자 폰에 짱박는 중 (${segments.length} 문장)`);
+    onProgress?.(100, `폰에 저장하는 중 (${segments.length}문장)`);
     await saveSegments(recording.id, recording.shift_id, segments, perSegment);
     if (asr.partial) {
       // 부분 회수: 받은 데까지는 방금 저장했다. 던지면 아래 catch 가 상태를
@@ -891,7 +891,7 @@ export async function resolveProvider(): Promise<AsrProvider> {
 
   if (mode === "tiro") {
     const key = await getTiroKey();
-    if (!key) throw new Error("티로 열쇠(키)가 없어요! 설정 → 텍스트 변환 가서 티로 카드에 열쇠 꽂아주세용");
+    if (!key) throw new Error("티로 열쇠가 없어요. 설정 → 전사에서 열쇠를 넣어 주세요.");
     return createTiroProvider(key);
   }
 
@@ -900,7 +900,7 @@ export async function resolveProvider(): Promise<AsrProvider> {
     const key = await getApiKey("gemini");
     if (!key) {
       throw new Error(
-        "구글 AI 열쇠(키)가 없어요! 설정 → 필수 기능 가서 Gemini 카드에 열쇠 좀 꽂아주세용",
+        "구글 열쇠가 없어요. 설정 → 필수 기능에서 열쇠를 넣어 주세요.",
       );
     }
     // 2.5 계열은 2026 상반기에 폐기 예고됐다 — 옛 저장값도 현행 모델로 옮겨 쓴다.
@@ -913,7 +913,7 @@ export async function resolveProvider(): Promise<AsrProvider> {
 
   if (!cloud.endpoint) {
     throw new Error(
-      "앗 일 시킬 녀석(서버)이 없어요! 설정 → 텍스트 변환 가서 콜랩, 내 PC, 구글 AI 중 한 놈 꼭 찍어주세요",
+      "어디서 바꿀지 아직 안 골랐어요. 설정 → 전사에서 한 곳을 골라 주세요.",
     );
   }
   const hfToken = cloud.diarize ? await getHfToken() : null;
@@ -952,8 +952,8 @@ const TIRO_API = "https://api.tiro.ooo";
 
 async function tiroError(res: Response, doing: string): Promise<string> {
   const detail = await res.text().catch(() => "");
-  if (res.status === 401 || res.status === 403) return "티로 열쇠(키)가 안 맞아요! 설정에서 다시 넣어주세용";
-  if (res.status === 429) return "티로가 너무 바빠요 ㅠㅠ 좀 이따 다시 해주세요";
+  if (res.status === 401 || res.status === 403) return "티로 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.";
+  if (res.status === 429) return "티로가 바빠요. 잠시 뒤 다시 해 주세요.";
   return `티로가 에러 뱉음 (${doing}, ${res.status}): ${detail.slice(0, 200)}`;
 }
 
@@ -1022,7 +1022,7 @@ export async function syncTiroWordMemory(
   onProgress?: (done: number, total: number) => void,
 ): Promise<{ added: number; already: number; skipped: number; failed: number }> {
   const key = await getTiroKey();
-  if (!key) throw new Error("티로 열쇠(키)가 없어요! 먼저 키부터 넣어주세용");
+  if (!key) throw new Error("티로 열쇠가 없어요. 설정에서 먼저 넣어 주세요.");
 
   const { words, skipped } = tiroWordsOf(lexicon);
   const pushed = new Set(await getSetting<string[]>(TIRO_PUSHED, []));
@@ -1044,7 +1044,7 @@ export async function syncTiroWordMemory(
       pushed.add(words[i].entry);
     }
     else if (res.status === 401 || res.status === 403) {
-      throw new Error("티로 열쇠(키)가 안 맞아요! 설정에서 다시 넣어주세용");
+      throw new Error("티로 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.");
     } else failed++;
     onProgress?.(i + 1, words.length);
   }
@@ -1062,14 +1062,14 @@ export function createTiroProvider(apiKey: string): AsrProvider {
       const FileSystem = await import("expo-file-system/legacy");
       const info = await FileSystem.getInfoAsync(fileUri);
       const size = info.exists && "size" in info ? (info.size ?? 0) : 0;
-      if (size <= 0) throw new Error("엥? 녹음 파일이 안 읽혀요 ㅠㅠ 고장 남");
+      if (size <= 0) throw new Error("녹음 파일을 읽지 못했어요. 파일이 남아 있는지 확인해 주세요.");
 
       // 0) 사전에 새로 생긴 말이 있으면 먼저 올린다. 없으면 요청 0건이다.
       onProgress?.(1, "병동 사전 맞추는 중");
       await autoPushTiroWords(apiKey);
 
       // 1) 작업을 만든다. 올릴 주소를 받아온다.
-      onProgress?.(2, "티로한테 자리 잡는 중");
+      onProgress?.(2, "티로에 자리 만드는 중");
       const created = await fetch(`${TIRO_API}/v1/external/voice-file/jobs`, {
         method: "POST",
         headers: { ...auth, "content-type": "application/json" },
@@ -1078,7 +1078,7 @@ export function createTiroProvider(apiKey: string): AsrProvider {
       });
       if (!created.ok) throw new Error(await tiroError(created, "작업 만들기"));
       const { id, uploadUri } = (await created.json()) as { id: string; uploadUri: string };
-      if (!id || !uploadUri) throw new Error("티로가 올릴 주소를 안 줘요 (먹튀?)");
+      if (!id || !uploadUri) throw new Error("티로가 올릴 주소를 주지 않았어요. 다시 해 주세요.");
 
       // 2) presigned URL 에 파일 본문을 올린다. 여기가 진행률의 대부분이다.
       const task = FileSystem.createUploadTask(
@@ -1092,22 +1092,22 @@ export function createTiroProvider(apiKey: string): AsrProvider {
         (p) => {
           if (p.totalBytesExpectedToSend > 0) {
             const ratio = p.totalBytesSent / p.totalBytesExpectedToSend;
-            onProgress?.(Math.round(2 + ratio * 38), "티로한테 파일 던지는 중");
+            onProgress?.(Math.round(2 + ratio * 38), "파일 올리는 중");
           }
         },
       );
       const uploaded = await task.uploadAsync();
       if (!uploaded || uploaded.status < 200 || uploaded.status >= 300) {
-        throw new Error(`티로 업로드 폭망 ㅠㅠ (${uploaded?.status ?? "?"}). 와이파이 확인해 주세요`);
+        throw new Error("파일을 올리지 못했어요. Wi-Fi 를 확인해 주세요.");
       }
 
       // 3) 다 올렸다고 알린다. 이때부터 전사가 시작된다.
-      onProgress?.(42, "티로가 듣기 시작함");
+      onProgress?.(42, "티로가 듣기 시작했어요");
       const done = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}/upload-complete`, {
         method: "PUT",
         headers: auth,
       });
-      if (!done.ok) throw new Error(await tiroError(done, "업로드 완료 알리기"));
+      if (!done.ok) throw new Error(await tiroError(done, "올리기 마무리"));
 
       // 4) 끝날 때까지 물어본다. 20~60분 파일에 3~6분 걸린다고 하니 5초 간격이면
       //    넉넉하고, 한 시간을 넘기면 뭔가 잘못된 것으로 본다.
@@ -1115,19 +1115,19 @@ export function createTiroProvider(apiKey: string): AsrProvider {
       for (let tick = 0; Date.now() < deadline; tick++) {
         await new Promise((r) => setTimeout(r, 5_000));
         const res = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}`, { headers: auth });
-        if (!res.ok) throw new Error(await tiroError(res, "상태 물어보기"));
+        if (!res.ok) throw new Error(await tiroError(res, "진행 상태 확인"));
         const job = (await res.json()) as { status: string; errorMessage?: string | null };
         if (job.status === "FAILED") {
-          throw new Error(`티로가 전사를 포기했어요: ${job.errorMessage ?? "이유를 안 알려줌"}`);
+          throw new Error(`티로가 바꾸지 못했어요: ${job.errorMessage ?? "이유를 알 수 없어요"}`);
         }
         if (job.status === "COMPLETED") break;
         // 45%에서 시작해 95%까지 천천히 채운다. 남은 시간을 모르니 눈속임이 아니라
         // "아직 도는 중"을 보여주는 용도다.
         onProgress?.(Math.min(95, 45 + tick), "티로가 받아적는 중");
-        if (Date.now() >= deadline) throw new Error("티로가 한 시간 넘게 안 끝나요. 나중에 다시 해주세요");
+        if (Date.now() >= deadline) throw new Error("티로가 한 시간 넘게 끝나지 않았어요. 잠시 뒤 다시 해 주세요.");
       }
 
-      onProgress?.(97, "받아적은 거 가져오는 중");
+      onProgress?.(97, "결과 가져오는 중");
       const out = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}/transcript`, { headers: auth });
       if (!out.ok) throw new Error(await tiroError(out, "결과 가져오기"));
       const body = (await out.json()) as {
@@ -1148,7 +1148,7 @@ export function createTiroProvider(apiKey: string): AsrProvider {
       if (segments.length === 0 && body.text?.trim()) {
         segments.push({ startSec: 0, endSec: 0, text: body.text.trim(), speakerId: undefined });
       }
-      onProgress?.(100, "티로 끝");
+      onProgress?.(100, "다 됐어요");
       return { segments, durationSec: segments.at(-1)?.endSec ?? 0 };
     },
   };

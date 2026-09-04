@@ -122,14 +122,14 @@ function Bubble({ msg }: { msg: Msg }) {
 }
 
 const STARTERS = [
-  "오늘 태움 당했습니다.",
-  "실수해서 자책 중입니다.",
+  "오늘 태움 당했어요.",
+  "실수해서 자책 중이에요.",
   "그냥 지쳤어요",
-  "오늘 근무 내용으로 퀴즈 내주십시오.",
-  "최근 근무 보고서를 요약해 주십시오.",
+  "오늘 근무 내용으로 퀴즈 내주세요.",
+  "최근 근무 보고서를 요약해 주세요.",
 ];
 
-const QUIZ_PROMPT = "암기카드와 최근 보고서로 퀴즈를 내주십시오. 답하면 확인해 주십시오.";
+const QUIZ_PROMPT = "단어장과 최근 보고서로 퀴즈를 내주세요. 답하면 맞았는지 알려주세요.";
 
 export default function Care() {
   const t = useTheme();
@@ -240,7 +240,7 @@ export default function Care() {
         setMsgs(done);
         await setSetting(CHAT_SETTING, done.slice(deepOk ? -200 : -40));
       } catch (e) {
-        setErr(e instanceof Error ? e.message : "답을 받지 못했습니다. 다시 시도해 보십시오.");
+        setErr(e instanceof Error ? e.message : "답을 받지 못했어요. 잠시 뒤 다시 보내 주세요.");
         await setSetting(CHAT_SETTING, next.slice(-40));
       } finally {
         setBusy(false);
@@ -328,7 +328,7 @@ export default function Care() {
             <Pressable
               accessibilityRole="button"
               onPress={() => {
-                Alert.alert("새 세션", "지금 대화를 지우고 새로 시작합니다.", [
+                Alert.alert("새로 시작할까요", "지금 대화를 지우고 새로 시작해요.", [
                   { text: "취소", style: "cancel" },
                   {
                     text: "새로 시작",
@@ -352,8 +352,8 @@ export default function Care() {
           <View style={{ paddingHorizontal: space.lg, paddingBottom: space.xs }}>
             <Text style={[type.small, { color: t.warn, fontWeight: "600" }]}>
               임상 판단 모드 — Claude Opus 5. 카드·보고서·확인 목록을 수정할 수 있고, 모든
-              수정은 이유와 함께 이력에 남습니다.
-              {webSearch ? " 검색으로 얻은 내용은 카드로 만들지 않습니다." : ""}
+              고친 내용은 이유와 함께 남아요.
+              {webSearch ? " 검색으로 찾은 내용은 카드로 만들지 않아요." : ""}
             </Text>
           </View>
         ) : null}
@@ -376,23 +376,23 @@ export default function Care() {
             <Enter index={1}>
               {ready && !ready.ok ? (
                 <Card>
-                  <Heading>이야기 상대를 연결해야 합니다</Heading>
+                  <Heading>AI 를 먼저 이어요</Heading>
                   <Body muted>{ready.reason}</Body>
                   <Button label="설정 열기" tone="primary" onPress={() => router.push("/settings")} />
                 </Card>
               ) : (
                 <Card>
-                  <Heading>오늘 어땠습니까</Heading>
+                  <Heading>오늘 어땠어요</Heading>
                   <Body muted>
-                    병동에서 있었던 일도, 오늘 배운 것도 좋습니다. 힘든 이야기는 들어주고,
-                    공부 질문에는 선배처럼 답하고, 암기카드로 퀴즈도 냅니다. 대화는 이
-                    화면에만 남습니다.
+                    병동에서 있었던 일도, 오늘 배운 것도 좋아요. 힘든 이야기는 들어주고,
+                    공부 질문에는 선배처럼 답하고, 단어장으로 퀴즈도 내요. 대화는 이 화면에만
+                    남아요.
                   </Body>
                   <Small>
                     메시지는 설정한 AI 공급자로 전송되며, 이름 같은 민감 정보는 자동으로 가리고
                     보냅니다.
                   </Small>
-                  <Small>많이 위험하다고 느껴지면 지금 전화하십시오 — 1577-0199 · 109</Small>
+                  <Small>많이 힘들면 지금 전화해요 — 1577-0199 · 109</Small>
                 </Card>
               )}
             </Enter>
@@ -454,7 +454,7 @@ export default function Care() {
           <TextInput
             value={input}
             onChangeText={setInput}
-            placeholder={ready?.ok === false ? "설정에서 AI를 연결하면 시작합니다." : "무슨 일이 있었는지 적어 보십시오"}
+            placeholder={ready?.ok === false ? "설정에서 AI를 먼저 이어요" : "무슨 일이 있었는지 적어요"}
             placeholderTextColor={t.textMuted}
             editable={ready?.ok ?? false}
             multiline

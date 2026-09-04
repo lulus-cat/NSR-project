@@ -260,7 +260,7 @@ export default function TranscriptionSetup() {
     setCheck({
       state: "done",
       ok: key.length > 0,
-      message: key ? "키를 기기 보안 저장소에 넣었습니다." : "키를 지웠습니다.",
+      message: key ? "열쇠를 이 폰에 넣었어요." : "열쇠를 지웠어요.",
     });
   }, [geminiKeyInput]);
 
@@ -272,7 +272,7 @@ export default function TranscriptionSetup() {
   }, [tiroKeyInput]);
 
   const pushWordMemory = useCallback(async () => {
-    setWordSync("사전 올리는 중…");
+    setWordSync("사전 올리는 중");
     try {
       const lexicon = await loadLexicon();
       const r = await syncTiroWordMemory(lexicon, (done, total) =>
@@ -291,7 +291,7 @@ export default function TranscriptionSetup() {
   const checkGemini = useCallback(async () => {
     const key = await getApiKey("gemini");
     if (!key) {
-      setCheck({ state: "done", ok: false, message: "키를 먼저 저장하십시오." });
+      setCheck({ state: "done", ok: false, message: "열쇠가 없어요. 위 칸에 넣고 저장해 주세요." });
       return;
     }
     setCheck({ state: "checking" });
@@ -305,18 +305,18 @@ export default function TranscriptionSetup() {
       clearTimeout(timer);
       setCheck(
         res.ok
-          ? { state: "done", ok: true, message: "연결됐습니다. 이제 기록 화면에서 전사를 누르면 됩니다." }
-          : { state: "done", ok: false, message: `키가 거부됐습니다 (${res.status}). 키를 다시 확인하십시오.` },
+          ? { state: "done", ok: true, message: "연결됐어요. 근무 기록 화면에서 녹음을 바꿔 보세요." }
+          : { state: "done", ok: false, message: "열쇠가 맞지 않아요. 열쇠를 다시 확인해 주세요." },
       );
     } catch {
-      setCheck({ state: "done", ok: false, message: "구글에 연결하지 못했습니다. 네트워크를 확인하십시오." });
+      setCheck({ state: "done", ok: false, message: "구글에 닿지 못했어요. 인터넷 연결을 확인해 주세요." });
     }
   }, []);
 
   const checkConnection = useCallback(async () => {
     const base = server.endpoint.trim().replace(/\/+$/, "");
     if (!base) {
-      setCheck({ state: "done", ok: false, message: "주소를 먼저 넣으십시오." });
+      setCheck({ state: "done", ok: false, message: "주소가 없어요. 위 칸에 붙여넣어 주세요." });
       return;
     }
     setCheck({ state: "checking" });
@@ -327,11 +327,11 @@ export default function TranscriptionSetup() {
       clearTimeout(timer);
       setCheck(
         res.ok
-          ? { state: "done", ok: true, message: "연결됐습니다. 이제 기록 화면에서 전사를 누르면 됩니다." }
+          ? { state: "done", ok: true, message: "연결됐어요. 근무 기록 화면에서 녹음을 바꿔 보세요." }
           : {
               state: "done",
               ok: false,
-              message: `서버가 ${res.status}로 답했습니다. 주소를 끝까지(비밀 문자열 포함) 붙여넣었는지 확인하십시오.`,
+              message: "주소가 맞지 않아요. 주소를 끝까지 붙여넣었는지 확인해 주세요.",
             },
       );
     } catch {
@@ -340,8 +340,8 @@ export default function TranscriptionSetup() {
         ok: false,
         message:
           mode === "colab"
-            ? "연결하지 못했습니다. 콜랩 노트가 '모두 실행' 상태인지, 주소를 통째로 붙여넣었는지 확인하십시오."
-            : "연결하지 못했습니다. 폰과 컴퓨터가 같은 Wi-Fi인지, 서버가 켜져 있는지 확인하십시오.",
+            ? "연결하지 못했어요. 콜랩 노트를 '모두 실행' 했는지 확인해 주세요."
+            : "연결하지 못했어요. 폰과 컴퓨터가 같은 Wi-Fi인지 확인해 주세요.",
       });
     }
   }, [mode, server.endpoint]);
@@ -368,13 +368,10 @@ export default function TranscriptionSetup() {
     >
       {/* ── 방식 선택: 이 화면의 첫 질문 ── */}
       <Card>
-        <Heading>어디서 전사합니까</Heading>
-        <Small>
-          전사는 폰이 아니라 아래 넷 중 한 곳이 합니다. 기본은 티로입니다 — 같은 녹음을
-          네 곳으로 돌려 보니 한국어를 가장 잘 받아적었습니다. 콜랩·내 컴퓨터는 휘스퍼
-          모델을 돌리는 서버 방식이고, 티로·Gemini 는 서버 없이 키 하나로 보내는
-          방식입니다. 기록 음성이 선택한 곳으로 전송됩니다.
-        </Small>
+        <Heading>어디서 글자로 바꿀까요</Heading>
+        <Small>글자로 바꾸는 일은 폰이 아니라 아래 넷 중 한 곳이 해요.</Small>
+        <Small>기본은 티로예요. 한국어를 가장 잘 받아적었어요.</Small>
+        <Small>녹음한 소리가 고른 곳으로 전송돼요.</Small>
         <View style={{ flexDirection: "row", gap: space.sm }}>
           <ModeTile
             icon="mic-outline"
@@ -386,21 +383,21 @@ export default function TranscriptionSetup() {
           <ModeTile
             icon="logo-google"
             title="콜랩"
-            caption="GPU 노트 · 휘스퍼"
+            caption="무료 · 준비 3분"
             selected={mode === "colab"}
             onPress={() => switchMode("colab")}
           />
           <ModeTile
             icon="laptop-outline"
             title="내 컴퓨터"
-            caption="같은 Wi-Fi · 휘스퍼"
+            caption="집 밖으로 안 나감"
             selected={mode === "pc"}
             onPress={() => switchMode("pc")}
           />
           <ModeTile
             icon="sparkles-outline"
             title="Gemini"
-            caption="API 키 하나 · 서버 없이"
+            caption="열쇠 하나로"
             selected={mode === "gemini"}
             onPress={() => switchMode("gemini")}
           />
@@ -418,31 +415,26 @@ export default function TranscriptionSetup() {
               minHeight: TOUCH_MIN,
             }}
           >
-            <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>화자 분리 사용</Text>
+            <Text style={[type.body, { color: t.text, fontWeight: "600" }]}>목소리 나누기</Text>
             <Switch
               value={!!server.diarize}
               onValueChange={(v) => void save({ ...server, diarize: v })}
             />
           </View>
-          <Small>
-            전사와 함께 누가 말했는지(화자 1·2·3…)를 자동으로 나눕니다 — 문장 중간에
-            화자가 바뀌어도 단어 단위로 경계를 맞춥니다. 기록 화면에서 화자별 역할을
-            한 번에 지정할 수 있고, 전사가 몇 분 더 걸립니다.
-          </Small>
+          <Small>누가 말했는지 목소리별로 자동으로 나눠요.</Small>
+          <Small>결과 화면에서 목소리마다 역할을 한 번에 정해요.</Small>
+          <Small>대신 몇 분 더 걸려요.</Small>
           <Divider />
           <Small muted={false}>
-            허깅페이스 토큰{hasHfToken ? " — 저장됨" : " — 아직 없음"}
+            허깅페이스 열쇠{hasHfToken ? " — 넣어 뒀어요" : " — 아직 없어요"}
           </Small>
-          <Small>
-            화자를 나누는 모델(pyannote)은 무료지만 허깅페이스 계정 확인을 요구합니다.
-            토큰을 여기 한 번 넣어 두면 전사할 때마다 콜랩으로 함께 보냅니다 —
-            콜랩에서는 아무것도 설정하지 않습니다. 토큰은 이 기기의 보안 저장소에만
-            남고, 다른 곳으로는 나가지 않습니다.
-          </Small>
+          <Small>목소리를 나누는 기능은 무료예요.</Small>
+          <Small>대신 허깅페이스 가입 확인이 필요해요.</Small>
+          <Small>열쇠는 이 폰 안에만 남아요.</Small>
           <TextInput
             value={hfTokenInput}
             onChangeText={setHfTokenInput}
-            placeholder={hasHfToken ? "저장된 토큰이 있습니다" : "hf_ 로 시작하는 Read 토큰"}
+            placeholder={hasHfToken ? "넣어 둔 열쇠가 있어요" : "hf_ 로 시작하는 Read 열쇠"}
             placeholderTextColor={t.textMuted}
             secureTextEntry
             autoCapitalize="none"
@@ -457,21 +449,19 @@ export default function TranscriptionSetup() {
             }}
           />
           <Button
-            label="토큰 저장"
+            label="열쇠 저장"
             tone={hasHfToken ? "default" : "primary"}
             onPress={() => void saveHfKey()}
           />
           {hasHfToken ? (
-            <Button label="저장된 토큰 지우기" onPress={() => void saveHfKey("")} />
+            <Button label="열쇠 지우기" onPress={() => void saveHfKey("")} />
           ) : null}
           <Divider />
-          <Small muted={false}>토큰 만들기 — 무료, 한 번만 (약 5분)</Small>
-          <Small>
-            누르면 각 쪽이 열립니다. 로그인한 뒤 &lsquo;Agree&rsquo;(동의)를 한 번씩 누르면
-            됩니다 — 승인은 즉시입니다.
-          </Small>
+          <Small muted={false}>열쇠 만들기 — 무료, 한 번만 (약 5분)</Small>
+          <Small>누르면 각 쪽이 열려요.</Small>
+          <Small>로그인한 뒤 Agree(동의)를 한 번씩 눌러요.</Small>
           <Button
-            label="1. 분리 모델 동의 — community-1"
+            label="1. 모델 동의 열기"
             onPress={() =>
               void Linking.openURL(
                 "https://huggingface.co/pyannote/speaker-diarization-community-1",
@@ -479,24 +469,22 @@ export default function TranscriptionSetup() {
             }
           />
           <Button
-            label="2. 분리 모델 동의 — 3.1 (예비)"
+            label="2. 예비 모델 동의 열기"
             onPress={() =>
               void Linking.openURL("https://huggingface.co/pyannote/speaker-diarization-3.1")
             }
           />
           <Button
-            label="3. 구간 모델 동의 — segmentation-3.0"
+            label="3. 구간 모델 동의 열기"
             onPress={() =>
               void Linking.openURL("https://huggingface.co/pyannote/segmentation-3.0")
             }
           />
           <Button
-            label="4. Read 토큰 발급 → 위 칸에 붙여넣기"
+            label="4. 열쇠 발급 열기"
             onPress={() => void Linking.openURL("https://huggingface.co/settings/tokens")}
           />
-          <Small>
-            토큰 없이 켜면 그 전사는 화자 없이 전사만 돌아옵니다 — 실패하지 않습니다.
-          </Small>
+          <Small>열쇠 없이 켜도 글자로는 바뀌어요. 목소리만 안 나뉘어요.</Small>
         </Card>
       ) : null}
 
@@ -504,11 +492,9 @@ export default function TranscriptionSetup() {
       {!keyOnly ? (
       <Card>
         <Heading>전사 모델</Heading>
-        <Small>
-          {mode === "colab"
-            ? "누르면 다음 전사부터 그 모델을 씁니다. 콜랩이 처음 쓰는 모델은 내려받느라 몇 분 더 걸립니다 — 폰에는 아무것도 받지 않습니다."
-            : "누르면 다음 전사부터 그 모델을 씁니다. 컴퓨터가 첫 전사 때 알아서 내려받습니다 — 폰에는 아무것도 받지 않습니다."}
-        </Small>
+        <Small>누르면 다음부터 그 모델로 바꿔요.</Small>
+        <Small>처음 쓰는 모델은 준비하느라 몇 분 더 걸려요.</Small>
+        <Small>폰에는 아무것도 내려받지 않아요.</Small>
         <Divider />
         {models.map((m, i) => (
           <View key={m.id}>
@@ -553,14 +539,14 @@ export default function TranscriptionSetup() {
               })}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>서버 기본값</Text>
+                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>기본 모델</Text>
                 {selectedModelId === undefined ? (
                   <Badge text="선택됨" tone="ok" />
                 ) : (
                   <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>선택</Text>
                 )}
               </View>
-              <Small>모델을 지정하지 않고 서버가 미리 실어 둔 모델을 그대로 씁니다.</Small>
+              <Small>고르지 않고 미리 준비된 모델을 그대로 써요.</Small>
             </Pressable>
           </>
         ) : null}
@@ -571,23 +557,18 @@ export default function TranscriptionSetup() {
       {/* ── 선택한 방식의 연결 ── */}
       {mode === "colab" ? (
         <Card tone="accent">
-          <Heading>콜랩 연결</Heading>
-          <Small>
-            기록 음성이 구글(콜랩) 서버와 Cloudflare 터널을 지나갑니다 — 내 컴퓨터가
-            아닙니다. 전사하는 동안 콜랩 탭을 열어 두십시오. 탭을 닫으면 서버도 꺼집니다.
-          </Small>
+          <Heading>콜랩 잇기</Heading>
+          <Small>녹음한 소리가 구글 콜랩을 지나가요. 내 컴퓨터가 아니에요.</Small>
+          <Small>바꾸는 동안 콜랩 탭을 열어 둬요.</Small>
+          <Small>탭을 닫으면 콜랩도 꺼져요.</Small>
           <Divider />
           <Small muted={false}>1. 콜랩 노트를 열고 &lsquo;런타임 → 모두 실행&rsquo;</Small>
           <Button label="콜랩 노트 열기" tone="primary" onPress={() => void Linking.openURL(COLAB_NOTEBOOK_URL)} />
           <Small muted={false}>
-            2. 마지막 셀의 &lsquo;NSR 앱에 연결&rsquo; 버튼(컴퓨터라면 QR 스캔)을 누르면
-            주소가 자동으로 저장됩니다
+            2. 마지막 칸의 &lsquo;NSR 앱에 연결&rsquo; 버튼을 누르면 주소가 저장돼요
           </Small>
-          <Small>버튼이 안 되면 그때만 주소를 복사해 아래에 붙여넣으십시오.</Small>
-          <Small>
-            콜랩에서 고칠 것은 없습니다 — 모델·화자 분리·토큰은 전부 이 화면에서 정하고,
-            전사할 때 함께 보냅니다.
-          </Small>
+          <Small>버튼이 안 되면 주소를 복사해 아래에 붙여넣어요.</Small>
+          <Small>콜랩에서 고칠 것은 없어요. 모두 이 화면에서 정해요.</Small>
           <TextInput
             value={server.endpoint}
             onChangeText={setEndpoint}
@@ -597,9 +578,8 @@ export default function TranscriptionSetup() {
             autoCorrect={false}
             style={input}
           />
-          <Small>
-            콜랩 세션이 꺼졌다 켜지면 주소가 새로 나옵니다 — 그때마다 다시 붙여넣으십시오.
-          </Small>
+          <Small>콜랩을 껐다 켜면 주소가 새로 나와요.</Small>
+          <Small>그때마다 다시 붙여넣어요.</Small>
           <Button
             label={check.state === "checking" ? "확인 중" : "연결 확인"}
             busy={check.state === "checking"}
@@ -613,19 +593,17 @@ export default function TranscriptionSetup() {
         </Card>
       ) : mode === "pc" ? (
         <Card tone="accent">
-          <Heading>내 컴퓨터 연결</Heading>
-          <Small>
-            같은 Wi-Fi의 내 컴퓨터가 전사합니다. 음성이 그 컴퓨터로만 가므로,{" "}
-            <Text style={{ fontWeight: "700" }}>내 컴퓨터에만</Text> 연결하십시오.
-          </Small>
+          <Heading>내 컴퓨터 잇기</Heading>
+          <Small>같은 Wi-Fi 의 내 컴퓨터가 글자로 바꿔요.</Small>
+          <Small>소리가 그 컴퓨터로만 가요. 내 컴퓨터에만 이어요.</Small>
           <Divider />
-          <Small muted={false}>1. 컴퓨터에서 한 번만: Docker(docker.com) 설치 후 터미널에 입력</Small>
+          <Small muted={false}>1. 컴퓨터에 한 번만: Docker 를 깔고 아래를 붙여넣어요</Small>
           <View style={{ backgroundColor: t.surfaceAlt, borderRadius: radius.md, padding: space.md }}>
             <Text selectable style={{ color: t.text, fontFamily: "monospace", fontSize: 12 }}>
               docker run -d -p 8000:8000 ghcr.io/speaches-ai/speaches:latest-cpu
             </Text>
           </View>
-          <Small muted={false}>2. 컴퓨터의 Wi-Fi IP를 확인해 주소로 넣기</Small>
+          <Small muted={false}>2. 컴퓨터의 Wi-Fi 주소를 아래에 넣어요</Small>
           <TextInput
             value={server.endpoint}
             onChangeText={setEndpoint}
@@ -635,10 +613,7 @@ export default function TranscriptionSetup() {
             autoCorrect={false}
             style={input}
           />
-          <Small>
-            OpenAI 호환(/v1/audio/transcriptions) 서버라면 무엇이든 붙습니다. 집 밖에서도
-            쓰려면 Tailscale 이 가장 쉽습니다.
-          </Small>
+          <Small>집 밖에서도 쓰려면 Tailscale 이 가장 쉬워요.</Small>
           <Button
             label={check.state === "checking" ? "확인 중" : "연결 확인"}
             busy={check.state === "checking"}
@@ -655,29 +630,25 @@ export default function TranscriptionSetup() {
       {/* ── Gemini 직접 전사 — 휘스퍼와 다른 세계라 설정도 따로 논다 ── */}
       {mode === "tiro" ? (
         <Card tone="accent">
-          <Heading>티로 직접 전사</Heading>
-          <Small>
-            서버 없이 API 키 하나로 씁니다. 한국어 전용이라 병동 대화에 강하고, 문장마다
-            <Text style={{ fontWeight: "700" }}> 실측 시각과 화자 라벨</Text>이 옵니다.
-            파일을 올린 뒤 티로가 받아적을 때까지 기다리는 방식이라, 20~60분짜리 하나에
-            3~6분쯤 걸립니다.
-          </Small>
+          <Heading>티로로 바꾸기</Heading>
+          <Small>열쇠 하나만 넣으면 돼요.</Small>
+          <Small>한국어 전용이라 병동 대화에 강해요.</Small>
+          <Small>문장마다 실제 시각과 목소리 구분이 함께 와요.</Small>
+          <Small>한 시간짜리 하나에 3~6분쯤 걸려요.</Small>
           <Divider />
-          <Small muted={false}>알고 쓰십시오</Small>
-          <Small>
-            기록 음성이 티로 서버로 전송됩니다. 병동 음성이므로 회사의 이용약관과
-            보관 정책을 한 번 확인하고 쓰십시오. 전사가 끝나면 앱은 결과만 가져옵니다.
-          </Small>
+          <Small muted={false}>알고 써요</Small>
+          <Small>녹음한 소리가 티로로 전송돼요.</Small>
+          <Small>병동 음성이니 티로의 보관 정책을 한 번 확인해요.</Small>
           <Divider />
-          <Small muted={false}>API 키{hasTiroKey ? " — 저장돼 있습니다" : ""}</Small>
+          <Small muted={false}>열쇠{hasTiroKey ? " — 넣어 뒀어요" : " — 아직 없어요"}</Small>
           <Button
-            label="키 발급 열기 (tiro.ooo)"
+            label="열쇠 받으러 가기"
             onPress={() => void Linking.openURL("https://docs.tiro.ooo/ko/developers/")}
           />
           <TextInput
             value={tiroKeyInput}
             onChangeText={setTiroKeyInput}
-            placeholder="아이디.시크릿 형태의 키 붙여넣기"
+            placeholder="아이디.비밀문자 모양의 열쇠"
             placeholderTextColor={t.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -685,23 +656,17 @@ export default function TranscriptionSetup() {
             style={input}
           />
           <Button
-            label={hasTiroKey && tiroKeyInput.trim().length === 0 ? "키 지우기" : "키 저장"}
+            label={hasTiroKey && tiroKeyInput.trim().length === 0 ? "열쇠 지우기" : "열쇠 저장"}
             tone={hasTiroKey && tiroKeyInput.trim().length === 0 ? "default" : "primary"}
             onPress={() => void saveTiroKey()}
           />
-          <Small>키는 기기 보안 저장소에만 보관됩니다.</Small>
+          <Small>열쇠는 이 폰 안에만 남아요.</Small>
           <Divider />
-          <Small muted={false}>병동 사전 자동 연동</Small>
-          <Small>
-            <Text style={{ fontWeight: "700" }}>자동으로 맞춰집니다.</Text> 티로로 전사할 때마다
-            사전에 새로 생긴 말이 있으면 그것만 먼저 올립니다. 새 말이 없으면 아무것도 안 보냅니다.
-            아래 버튼은 지금 당장 맞추고 싶거나 잘 됐는지 확인하고 싶을 때만 쓰십시오.
-          </Small>
-          <Small>
-            <Text style={{ fontWeight: "700" }}>사전이 티로 계정으로 나갑니다.</Text> 기본 임상
-            용어뿐 아니라 직접 추가하신 병동 용어도 함께 올라갑니다. 환자 이름처럼 사람을
-            알아볼 수 있는 말은 사전에 넣지 마십시오.
-          </Small>
+          <Small muted={false}>병동 사전 자동 맞추기</Small>
+          <Small>티로로 바꿀 때마다 새 단어만 자동으로 올라가요.</Small>
+          <Small>아래 버튼은 지금 바로 맞추고 싶을 때만 눌러요.</Small>
+          <Small>직접 넣은 병동 말도 함께 올라가요.</Small>
+          <Small>환자 이름처럼 사람을 알아볼 말은 사전에 넣지 마세요.</Small>
           <Button label="지금 맞추기" onPress={() => void pushWordMemory()} disabled={!hasTiroKey} />
           {wordSync ? <Small>{wordSync}</Small> : null}
         </Card>
@@ -709,36 +674,28 @@ export default function TranscriptionSetup() {
 
       {mode === "gemini" ? (
         <Card tone="accent">
-          <Heading>Gemini 직접 전사</Heading>
-          <Small>
-            콜랩도 서버도 없습니다 — 구글 AI 키 하나면 폰이 기록을 Gemini 로 보내
-            전사와 화자 라벨까지 받아 옵니다. 일반 모델(3.7-flash 등)의{" "}
-            <Text style={{ fontWeight: "700" }}>시각은 추정치</Text>라 문장 탭 재생이 몇 초
-            어긋날 수 있고, 전문 전사 모델(3.5-transcribe)은 단어 단위 실측이라
-            정확합니다.
-          </Small>
+          <Heading>Gemini 로 바꾸기</Heading>
+          <Small>구글 AI 열쇠 하나만 넣으면 돼요.</Small>
+          <Small>보통 모델은 시각이 어림값이라 재생이 몇 초 어긋나요.</Small>
+          <Small>전사 전용 모델은 시각이 정확해요.</Small>
           <Divider />
-          <Small muted={false}>알고 쓰십시오</Small>
-          <Small>
-            기록 음성이 구글 Gemini 서버로 전송됩니다.{" "}
-            <Text style={{ fontWeight: "700" }}>
-              무료 티어는 입력이 구글의 모델 개선에 쓰일 수 있습니다
-            </Text>{" "}
-            — 병동 음성이라면 결제를 연결한(유료) 키를 권합니다. 올린 파일은 전사
-            직후 앱이 지웁니다.
-          </Small>
+          <Small muted={false}>알고 써요</Small>
+          <Small>녹음한 소리가 구글로 전송돼요.</Small>
+          <Small>무료 열쇠는 보낸 내용이 구글 학습에 쓰일 수 있어요.</Small>
+          <Small>병동 음성이라면 결제를 연결한 열쇠를 권해요.</Small>
+          <Small>올린 파일은 바뀐 뒤에 앱이 지워요.</Small>
           <Divider />
           <Small muted={false}>
-            1. API 키{hasGeminiKey ? " — 저장돼 있습니다" : ""}
+            1. 열쇠{hasGeminiKey ? " — 넣어 뒀어요" : " — 아직 없어요"}
           </Small>
           <Button
-            label="키 발급 열기 (aistudio.google.com)"
+            label="열쇠 받으러 가기"
             onPress={() => void Linking.openURL("https://aistudio.google.com/apikey")}
           />
           <TextInput
             value={geminiKeyInput}
             onChangeText={setGeminiKeyInput}
-            placeholder="AIza… 키 붙여넣기"
+            placeholder="AIza… 로 시작하는 열쇠"
             placeholderTextColor={t.textMuted}
             autoCapitalize="none"
             autoCorrect={false}
@@ -746,13 +703,13 @@ export default function TranscriptionSetup() {
             style={input}
           />
           <Button
-            label={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "키 지우기" : "키 저장"}
+            label={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "열쇠 지우기" : "열쇠 저장"}
             tone={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "default" : "primary"}
             onPress={() => void saveGeminiKey()}
           />
           <Small>
             키는 기기 보안 저장소에만 보관되고, 설정 → 보조 기능의 Gemini 와 같은
-            키를 씁니다.
+            열쇠를 써요.
           </Small>
           <Divider />
           <Small muted={false}>2. 모델</Small>
@@ -805,21 +762,15 @@ export default function TranscriptionSetup() {
               {check.message}
             </Text>
           ) : null}
-          <Small>
-            모델마다 성격이 다릅니다. <Text style={{ fontWeight: "700" }}>3.5-transcribe</Text> 는
-            받아쓰기 전용 모델이라 화자와 단어 시각이 실측으로 정확하지만, 화자 분리를 켠
-            요청은 30분 한도가 있습니다 — 30분 분할 기록과 짝입니다. 긴 통짜 기록은
-            3.7-flash(시각은 추정치)나 콜랩이 안전하고, 3.1-pro 는 무료 티어가 없어 결제
-            연결 키에서만 돕니다.
-          </Small>
+          <Small>3.5-transcribe 는 시각이 정확한 대신 30분까지만 받아요.</Small>
+          <Small>더 긴 녹음은 3.7-flash 나 콜랩이 안전해요.</Small>
+          <Small>3.1-pro 는 결제를 연결한 열쇠에서만 돌아요.</Small>
         </Card>
       ) : null}
 
       <Card>
-        <Small>
-          전사가 끝난 전사본은 폰에만 저장됩니다. 콜랩은 세션을 닫으면 서버 쪽 사본도 함께
-          사라집니다.
-        </Small>
+        <Small>바뀐 전사본은 폰에만 저장돼요.</Small>
+        <Small>콜랩은 탭을 닫으면 그쪽 사본도 사라져요.</Small>
       </Card>
     </ScrollView>
   );

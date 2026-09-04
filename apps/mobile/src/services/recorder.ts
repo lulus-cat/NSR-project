@@ -214,7 +214,7 @@ export function createExpoAudioBackend(): AudioBackend {
     },
 
     async stop() {
-      if (!recorder) throw new Error("어라? 녹음 안 켜졌는데용");
+      if (!recorder) throw new Error("녹음이 켜져 있지 않아요. 다시 눌러 주세요.");
       await recorder.stop();
       recording = false;
 

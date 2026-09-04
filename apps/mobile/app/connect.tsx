@@ -36,7 +36,7 @@ export default function ConnectFromColab() {
       setPhase({
         step: "bad",
         reason:
-          "받은 주소가 콜랩 터널 주소 꼴이 아닙니다. 콜랩 마지막 셀의 버튼으로 다시 시도하거나, 주소를 직접 붙여넣으십시오.",
+          "콜랩 주소 모양이 아니에요. 콜랩 마지막 칸의 버튼으로 다시 해 주세요.",
       });
       return;
     }
@@ -65,8 +65,8 @@ export default function ConnectFromColab() {
         endpoint,
         ok: res.ok,
         message: res.ok
-          ? "콜랩 서버와 연결됐습니다. 이제 기록 화면에서 전사를 누르면 됩니다."
-          : `주소는 저장했지만 서버 응답이 이상합니다 (${res.status}). 콜랩이 아직 켜지는 중일 수 있습니다.`,
+          ? "콜랩과 연결됐어요. 근무 기록 화면에서 녹음을 바꿔 보세요."
+          : "주소는 저장했어요. 콜랩이 아직 켜지는 중일 수 있어요.",
       });
     } catch {
       setPhase({
@@ -74,7 +74,7 @@ export default function ConnectFromColab() {
         endpoint,
         ok: false,
         message:
-          "주소는 저장했지만 아직 서버에 닿지 않습니다. 콜랩 마지막 셀이 켜져 있는지 확인한 뒤, 전사 설정에서 '연결 확인'을 눌러 보십시오.",
+          "주소는 저장했지만 아직 닿지 않아요. 콜랩 마지막 칸이 켜져 있는지 확인해 주세요.",
       });
     }
   }, [params.endpoint]);
@@ -100,7 +100,7 @@ export default function ConnectFromColab() {
         {phase === null || phase.step === "checking" ? (
           <>
             <Badge text="확인 중" tone="muted" />
-            <Body muted>콜랩에서 받은 주소를 저장하고 서버 상태를 확인하고 있습니다.</Body>
+            <Body muted>콜랩에서 받은 주소를 저장하고 상태를 확인하는 중이에요.</Body>
           </>
         ) : phase.step === "bad" ? (
           <Body muted>{phase.reason}</Body>
@@ -117,8 +117,7 @@ export default function ConnectFromColab() {
         <Button label="홈으로" tone="primary" onPress={() => router.replace("/(tabs)")} />
         <Button label="전사 설정 열기" onPress={() => router.replace("/models")} />
         <Small>
-          콜랩 세션이 새로 켜지면 주소가 바뀝니다 — 그때도 콜랩의 연결 버튼(또는 QR) 한
-          번이면 됩니다.
+          콜랩을 새로 켜면 주소가 바뀌어요. 그때도 콜랩의 연결 버튼 한 번이면 돼요.
         </Small>
       </Card>
     </ScrollView>

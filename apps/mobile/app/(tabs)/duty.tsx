@@ -347,7 +347,7 @@ export default function Duty() {
               </Small>
             ) : (
               <Small>
-  누르면 다음 날로 넘어갑니다. 한 달을 연속 선택하십시오.
+  누르면 다음 날로 넘어가요. 한 달을 이어서 찍어요.
 </Small>
             )}
             {CODE_ROWS.map((rowCodes, i) => (
@@ -403,7 +403,7 @@ export default function Duty() {
             </View>
             {monthEntries.length === 0 ? (
               <Body muted>
-  이번 달 듀티가 없습니다. 상단 달력에서 입력하십시오.
+  이번 달 듀티가 없어요. 위 달력에서 찍어요.
 </Body>
             ) : (
               <>
@@ -471,7 +471,7 @@ export default function Duty() {
                 ))}
               </View>
               {longestRun >= 5 ? (
-                <Small muted={false}>연속 {longestRun}일 근무가 있습니다. 몸이 먼저입니다.</Small>
+                <Small muted={false}>연속 {longestRun}일 근무예요. 몸이 먼저예요.</Small>
               ) : null}
               <Divider />
               <Small muted={false}>기피 듀티</Small>
@@ -509,7 +509,7 @@ export default function Duty() {
               {patterns.naode + patterns.evday + patterns.sameShiftRun + patterns.sandwichOff > 0 ||
               patterns.longestNightRun > 3 ? (
                 <Small>
-                  연속 5일이나 나이트 3일을 넘는 일정입니다. 계속되면 근무표를 기록해 두십시오.
+                  연속 5일이나 나이트 3일을 넘는 일정이에요. 계속되면 근무표를 남겨 둬요.
                 </Small>
               ) : null}
             </Card>
@@ -544,7 +544,7 @@ export default function Duty() {
                       setSyncMsg(r.message);
                     } catch (e) {
                       // 실패가 조용히 사라지면 '버튼이 안 먹는다'로 보인다.
-                      setSyncMsg(e instanceof Error ? e.message : "가져오지 못했습니다.");
+                      setSyncMsg(e instanceof Error ? e.message : "가져오지 못했어요. 달력 권한을 확인해 주세요.");
                     }
                   }}
                 />

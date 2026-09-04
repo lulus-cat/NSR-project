@@ -311,7 +311,7 @@ export default function Settings() {
   const wipeEverything = useCallback(() => {
     Alert.alert(
       "모든 데이터를 지웁니다.",
-      "기록, 전사본, 암기카드 등 모든 데이터가 지워지며 복구할 수 없습니다.",
+      "녹음·전사본·단어장이 모두 지워져요. 되살릴 수 없어요.",
       [
         { text: "취소", style: "cancel" },
         {
@@ -381,7 +381,7 @@ export default function Settings() {
         <Small muted={false}>{version ? `현재 ${version}` : "개발 중 실행"}</Small>
         <Small>
           
-  앱스토어 앱이 아니므로 새 버전을 알려 드립니다. 덮어 설치해도 기존 기록은 남습니다.
+  스토어 앱이 아니라서 새 판을 여기서 알려드려요. 덮어 깔아도 기록은 남아요.
 </Small>
 
         {update?.show && update.release ? (
@@ -407,7 +407,7 @@ export default function Settings() {
                     setUpdatePct(0);
                     const r = await downloadAndInstall(update.release, setUpdatePct);
                     setUpdatePct(null);
-                    if (!r.ok) setConnectionMsg(r.error ?? "다운로드에 실패했습니다.");
+                    if (!r.ok) setConnectionMsg(r.error ?? "내려받지 못했어요. 인터넷 연결을 확인해 주세요.");
                   }}
                 />
               </View>
@@ -433,7 +433,7 @@ export default function Settings() {
         <Divider />
         <Toggle
           label="새 버전 알림 받기"
-          description="배터리와 데이터를 거의 쓰지 않고 가끔씩 새 버전을 확인합니다."
+          description="배터리를 거의 쓰지 않고 가끔 새 판을 확인해요."
           value={autoUpdate}
           onChange={async (v) => {
             setAutoUpdate(v);
@@ -477,13 +477,13 @@ export default function Settings() {
                       if (!workplace) {
                         // 근무지가 없으면 켤 수 없다 — 지정 UI 를 아래에 펼친다.
                         setGeoSetup(true);
-                        setGeoMsg("아래에서 근무지를 먼저 지정해 주십시오.");
+                        setGeoMsg("근무지가 없어요. 아래에서 먼저 정해 주세요.");
                         return;
                       }
                       const r = await setGeofence(true);
                       if (!r.ok) {
                         setGeoSetup(true);
-                        setGeoMsg(r.message ?? "근무지 감지를 켜지 못했습니다.");
+                        setGeoMsg(r.message ?? "근무지 감지를 켜지 못했어요. 위치 권한을 확인해 주세요.");
                         return;
                       }
                       setGeoOn(true);
@@ -503,7 +503,7 @@ export default function Settings() {
             );
           })}
         </View>
-        <Small>선택한 방식의 세부 설정이 아래에 나타납니다.</Small>
+        <Small>고른 방식의 자세한 설정이 아래에 나와요.</Small>
         <Small>{capability.explanation}</Small>
         {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
 
@@ -530,12 +530,12 @@ export default function Settings() {
                 />
               ))}
             </View>
-            <Small>듀티표에 해당 코드가 있는 날만 자동으로 기록합니다.</Small>
+            <Small>듀티표에 그 근무가 있는 날만 자동으로 기록해요.</Small>
             <Divider />
             <Small muted={false}>근무·기록 시간</Small>
             <Small>
-              근무를 눌러 시각과 인계 앞뒤 여유를 고치십시오. 달력·근무 통계·자동
-              기록·홈의 인계 체류 표시가 전부 이 값을 씁니다.
+              근무를 누르면 시각과 인계 앞뒤 시간을 고칠 수 있어요. 달력·통계·자동
+              기록이 모두 이 값을 써요.
             </Small>
             {(["D", "E", "N", "ADM", "SPC"] as ShiftCode[]).map((code) => {
               const tpl = templates[code];
@@ -629,7 +629,7 @@ export default function Settings() {
                           void (async () => {
                             const time = /^([01]?\d|2[0-3]):[0-5]\d$/;
                             if (!time.test(editForm.start) || !time.test(editForm.end)) {
-                              setTimeMsg("시각은 07:00 같은 HH:MM 꼴이어야 합니다.");
+                              setTimeMsg("시각 모양이 달라요. 07:00 처럼 적어 주세요.");
                               return;
                             }
                             const pre = Number(editForm.pre);
@@ -640,7 +640,7 @@ export default function Settings() {
                               pre < 0 ||
                               post < 0
                             ) {
-                              setTimeMsg("인계 분은 0 이상의 숫자여야 합니다.");
+                              setTimeMsg("인계 시간이 이상해요. 0 이상 숫자로 적어 주세요.");
                               return;
                             }
                             await saveDutyTemplateOverride(code, {
@@ -664,7 +664,7 @@ export default function Settings() {
             {timeMsg ? <Small muted={false}>{timeMsg}</Small> : null}
             <Small muted={false}>자동 기록 여유</Small>
             <Small>
-              인계를 놓치지 않으려면 위의 인계 앞뒤보다 넉넉해야 합니다.
+              인계를 놓치지 않으려면 위 인계 시간보다 넉넉해야 해요.
             </Small>
             <PresetRow
               label="기록 시작 전"
@@ -689,8 +689,8 @@ export default function Settings() {
             <Small muted={false}>근무지</Small>
             <Small>
               병원 반경에 들어오면 기록을 시작하고 벗어나면 끝냅니다. 출퇴근 전후
-              오버타임까지 실제 체류 시간이 남습니다. 근무일에만 작동하며 위치 정보는
-              기기 밖으로 나가지 않습니다.
+              오버타임까지 실제 머문 시간이 남아요. 근무일에만 켜지고, 위치는 폰 밖으로
+              나가지 않아요.
             </Small>
             {workplace ? (
               <>
@@ -703,7 +703,7 @@ export default function Settings() {
                     setGeoOn(false);
                   }}
                 />
-                <Small>누르면 해제됩니다.</Small>
+                <Small>누르면 풀려요.</Small>
                 <Button
                   label="지도에서 위치 확인 (카카오맵)"
                   onPress={() =>
@@ -742,14 +742,14 @@ export default function Settings() {
                         setGeoMsg(
                           r.hits.length === 0
                             ? r.source === "kakao"
-                              ? "찾지 못했습니다. 지점명을 빼거나 철자를 바꿔 보십시오."
-                              : "찾지 못했습니다. 정식 명칭(요양기관명)으로 다시 시도해 보십시오."
+                              ? "찾지 못했어요. 지점 이름을 빼고 다시 찾아 주세요."
+                              : "찾지 못했어요. 병원 정식 이름으로 다시 찾아 주세요."
                             : r.source === "kakao"
-                              ? "카카오 지도에서 찾았습니다."
-                              : "심평원 병원 목록에서 찾았습니다.",
+                              ? "카카오 지도에서 찾았어요."
+                              : "병원 목록에서 찾았어요.",
                         );
                       } catch (e) {
-                        setGeoMsg(e instanceof Error ? e.message : "검색에 실패했습니다.");
+                        setGeoMsg(e instanceof Error ? e.message : "찾지 못했어요. 인터넷 연결을 확인해 주세요.");
                       }
                     }}
                   />
@@ -770,10 +770,10 @@ export default function Settings() {
                         if (r.ok) {
                           setGeoOn(true);
                           setGeoSetup(false);
-                          setGeoMsg("근무지 자동 기록을 켰습니다.");
+                          setGeoMsg("근무지 자동 기록을 켰어요.");
                           await app.updatePolicy({ ...policy, enabled: false });
                         } else {
-                          setGeoMsg(r.message ?? "근무지 감지를 켜지 못했습니다.");
+                          setGeoMsg(r.message ?? "근무지 감지를 켜지 못했어요. 위치 권한을 확인해 주세요.");
                         }
                       } else {
                         setGeoMsg(null);
@@ -786,7 +786,7 @@ export default function Settings() {
                   onPress={async () => {
                     const wp = await setWorkplaceHere();
                     if (!wp) {
-                      setGeoMsg("위치 권한이 없어 지정하지 못했습니다.");
+                      setGeoMsg("위치 사용이 꺼져 있어요. 폰 설정에서 켜 주세요.");
                       return;
                     }
                     setWorkplace(wp);
@@ -795,10 +795,10 @@ export default function Settings() {
                       if (r.ok) {
                         setGeoOn(true);
                         setGeoSetup(false);
-                        setGeoMsg("근무지 자동 기록을 켰습니다.");
+                        setGeoMsg("근무지 자동 기록을 켰어요.");
                         await app.updatePolicy({ ...policy, enabled: false });
                       } else {
-                        setGeoMsg(r.message ?? "근무지 감지를 켜지 못했습니다.");
+                        setGeoMsg(r.message ?? "근무지 감지를 켜지 못했어요. 위치 권한을 확인해 주세요.");
                       }
                     } else {
                       setGeoMsg(null);
@@ -809,8 +809,8 @@ export default function Settings() {
             )}
             <Small>
               {Platform.OS === "android"
-                ? "위치 권한을 '항상 허용'으로 변경하십시오. Android 14 이상은 백그라운드 제한이 있습니다."
-                : "위치 권한을 '항상 허용'으로 변경하십시오."}
+                ? "위치 사용을 '항상 허용'으로 바꿔 주세요. 안드로이드 14부터는 제한이 더 있어요."
+                : "위치 사용을 '항상 허용'으로 바꿔 주세요."}
             </Small>
           </>
         ) : null}
@@ -822,7 +822,7 @@ export default function Settings() {
           unit="분"
           options={[10, 20, 30, 50]}
           onSelect={(v) => void app.updatePolicy({ ...policy, segmentMinutes: v })}
-          hint="긴 근무를 나눕니다. 중간에 끊겨도 안전하며, 완성된 조각부터 전사할 수 있습니다."
+          hint="긴 근무를 나눠 담아요. 중간에 끊겨도 앞부분은 남아요."
         />
         <Divider />
         <PresetRow
@@ -831,7 +831,7 @@ export default function Settings() {
           unit="일"
           options={[7, 14, 30, 60, 90]}
           onSelect={(v) => void app.updatePolicy({ ...policy, retentionDays: v })}
-          hint="보관 기한이 지난 기록은 지워집니다. 오래된 기록을 남겨두면 보안상 위험합니다."
+          hint="기한이 지난 기록은 저절로 지워져요. 오래 두면 위험해요."
         />
         <Divider />
         <Row label="현재 사용 중" value={`${storageMb} MB / ${policy.maxStorageMb} MB`} />
@@ -854,15 +854,15 @@ export default function Settings() {
         <Badge text="끌 수 없는 것" tone="warn" />
         <Small>
           {Platform.OS === "ios"
-            ? "iOS 상단 주황색 마이크 표시는 OS 정책상 앱에서 숨길 수 없습니다."
-            : "Android 마이크 표시는 OS 정책입니다. 백그라운드 작동 시 무음 알림이 뜹니다."}
+            ? "아이폰 위쪽 주황색 마이크 표시는 앱에서 숨길 수 없어요."
+            : "안드로이드 마이크 표시는 폰이 켜요. 기록 중에는 소리 없는 알림이 떠요."}
         </Small>
         {Platform.OS === "ios" ? (
           <>
             <Divider />
             <Toggle
               label="연속 세션 유지 (배터리 소모 큼)"
-              description="앱을 열지 않아도 백그라운드에서 기록을 시작합니다. 배터리 소모가 큽니다."
+              description="앱을 열지 않아도 기록을 시작해요. 배터리를 많이 써요."
               value={iosContinuous}
               onChange={async (v) => {
                 setIosContinuous(v);
@@ -878,7 +878,7 @@ export default function Settings() {
         <GroupHead icon="lock-closed-outline" color="#5B5EA6" title="개인정보" />
         <Toggle
           label="앱 잠금"
-          description="앱을 열 때 생체인증을 요구합니다. 민감한 기록을 보호합니다."
+          description="앱을 열 때 지문이나 얼굴로 잠금을 풀어요."
           value={appLock}
           onChange={async (v) => {
             setAppLock(v);
@@ -888,9 +888,9 @@ export default function Settings() {
         <Divider />
         <Badge text="통신비밀보호법" tone="warn" />
         <Small>
-          본인이 참여하지 않은 타인 간 대화 기록은 위법입니다(1년 이상 징역).
-          앱은 목소리로 사람을 구분하지 못하므로 이를 자동으로 걸러줄 수 없습니다 —
-          자리를 비울 때는 기록을 끄거나 기기를 반드시 휴대하십시오.
+          내가 끼지 않은 대화를 녹음하면 불법이에요. 1년 이상 징역이에요.
+          앱은 목소리로 사람을 가리지 못해요. 자리를 비울 때는 기록을 끄거나 폰을 꼭
+          들고 다녀요.
         </Small>
       </Card>
 
@@ -899,18 +899,18 @@ export default function Settings() {
         <GroupHead icon="eye-off-outline" color="#8A5F9E" title="민감 정보 가리기" />
         <Small>
           
-  내보내기나 외부 공유 시 이름, 전화번호, 등록번호를 자동으로 가립니다.
+  밖으로 내보낼 때 이름·전화번호·등록번호를 자동으로 가려요.
 </Small>
         <Divider />
-        <Badge text="기기 내 저장 시에는 마스킹하지 않습니다" tone="muted" />
+        <Badge text="폰 안에 둘 때는 가리지 않아요" tone="muted" />
         <Small>
           
-  전사본은 괴롭힘 신고 시 중요 증거입니다. 정보가 가려지면 효력이 낮아지므로 기기 내 원본은 보존합니다.
+  전사본은 신고할 때 중요한 증거예요. 그래서 폰 안의 원본은 가리지 않고 남겨요.
 </Small>
         <Divider />
         <Toggle
           label="내보낼 때 가리기"
-          description="기능을 꺼도 내보내기 전에 포함된 개인정보를 미리 안내해 드립니다."
+          description="꺼 두어도 내보내기 전에 무엇이 담겼는지 알려드려요."
           value={privacy.enabled}
           onChange={(v) => void updatePrivacy({ ...privacy, enabled: v })}
         />
@@ -938,11 +938,11 @@ export default function Settings() {
         ) : null}
         <Divider />
         <Small muted={false}>
-  필수 마스킹 단어
+  꼭 가릴 말
 </Small>
         <Small>
           
-  자동 인식이 어려운 호칭 없는 이름 등을 등록해 두면 항상 가려줍니다.
+  자동으로 못 잡는 이름을 넣어 두면 늘 가려요.
 </Small>
         {privacy.extraTerms.length > 0 ? (
           <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
@@ -964,7 +964,7 @@ export default function Settings() {
           <TextInput
             value={newTerm}
             onChangeText={setNewTerm}
-            placeholder="마스킹 단어 (2자 이상)"
+            placeholder="가릴 말 (두 글자 이상)"
             placeholderTextColor={t.textMuted}
             style={{
               flex: 1,
@@ -991,12 +991,12 @@ export default function Settings() {
         <Divider />
         <Small>
           
-  자동 가림은 완벽하지 않아 일반명사나 호칭 없는 이름이 누락될 수 있습니다.
+  자동 가림은 완벽하지 않아요. 호칭 없는 이름은 놓칠 수 있어요.
 <Text style={{ fontWeight: "700" }}>
           
-  음성 파일 자체는 가릴 수 없습니다.
+  음성 파일 자체는 가릴 수 없어요.
 </Text> 
-  음성에는 이름과 진단명이 그대로 남습니다.
+  음성에는 이름과 진단명이 그대로 남아요.
 </Small>
       </Card>
 
@@ -1004,8 +1004,8 @@ export default function Settings() {
       <Card>
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
         <Small>
-          전사는 폰이 아니라 콜랩·내 컴퓨터(휘스퍼) 또는 Gemini(구글 AI)가 합니다. 기록 음성이
-          그곳으로 전송됩니다 — 지금 어디로 보내는지 아래 한 줄로 항상 보입니다.
+          글자로 바꾸는 일은 폰이 아니라 고른 곳이 해요. 녹음한 소리가 그곳으로 전송돼요.
+          지금 어디로 보내는지 아래 한 줄로 늘 보여요.
         </Small>
         <Divider />
         <Row
@@ -1015,19 +1015,17 @@ export default function Settings() {
         />
         <Small>
 
-  모델 크기를 키우는 것보다 한국어 전용 모델을 쓰는 편이 훨씬 정확합니다.
+  큰 모델보다 한국어 전용 모델이 훨씬 정확해요.
 </Small>
       </Card>
 
       {/* 필수 기능 — AI 경로. 이 앱의 분석·보고서·대화는 AI 없이는 안 돈다. */}
       <Card tone={aiPath ? "default" : "warn"}>
         <GroupHead icon="sparkles-outline" color="#C0553F" title="필수 기능 (AI)" />
-        <Small>
-          분석·보고서·암기카드·대화가 전부 AI 로 돕니다. 아래 두 조합 중 하나를 고르고
-          해당 키를 넣어야 앱이 완전하게 동작합니다. 전사본은 개인정보를 가린 뒤에만
-          전송됩니다. 한쪽 키가 빠져도 다른 모델로 자동 대체하지 않습니다 — 역할
-          분담이 정확도의 원천이라서입니다.
-        </Small>
+        <Small>분석·보고서·단어장·대화가 모두 AI 로 돌아요.</Small>
+        <Small>아래 조합 하나를 고르고 열쇠를 넣어야 써요.</Small>
+        <Small>전사본은 개인정보를 가린 뒤에만 전송돼요.</Small>
+        <Small>열쇠가 없으면 다른 모델로 대신 돌리지 않아요.</Small>
         {AI_PATHS.map((p) => {
           const on = aiPath === p.path;
           return (
@@ -1063,12 +1061,12 @@ export default function Settings() {
           <>
             <Divider />
             <Small muted={false}>
-              1. Gemini 키 {hasGeminiKey ? "— 저장돼 있습니다" : "(aistudio.google.com/apikey)"}
+              1. Gemini 열쇠 {hasGeminiKey ? "— 넣어 뒀어요" : "(aistudio.google.com/apikey)"}
             </Small>
             <TextInput
               value={geminiKeyInput}
               onChangeText={setGeminiKeyInput}
-              placeholder={hasGeminiKey ? "키가 저장되어 있습니다" : "AIza… 키 붙여넣기"}
+              placeholder={hasGeminiKey ? "넣어 둔 열쇠가 있어요" : "AIza… 로 시작하는 열쇠"}
               placeholderTextColor={t.textMuted}
               secureTextEntry
               autoCapitalize="none"
@@ -1094,7 +1092,7 @@ export default function Settings() {
             <Small muted={false}>
               2. {aiPath === "claude" ? "Claude 키" : "OpenAI 키"}{" "}
               {hasPathKey
-                ? "— 저장돼 있습니다"
+                ? "— 넣어 뒀어요"
                 : aiPath === "claude"
                   ? "(console.anthropic.com)"
                   : "(platform.openai.com)"}
@@ -1102,7 +1100,7 @@ export default function Settings() {
             <TextInput
               value={pathKeyInput}
               onChangeText={setPathKeyInput}
-              placeholder={hasPathKey ? "키가 저장되어 있습니다" : "API 키 입력"}
+              placeholder={hasPathKey ? "넣어 둔 열쇠가 있어요" : "열쇠 붙여넣기"}
               placeholderTextColor={t.textMuted}
               secureTextEntry
               autoCapitalize="none"
@@ -1126,7 +1124,7 @@ export default function Settings() {
                 setConnectionMsg(null);
               }}
             />
-            <Small>키는 기기의 보안 저장소(안드로이드 키스토어)에만 보관됩니다.</Small>
+            <Small>열쇠는 이 폰 안에만 남아요.</Small>
             <Button
               label="연결 테스트"
               onPress={async () => {
@@ -1146,7 +1144,7 @@ export default function Settings() {
             />
           </>
         ) : (
-          <Small muted={false}>위에서 조합을 먼저 고르십시오 — 고르면 키 입력 칸이 열립니다.</Small>
+          <Small muted={false}>위에서 조합을 먼저 골라요. 고르면 열쇠 칸이 열려요.</Small>
         )}
       </Card>
 
@@ -1154,8 +1152,8 @@ export default function Settings() {
       <Card>
         <GroupHead icon="bug-outline" color="#6B7280" title="디버그" />
         <Small>
-          앱에서 잡힌 오류가 여기 남습니다. 문제가 생기면 아래 버튼으로 보고해
-          주십시오 — 기기 정보와 최근 오류가 채워진 GitHub 이슈 화면이 열립니다.
+          앱에서 생긴 문제가 여기 남아요. 아래 버튼을 누르면 폰 정보와 최근 문제가
+          적힌 신고 화면이 열려요.
         </Small>
         <Row
           label="최근 오류"
@@ -1167,7 +1165,7 @@ export default function Settings() {
         />
         {debugOpen
           ? (debugEntries.length === 0
-              ? <Small>기록된 오류가 없습니다.</Small>
+              ? <Small>기록된 문제가 없어요.</Small>
               : debugEntries.slice(-10).reverse().map((e) => (
                   <Small key={e.at}>
                     {new Date(e.at).toLocaleString("ko-KR", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}
@@ -1184,7 +1182,7 @@ export default function Settings() {
               onPress={async () => {
                 const url = await buildIssueUrl();
                 const ok = await Linking.openURL(url).then(() => true).catch(() => false);
-                if (!ok) setConnectionMsg("브라우저를 열지 못했습니다.");
+                if (!ok) setConnectionMsg("인터넷 창을 열지 못했어요. 다시 눌러 주세요.");
               }}
             />
           </View>
@@ -1205,7 +1203,7 @@ export default function Settings() {
         <GroupHead icon="trash-outline" color="#B3402F" title="데이터 삭제" />
         <Body muted>
           
-  모든 데이터를 영구 삭제합니다. 복구할 수 없습니다.
+  모든 기록을 지워요. 되살릴 수 없어요.
 </Body>
         <Button label="모든 데이터 삭제" tone="danger" onPress={wipeEverything} />
       </Card>

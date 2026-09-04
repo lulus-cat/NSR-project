@@ -36,7 +36,7 @@ export const PRIVACY_KEYS = {
 
 /** 화면에서 켜고 끌 수 있는 항목들. 순서가 곧 화면 순서다. */
 export const MASKABLE_KINDS: { kind: PiiKind; label: string; hint: string }[] = [
-  { kind: "name", label: PII_LABELS.name, hint: "환자/슨생님 이름 (\"김○○ 님\", \"○○ 선생님\")" },
+  { kind: "name", label: PII_LABELS.name, hint: "환자·선생님 이름 (\"김○○ 님\")" },
   { kind: "phone", label: PII_LABELS.phone, hint: "폰 번호랑 지역 번호" },
   { kind: "rrn", label: PII_LABELS.rrn, hint: "주민번호 (제일 위험)" },
   { kind: "mrn", label: PII_LABELS.mrn, hint: "환자 번호/차트 번호" },
@@ -110,7 +110,7 @@ export async function redactForExport(
               /[을를] 가렸습니다\.$/,
               "이 그대로 포함됩니다.",
             )}`
-          : "모자이크 기능 꺼져 있음 (쌩얼 노출 주의)",
+          : "가리기가 꺼져 있어요. 그대로 나가요.",
       warnings,
     };
   }
@@ -204,7 +204,7 @@ export async function shareText(input: {
   if (!(await Sharing.isAvailableAsync())) {
     return {
       shared: false,
-      message: `앗 이 폰에선 공유 창을 못 띄워요 ㅠㅠ 파일 여기 짱박혀 있음: ${file.uri}`,
+      message: `이 폰에서는 공유 창을 열 수 없어요. 파일은 여기 있어요: ${file.uri}`,
     };
   }
   await Sharing.shareAsync(file.uri, {

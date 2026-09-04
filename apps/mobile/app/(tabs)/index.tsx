@@ -57,32 +57,37 @@ function formatClock(epochMs: number): string {
 
 const GREETINGS = {
   dayMorning: [
-    "바이탈보다 내 커피가 먼저입니다.",
-    "오늘 첫 라운딩, 가볍게 다녀오십시오.",
-    "차팅은 밀리기 전에, 커피는 식기 전에.",
-    "좋은 아침입니다.",
+    "동기사랑 나라사랑",
+    "바이탈보다 내 커피가 먼저",
+    "차팅은 밀리기 전에, 커피는 식기 전에",
+    "선배님 눈빛 해석은 아직 초급",
+    "오늘도 라운딩 한 바퀴",
   ],
   evening: [
     "이브닝의 저녁밥은 스테이션에서",
-    "해 질 녘 출근하는 동료도 있습니다.",
-    "이브닝 근무도 결국 끝이 납니다.",
+    "해 질 녘 출근하는 사람",
+    "이브닝도 언젠가는 끝나요",
+    "오더는 왜 꼭 밥 먹을 때 나는가",
   ],
   nightBefore: [
-    "달이 뜨면 출근하는 사람",
-    "나이트 근무의 밤은 길어도 아침은 옵니다.",
+    "달 뜨면 출근하는 사람",
+    "나이트의 밤은 길어도 아침은 와요",
     "오늘 밤도 무사히",
+    "3연나 앞에서는 모두가 평등해요",
   ],
   off: [
-    "오늘 듀티: 아무것도 안 하기.",
-    "오프는 근무의 일부입니다. 푹 쉬십시오",
+    "오늘 듀티는 아무것도 안 하기",
+    "오프도 근무의 일부예요",
     "알람 없는 아침, 그것이 오프",
+    "누워 있기 담당 간호사",
   ],
   afterShift: [
-    "고생하셨습니다. 오늘도 조용히 환자들을 구했습니다.",
-    "퇴근하셨다면 병원 일은 다 잊으십시오.",
-    "오늘 근무는 끝났습니다.",
+    "오늘도 조용히 환자를 구했어요",
+    "퇴근했으면 병원은 잊어요",
+    "오늘 근무 끝, 수고했어요",
+    "인계 무사 통과 축하해요",
   ],
-  lateNight: ["고요한 밤입니다", "이 시간에 깨어 있는 동료들에게."],
+  lateNight: ["고요한 밤이에요", "이 시간에 깨어 있는 동료에게"],
 } as const;
 
 function pick(pool: readonly string[], seed: string): string {
@@ -452,7 +457,7 @@ export default function Home() {
           <DashedDivider />
           <BriefRow
             icon="time-outline"
-            label="오늘 인계 체류 (설정 기준 추정)"
+            label="오늘 인계 체류(추정)"
             value={overtimeToday > 0 ? `+${overtimeToday}시간` : "없음"}
             valueColor={overtimeToday > 0 ? t.warn : undefined}
           />
@@ -523,7 +528,7 @@ export default function Home() {
             {latestTemp ? (
               <Badge text={latestTemp.label} tone={latestTemp.tone} />
             ) : (
-              <Small>근무를 전사하면 병동 분위기 온도를 보여줍니다.</Small>
+              <Small>근무를 분석하면 병동 온도를 보여드려요.</Small>
             )}
             {tempAvg !== null ? (
               <Small>최근 {temps.size}근무 평균 {tempAvg}°</Small>
@@ -542,7 +547,7 @@ export default function Home() {
             <>
               <BriefRow
                 icon="checkmark-circle-outline"
-                label="새 전사 결과가 나왔습니다."
+                label="새 전사 결과가 나왔어요"
                 value={`${newResult.sentences}문장 · 보기`}
                 valueColor={t.accent}
                 onPress={() =>
@@ -554,7 +559,7 @@ export default function Home() {
           ) : null}
           <BriefRow
             icon="document-text-outline"
-            label="전사할 기록"
+            label="안 바꾼 녹음"
             value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
             valueColor={pendingCount > 0 ? t.warn : undefined}
             // 미전사 기록이 있는 근무로 바로 간다 — 거기 '전사하기' 버튼이 있다.
@@ -570,7 +575,7 @@ export default function Home() {
             <View style={{ gap: space.xs, paddingBottom: space.sm }}>
               <BriefRow
                 icon="sync-outline"
-                label={`텍스트 변환 중 (${runner.fileIndex}/${runner.fileCount})`}
+                label={`글자로 바꾸는 중 (${runner.fileIndex}/${runner.fileCount})`}
                 value={`${runner.percent}%`}
                 valueColor={t.accent}
                 onPress={
@@ -592,7 +597,7 @@ export default function Home() {
                 key={r.id}
                 icon="mic-outline"
                 label={r.label ?? `${d.getMonth() + 1}월 ${d.getDate()}일 ${formatClock(r.started_at)} 녹음`}
-                value={mins > 0 ? `${mins}분 · 전사` : "전사"}
+                value={mins > 0 ? `${mins}분 · 바꾸기` : "바꾸기"}
                 valueColor={t.accent}
                 onPress={
                   r.shift_id
@@ -603,15 +608,15 @@ export default function Home() {
             );
           })}
           {pendingCount > 3 ? (
-            <Small>외 {pendingCount - 3}건 — 근무 화면에서 파일별로 보입니다.</Small>
+            <Small>외 {pendingCount - 3}건은 근무 기록 화면에서 봐요.</Small>
           ) : null}
           {needsServer ? (
             <>
               <DashedDivider />
               <BriefRow
                 icon="cloud-outline"
-                label="전사 방법을 설정해 주십시오."
-                value="연결"
+                label="전사 방법을 정해 주세요"
+                value="정하기"
                 valueColor={t.warn}
                 onPress={() => router.push("/models")}
               />
@@ -622,8 +627,8 @@ export default function Home() {
               <DashedDivider />
               <BriefRow
                 icon="sparkles-outline"
-                label="AI 필수 설정이 아직 없습니다."
-                value="설정"
+                label="AI 설정이 아직 없어요"
+                value="설정 열기"
                 valueColor={t.warn}
                 onPress={() => router.push("/settings")}
               />
@@ -633,7 +638,7 @@ export default function Home() {
           <BriefRow
             icon="folder-open-outline"
             label="다른 앱에서 음성 가져오기"
-            value="선택"
+            value="고르기"
             onPress={() => router.push("/import-audio")}
           />
         </>
@@ -664,16 +669,16 @@ export default function Home() {
           {app.recording ? <RecordPulse color={t.recording} /> : null}
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={app.recording ? "기록 정지" : "기록 시작"}
+            accessibilityLabel={app.recording ? "기록 멈추기" : "기록 시작하기"}
             onPress={async () => {
               if (app.recording) await stopManual();
               else if (!(await startManual(`${today}:MANUAL`))) {
                 // 조용히 실패하면 사용자는 기록되는 줄 알고 근무를 다 보낸다.
                 const last = await getSetting<{ message?: string } | null>("recording.lastError", null);
                 Alert.alert(
-                  "기록이 안 켜졌어요",
+                  "기록을 켜지 못했어요",
                   last?.message ??
-                    "마이크 권한이 없는 것 같아요. 설정 > 앱 > NSR > 권한에서 마이크를 켜주세요.",
+                    "마이크 사용이 꺼져 있어요. 폰 설정에서 NSR 마이크를 켜 주세요.",
                 );
               }
               await app.refresh();

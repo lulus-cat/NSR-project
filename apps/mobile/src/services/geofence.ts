@@ -153,7 +153,7 @@ export async function searchWorkplace(
     };
   }
   throw new Error(
-    "아직 쪼렙(베타)이라 검색 열쇠가 없어요 ㅠㅠ 설정 가서 카카오랑 공공데이터 키 직접 꽂아주세용",
+    "검색 열쇠가 없어요. 설정에서 카카오·공공데이터 열쇠를 넣어 주세요.",
   );
 }
 
@@ -189,15 +189,15 @@ export async function setGeofence(on: boolean): Promise<{ ok: boolean; message?:
   }
 
   const wp = await getWorkplace();
-  if (!wp) return { ok: false, message: "병원 위치부터 찍어주세용 (나 어디로 출근해?)" };
+  if (!wp) return { ok: false, message: "근무지가 없어요. 병원 위치부터 정해 주세요." };
 
   const fg = await Location.requestForegroundPermissionsAsync();
-  if (!fg.granted) return { ok: false, message: "폰 위치 권한 안 주면 못 써요 ㅠㅠ" };
+  if (!fg.granted) return { ok: false, message: "위치 사용이 꺼져 있어요. 폰 설정에서 켜 주세요." };
   const bg = await Location.requestBackgroundPermissionsAsync();
   if (!bg.granted) {
     return {
       ok: false,
-      message: "앱 안 켜도 뒤에서 몰래 녹음 켜려면 폰 위치 권한을 꼭 '항상 허용'으로 풀어주세요!",
+      message: "앱을 열지 않아도 켜지게 하려면 위치를 '항상 허용'으로 바꿔 주세요.",
     };
   }
 
@@ -224,6 +224,6 @@ export async function restoreGeofence(): Promise<void> {
       await setGeofence(true);
     }
   } catch (e) {
-    console.error("[앗] 위치 감지기 심폐소생술 실패 ㅠㅠ", e);
+    console.error("[NSR] 위치 감지 재시작 실패", e);
   }
 }

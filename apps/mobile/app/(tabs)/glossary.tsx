@@ -122,7 +122,7 @@ export default function Glossary() {
         <>
           <Small>
             
-  발음대로 검색해도 올바른 용어를 찾아줍니다. (예: 카데타 → 카테터)
+  들리는 대로 찾아도 맞는 말을 찾아줘요. (예: 카데타 → 카테터)
 </Small>
           {terms.map((entry) => {
             const open = expanded === entry.id;
@@ -195,7 +195,7 @@ export default function Glossary() {
             <Card>
               <Body muted>
                 
-  결과가 없습니다. 병동마다 부르는 말이 다를 수 있습니다.
+  찾는 말이 없어요. 병동마다 부르는 말이 달라요.
 </Body>
               <Pressable
                 accessibilityRole="button"
@@ -207,15 +207,14 @@ export default function Glossary() {
 </Text>
               </Pressable>
               <Divider />
-              <Small>약 이름은 상단 ‘의약품’ 탭에서 검색하십시오.</Small>
+              <Small>약 이름은 위 의약품 탭에서 찾아요.</Small>
             </Card>
           ) : null}
         </>
       ) : tab === "drugs" ? (
         <>
           <Small>
-            식약처 e약은요 — 약 이름으로 효능·용법·주의사항을 찾습니다. 제품명이 정확할수록 잘
-            찾습니다 (예: 타이레놀정500밀리그람).
+            약 이름으로 효능·용법·주의사항을 찾아요. 제품 이름이 정확할수록 잘 찾아요.
           </Small>
           <Button
             label="검색"
@@ -228,15 +227,15 @@ export default function Glossary() {
                 const found = await searchDrug(query);
                 if (found === null) {
                   setDrugMsg(
-                    "공공데이터 키가 필요합니다. 설정에서 등록하십시오.",
+                    "공공데이터 열쇠가 없어요. 설정에서 넣어 주세요.",
                   );
                 } else if (found.length === 0) {
-                  setDrugMsg("찾지 못했습니다. 정확한 제품명으로 다시 검색해 보십시오.");
+                  setDrugMsg("찾지 못했어요. 정확한 제품 이름으로 다시 찾아 주세요.");
                 } else {
                   setDrugs(found);
                 }
               } catch (e) {
-                setDrugMsg(e instanceof Error ? e.message : "검색하지 못했습니다.");
+                setDrugMsg(e instanceof Error ? e.message : "찾지 못했어요. 인터넷 연결을 확인해 주세요.");
               }
             }}
           />
@@ -270,7 +269,7 @@ export default function Glossary() {
         <>
           <Small>
             
-  공식 지침은 여기서 확인하십시오. 저작권 문제로 앱에는 링크만 남깁니다.
+  공식 지침은 여기서 확인해요. 저작권 때문에 링크만 남겨요.
 </Small>
           {sources.map((s) => (
             <Pressable

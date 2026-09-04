@@ -61,16 +61,16 @@ export const AI_PATHS: {
     path: "claude",
     title: "Claude + Gemini",
     models:
-      "팩트 체크+임상 센세: Claude Opus 5 · 폭풍 구글링: Claude Fable 5 · 리포트+입털기: Gemini 3.7 Flash",
-    why: "Fable 5 녀석이 헛소리 제일 안 해서 구글링 전담이고, Opus 5는 긴 글 요약 장인이에요. 퀄리티 미침 — 대신 한 달에 대충 치킨 한 마리 값($15~22)",
+      "찾아내기: Claude Opus 5 · 사실 확인: Claude Fable 5 · 보고서: Gemini 3.7 Flash",
+    why: "Fable 5 는 헛소리가 가장 적고, Opus 5 는 긴 글 정리를 잘해요. 한 달에 $15~22 쯤 들어요.",
     keys: ["anthropic"],
   },
   {
     path: "hybrid",
     title: "GPT + Gemini",
     models:
-      "팩트 체크: GPT-5.6 Sol · 구글링+임상 센세: Gemini 3.1 Pro / 3.7 Flash · 리포트+입털기: Gemini 3.7 Flash",
-    why: "GPT는 포기를 몰라서 먼지까지 싹싹 긁어오고, Gemini는 아니다 싶으면 칼같이 패스해서 거품을 빼줘요. 둘이 성격 반대라 찰떡 콤비! (검증 포함 한 달 치킨 반 마리 값 $9~13)",
+      "찾아내기: GPT-5.6 Sol · 사실 확인: Gemini 3.1 Pro · 보고서: Gemini 3.7 Flash",
+    why: "GPT 는 끝까지 찾아내고, Gemini 는 아닌 것을 걸러내요. 한 달에 $9~13 쯤 들어요.",
     keys: ["openai"],
   },
 ];
@@ -98,12 +98,12 @@ export async function pipelineReady(): Promise<{ ok: boolean; reason?: string; p
   if (!path) {
     return {
       ok: false,
-      reason: "엥? 콤비 안 골랐어요! 설정 → 필수 셋팅 가서 Claude+Gemini 할 건지 GPT+Gemini 할 건지 찜해주세요",
+      reason: "AI 조합을 아직 안 골랐어요. 설정 → 필수 기능에서 골라 주세요.",
     };
   }
   const gemini = await getApiKey("gemini");
   if (!gemini) {
-    return { ok: false, path, reason: "구글 AI 열쇠(키)가 어딨어요! 설정 → 필수 셋팅 가서 꽂아주세용" };
+    return { ok: false, path, reason: "구글 열쇠가 없어요. 설정 → 필수 기능에서 넣어 주세요." };
   }
   if (path === "claude") {
     if (!(await getApiKey("anthropic"))) {
@@ -111,7 +111,7 @@ export async function pipelineReady(): Promise<{ ok: boolean; reason?: string; p
         ok: false,
         path,
         reason:
-          "Claude 열쇠(키)가 없어요! 이 경로는 Claude 전용이라 딴 놈으로 대타 못 뜀 ㅠㅠ 키 꽂아주거나 GPT+Gemini로 갈아타세용",
+          "Claude 열쇠가 없어요. 열쇠를 넣거나 GPT+Gemini 조합으로 바꿔 주세요.",
       };
     }
   } else if (!(await getApiKey("openai"))) {
@@ -119,7 +119,7 @@ export async function pipelineReady(): Promise<{ ok: boolean; reason?: string; p
       ok: false,
       path,
       reason:
-        "OpenAI 열쇠(키)가 없어요! 이 경로는 GPT 전용이라 딴 놈 대타 안 됨 ㅠㅠ 키 꽂아주거나 Claude+Gemini로 갈아타세용",
+        "OpenAI 열쇠가 없어요. 열쇠를 넣거나 Claude+Gemini 조합으로 바꿔 주세요.",
     };
   }
   return { ok: true, path };
@@ -147,7 +147,7 @@ async function maskedTranscript(shiftId: string): Promise<string> {
 
 async function anthropicHeaders(): Promise<Record<string, string>> {
   const key = await getApiKey("anthropic");
-  if (!key) throw new Error("Claude 열쇠(키) 없뜸 텅~");
+  if (!key) throw new Error("Claude 열쇠가 없어요. 설정에서 넣어 주세요.");
   return {
     "x-api-key": key,
     "anthropic-version": "2023-06-01",
@@ -176,13 +176,13 @@ async function submitBatch(customId: string, params: unknown): Promise<string> {
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    if (res.status === 401) throw new Error("엥 Claude 열쇠(키) 짝퉁인데요? 안 맞음");
+    if (res.status === 401) throw new Error("Claude 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.");
     if (detail.includes("retention")) {
       throw new Error(
-        "Fable 5 녀석은 30일 보관 셋팅 필수예요. Anthropic 설정 창 가서 쳌쳌!",
+        "Fable 5 는 Anthropic 설정에서 30일 보관을 켜야 써요.",
       );
     }
-    throw new Error(`앗 묶음 배송(배치) 신청 폭망 ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`분석을 맡기지 못했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`);
   }
   const data = (await res.json()) as { id: string };
   return data.id;
@@ -198,13 +198,13 @@ interface BatchResult {
 async function pollBatch(batchId: string, customId: string): Promise<BatchResult> {
   const headers = await anthropicHeaders();
   const res = await fetch(`${ANTHROPIC_API}/messages/batches/${batchId}`, { headers });
-  if (!res.ok) throw new Error(`묶음 배송(배치) 조회 엎어짐 ${res.status}`);
+  if (!res.ok) throw new Error(`진행 상태를 읽지 못했어요 (${res.status}). 잠시 뒤 다시 확인해 주세요.`);
   const data = (await res.json()) as { processing_status: string; results_url?: string };
   if (data.processing_status !== "ended") return { ended: false };
-  if (!data.results_url) return { ended: true, error: "어라 배송(결과) 주소가 없어요 ㅠㅠ" };
+  if (!data.results_url) return { ended: true, error: "결과를 받을 주소가 없어요. 다시 분석해 주세요." };
 
   const results = await fetch(data.results_url, { headers });
-  if (!results.ok) throw new Error(`택배(배치 결과) 다운로드 폭망 ${results.status}`);
+  if (!results.ok) throw new Error(`결과를 받지 못했어요 (${results.status}). 잠시 뒤 다시 해 주세요.`);
   const jsonl = await results.text();
   for (const line of jsonl.split("\n")) {
     if (!line.trim()) continue;
@@ -214,11 +214,11 @@ async function pollBatch(batchId: string, customId: string): Promise<BatchResult
     };
     if (row.custom_id !== customId) continue; // 순서 비보장 — id 로만 매칭
     if (row.result.type !== "succeeded") {
-      return { ended: true, error: row.result.error?.message ?? `앗 묶음 배송(배치) 터짐 ㅠㅠ (${row.result.type})` };
+      return { ended: true, error: row.result.error?.message ?? "분석이 끝나지 못했어요. 다시 해 주세요." };
     }
     return { ended: true, message: row.result.message };
   }
-  return { ended: true, error: "엥 택배 상자 안에 내 거 없어요! (결과 못 찾음)" };
+  return { ended: true, error: "결과를 찾지 못했어요. 다시 분석해 주세요." };
 }
 
 /** 응답 본문에서 JSON 을 꺼낸다 — 모델이 앞뒤에 말을 붙여도 견딘다. */
@@ -229,7 +229,7 @@ function extractJson(message: BatchResult["message"]): unknown {
     .join("");
   const start = text.indexOf("{");
   const end = text.lastIndexOf("}");
-  if (start < 0 || end <= start) throw new Error("엥 이 녀석이 JSON 모양으로 안 돌려줬어요 ㅠㅠ 빠꾸!");
+  if (start < 0 || end <= start) throw new Error("AI 답을 읽지 못했어요. 다시 분석해 주세요.");
   return JSON.parse(text.slice(start, end + 1));
 }
 
@@ -259,7 +259,7 @@ const STAGE3A_SYSTEM = `당신은 신규간호사의 근무 전사본에서 학�
 
 async function submit3a(shiftId: string): Promise<void> {
   const transcript = await maskedTranscript(shiftId);
-  if (!transcript.trim()) throw new Error("글로 바뀐 녹음본(전사본)이 없어요! 변환부터 얍 돌리고 오세요");
+  if (!transcript.trim()) throw new Error("글자로 바뀐 문장이 없어요. 녹음부터 바꿔 주세요.");
   const batchId = await submitBatch(batchCustomId("3a", shiftId), {
     model: "claude-opus-5",
     max_tokens: 32000,
@@ -270,7 +270,7 @@ async function submit3a(shiftId: string): Promise<void> {
     messages: [{ role: "user", content: `[마스킹된 근무 전사본]\n${transcript}` }],
   });
   await savePipelineJob({ shiftId, stage: "3a", batchId });
-  await logDebug(`초정밀 분석: 3a 택배 발송 슝: ${batchId}`);
+  await logDebug(`심층 분석 3a 제출: ${batchId}`);
 }
 
 /* ── 3b: 조사 (Fable 5, 웹 검색 켬) ────────────────────── */
@@ -308,7 +308,7 @@ async function submit3b(shiftId: string, stage3aJson: string): Promise<void> {
     ],
   });
   await savePipelineJob({ shiftId, stage: "3b", batchId });
-  await logDebug(`초정밀 분석: 3b 택배 발송 슝: ${batchId}`);
+  await logDebug(`심층 분석 3b 제출: ${batchId}`);
 }
 
 /* ── 4: 보고서·카드 (Gemini 3.7 Flash, 실시간, 검색 없음) ── */
@@ -368,7 +368,7 @@ interface Stage4Out {
 
 async function runStage4(shiftId: string, stage3a: string, stage3b: string): Promise<void> {
   const key = await getApiKey("gemini");
-  if (!key) throw new Error("구글 AI 열쇠(키) 없뜸 텅~");
+  if (!key) throw new Error("구글 열쇠가 없어요. 설정에서 넣어 주세요.");
   const res = await fetch(`${GEMINI_API}/models/gemini-3.7-flash:generateContent?key=${key}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -390,7 +390,7 @@ async function runStage4(shiftId: string, stage3a: string, stage3b: string): Pro
   });
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    throw new Error(`구글 AI 리포트 찍어내기 폭망 ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`보고서를 만들지 못했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`);
   }
   const data = (await res.json()) as {
     candidates?: { content?: { parts?: { text?: string }[] } }[];
@@ -446,7 +446,7 @@ async function runStage4(shiftId: string, stage3a: string, stage3b: string): Pro
     await addConfirmation({
       shiftId,
       sourceId: r.판독불가_id,
-      question: `웅얼거려서 안 들림(${r.판독불가_id ?? "?"}) — 선배한테 팩트 체크 필수`,
+      question: `잘 안 들린 부분이에요(${r.판독불가_id ?? "?"}). 선배에게 확인해 보세요.`,
       candidate: r.추정,
       sources: r.출처 ?? [],
     });
@@ -460,7 +460,7 @@ async function runStage4(shiftId: string, stage3a: string, stage3b: string): Pro
 
   await savePipelineJob({ shiftId, stage: "done" });
   await logDebug(
-    `초정밀 분석: 4단계 피니시 — 단어장 ${out.카드.length}장 뚝딱, 선배 물음표 살인마 리스트 ${out.확인목록.length + (st3b.재해석?.filter((r) => r.확인필요).length ?? 0)}건 장전 완!`,
+    `심층 분석 4단계 완료 — 카드 ${out.카드.length}장, 확인 목록 ${out.확인목록.length + (st3b.재해석?.filter((r) => r.확인필요).length ?? 0)}건`,
   );
 }
 
@@ -472,7 +472,7 @@ async function runStage4(shiftId: string, stage3a: string, stage3b: string): Pro
 
 async function openaiKey(): Promise<string> {
   const key = await getApiKey("openai");
-  if (!key) throw new Error("OpenAI 열쇠(키) 없뜸 텅~");
+  if (!key) throw new Error("OpenAI 열쇠가 없어요. 설정에서 넣어 주세요.");
   return key;
 }
 
@@ -502,7 +502,7 @@ async function submitOpenAiBatch(customId: string, body: unknown): Promise<strin
       headers: { authorization: `Bearer ${key}` },
       body: form,
     });
-    if (!up.ok) throw new Error(`OpenAI 놈한테 파일 던지기 실패 ${up.status}: ${(await up.text()).slice(0, 200)}`);
+    if (!up.ok) throw new Error(`파일을 올리지 못했어요 (${up.status}). 잠시 뒤 다시 해 주세요.`);
     const file = (await up.json()) as { id: string };
 
     const res = await fetch(`${OPENAI_API}/batches`, {
@@ -514,7 +514,7 @@ async function submitOpenAiBatch(customId: string, body: unknown): Promise<strin
         completion_window: "24h",
       }),
     });
-    if (!res.ok) throw new Error(`OpenAI 묶음 배송(배치) 생성 폭망 ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    if (!res.ok) throw new Error(`분석을 맡기지 못했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`);
     return ((await res.json()) as { id: string }).id;
   } finally {
     await FileSystem.deleteAsync(path, { idempotent: true }).catch(() => undefined);
@@ -528,7 +528,7 @@ async function pollOpenAiBatch(
   const key = await openaiKey();
   const headers = { authorization: `Bearer ${key}` };
   const res = await fetch(`${OPENAI_API}/batches/${batchId}`, { headers });
-  if (!res.ok) throw new Error(`OpenAI 묶음 배송(배치) 조회 엎어짐 ${res.status}`);
+  if (!res.ok) throw new Error(`진행 상태를 읽지 못했어요 (${res.status}). 잠시 뒤 다시 확인해 주세요.`);
   const data = (await res.json()) as {
     status: string;
     output_file_id?: string;
@@ -541,11 +541,11 @@ async function pollOpenAiBatch(
       const ef = await fetch(`${OPENAI_API}/files/${data.error_file_id}/content`, { headers });
       detail = (await ef.text().catch(() => "")).slice(0, 300);
     }
-    return { ended: true, error: `OpenAI 택배 상자 ${data.status}: ${detail}` };
+    return { ended: true, error: "분석이 끝나지 못했어요. 다시 해 주세요." };
   }
-  if (!data.output_file_id) return { ended: true, error: "엥 택배 내용물(결과 파일)이 없어요 텅텅" };
+  if (!data.output_file_id) return { ended: true, error: "결과 파일이 없어요. 다시 분석해 주세요." };
   const out = await fetch(`${OPENAI_API}/files/${data.output_file_id}/content`, { headers });
-  if (!out.ok) throw new Error(`택배 결과물 다운로드 폭망 ${out.status}`);
+  if (!out.ok) throw new Error(`결과를 받지 못했어요 (${out.status}). 잠시 뒤 다시 해 주세요.`);
   for (const line of (await out.text()).split("\n")) {
     if (!line.trim()) continue;
     const row = JSON.parse(line) as {
@@ -555,7 +555,7 @@ async function pollOpenAiBatch(
     };
     if (row.custom_id !== customId) continue; // 순서 미보장 — id 로만 매칭
     if (row.error || !row.response || row.response.status_code >= 300) {
-      return { ended: true, error: row.error?.message ?? `앗 빠꾸 먹음 (${row.response?.status_code})` };
+      return { ended: true, error: row.error?.message ?? "분석이 끝나지 못했어요. 다시 해 주세요." };
     }
     return {
       ended: true,
@@ -563,7 +563,7 @@ async function pollOpenAiBatch(
       usage: row.response.body?.usage,
     };
   }
-  return { ended: true, error: "엥 택배 상자 안에 내 거 없어요! (결과 못 찾음)" };
+  return { ended: true, error: "결과를 찾지 못했어요. 다시 분석해 주세요." };
 }
 
 /** 3a strict 스키마 — Structured Outputs 는 모든 키 required + additionalProperties:false. */
@@ -638,7 +638,7 @@ const STAGE3A_STRICT_SCHEMA = {
 
 async function submit3aHybrid(shiftId: string): Promise<void> {
   const transcript = await maskedTranscript(shiftId);
-  if (!transcript.trim()) throw new Error("글로 바뀐 녹음본(전사본)이 없어요! 변환부터 얍 돌리고 오세요");
+  if (!transcript.trim()) throw new Error("글자로 바뀐 문장이 없어요. 녹음부터 바꿔 주세요.");
   const batchId = await submitOpenAiBatch(batchCustomId("3a", shiftId), {
     model: "gpt-5.6-sol",
     // 추론 모델: temperature 미지원(400), 출력 상한은 max_completion_tokens.
@@ -653,7 +653,7 @@ async function submit3aHybrid(shiftId: string): Promise<void> {
     ],
   });
   await savePipelineJob({ shiftId, stage: "h3a", batchId });
-  await logDebug(`하이브리드 정밀 분석: 3a GPT 택배 발송 슝 ${batchId}`);
+  await logDebug(`하이브리드 3a GPT 제출: ${batchId}`);
 }
 
 /* ── 3v 검증 패스 — 기계 검증(로컬) + Gemini Flash 판정 ── */
@@ -709,7 +709,7 @@ const STAGE3V_SYSTEM = `다른 모델(GPT)이 만든 교정 목록을 검증합�
 
 async function runStage3v(shiftId: string, data: Stage3aData, transcript: string): Promise<void> {
   const key = await getApiKey("gemini");
-  if (!key) throw new Error("구글 AI 열쇠(키) 없뜸 텅~");
+  if (!key) throw new Error("구글 열쇠가 없어요. 설정에서 넣어 주세요.");
   if (data.교정목록.length === 0) {
     data.검증결과 = [];
     return;
@@ -738,7 +738,7 @@ async function runStage3v(shiftId: string, data: Stage3aData, transcript: string
       },
     }),
   });
-  if (!res.ok) throw new Error(`3v 팩트 체크 엎어짐 ${res.status}: ${(await res.text()).slice(0, 200)}`);
+  if (!res.ok) throw new Error(`사실 확인을 하지 못했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`);
   const body = (await res.json()) as {
     candidates?: { content?: { parts?: { text?: string }[] } }[];
     usageMetadata?: unknown;
@@ -776,7 +776,7 @@ async function runStage3v(shiftId: string, data: Stage3aData, transcript: string
     await addConfirmation({
       shiftId,
       sourceId: c.id,
-      question: `팩폭 맞고 강등된 녀석 — "${c.교정전}" →"${c.교정후}" 이거 맞아요? (${v.사유})`,
+      question: `"${c.교정전}" 를 "${c.교정후}" 로 고쳤어요. 맞나요? (${v.사유})`,
       candidate: c.교정후,
     });
   }
@@ -796,7 +796,7 @@ async function runStage3v(shiftId: string, data: Stage3aData, transcript: string
 
 async function submit3bHybrid(shiftId: string, stage3aJson: string): Promise<void> {
   const key = await getApiKey("gemini");
-  if (!key) throw new Error("구글 AI 열쇠(키) 없뜸 텅~");
+  if (!key) throw new Error("구글 열쇠가 없어요. 설정에서 넣어 주세요.");
   const transcript = await maskedTranscript(shiftId);
   const res = await fetch(
     `${GEMINI_API}/models/gemini-3.1-pro-preview:batchGenerateContent?key=${key}`,
@@ -837,11 +837,11 @@ async function submit3bHybrid(shiftId: string, stage3aJson: string): Promise<voi
       }),
     },
   );
-  if (!res.ok) throw new Error(`Gemini 택배 발송(배치 제출) 엎어짐 ${res.status}: ${(await res.text()).slice(0, 300)}`);
+  if (!res.ok) throw new Error(`분석을 맡기지 못했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`);
   const data = (await res.json()) as { name?: string };
-  if (!data.name) throw new Error("엥 Gemini 택배 상자 이름이 안 보여요");
+  if (!data.name) throw new Error("Gemini 가 작업 이름을 주지 않았어요. 다시 해 주세요.");
   await savePipelineJob({ shiftId, stage: "h3b", batchId: data.name });
-  await logDebug(`하이브리드 정밀 분석: 3b Gemini 택배 발송 슝 ${data.name}`);
+  await logDebug(`하이브리드 3b Gemini 제출: ${data.name}`);
 }
 
 async function pollGeminiBatch(
@@ -850,7 +850,7 @@ async function pollGeminiBatch(
 ): Promise<{ ended: boolean; text?: string; usage?: unknown; error?: string }> {
   const key = await getApiKey("gemini");
   const res = await fetch(`${GEMINI_API}/${batchName}?key=${key}`, {});
-  if (!res.ok) throw new Error(`Gemini 택배 상자(배치) 조회 엎어짐 ${res.status}`);
+  if (!res.ok) throw new Error(`진행 상태를 읽지 못했어요 (${res.status}). 잠시 뒤 다시 확인해 주세요.`);
   const data = (await res.json()) as {
     metadata?: { state?: string };
     state?: string;
@@ -863,7 +863,7 @@ async function pollGeminiBatch(
     return { ended: false };
   }
   if (data.error || state.includes("FAILED") || state.includes("CANCELLED") || state.includes("EXPIRED")) {
-    return { ended: true, error: data.error?.message ?? `택배 현황 ${state}` };
+    return { ended: true, error: data.error?.message ?? `분석 상태: ${state}` };
   }
   // 인라인 응답 — 판이 바뀌어도 견디도록 두 가지 꼴을 다 본다.
   const holder = data.response?.inlinedResponses;
@@ -891,25 +891,25 @@ function usageOf(message: BatchResult["message"]): unknown {
 }
 
 export function describeStage(job: PipelineJobRow | null): PipelineState {
-  if (!job) return { stage: "idle", detail: "아직 AI 풀악셀(심층 분석) 안 돌렸어용" };
+  if (!job) return { stage: "idle", detail: "아직 분석하지 않았어요." };
   switch (job.stage) {
     case "3a":
-      return { stage: "3a", detail: "1차 영혼 탈탈 터는 중 — Claude Opus 5 형님이 멱살 잡고 돌리는 중 (수 분~수십 분 소요)" };
+      return { stage: "3a", detail: "1단계 — Claude Opus 5 가 배울 점을 찾는 중이에요. 몇 분에서 몇 십 분 걸려요." };
     case "h3a":
-      return { stage: "3a", detail: "1차 영혼 탈탈 터는 중 — GPT-5.6 형님이 멱살 잡고 돌리는 중 (수 분~수십 분 소요)" };
+      return { stage: "3a", detail: "1단계 — GPT-5.6 이 배울 점을 찾는 중이에요. 몇 분에서 몇 십 분 걸려요." };
     case "3a-done":
     case "h3a-done":
-      return { stage: "3a", detail: "1차 털기 피니시 — '어디쯤 왔나 찌르기' 꾹 누르면 다음 단계로 슝!" };
+      return { stage: "3a", detail: "1단계가 끝났어요. '진행 확인'을 누르면 다음으로 가요." };
     case "3b":
-      return { stage: "3b", detail: "2차 폭풍 구글링 중 — Claude Fable 5 녀석이 팩트 체크 갈기고 있어용" };
+      return { stage: "3b", detail: "2단계 — Claude Fable 5 가 사실을 확인하는 중이에요." };
     case "h3b":
-      return { stage: "3b", detail: "팩트 체크 프리패스 — Gemini 3.1 Pro 녀석이 구글링으로 탈탈 터는 중!" };
+      return { stage: "3b", detail: "2단계 — Gemini 3.1 Pro 가 사실을 확인하는 중이에요." };
     case "4":
-      return { stage: "4", detail: "리포트랑 단어장 굽기 대기 중 — '어디쯤 왔나 찌르기' 꾹 누르면 마무리 피니시!" };
+      return { stage: "4", detail: "보고서와 단어장을 만들 차례예요. '진행 확인'을 눌러 주세요." };
     case "done":
-      return { stage: "done", detail: "초정밀 분석 갓벽하게 완료 — 눈물 젖은 리포트, 단어장, 선배한테 물어볼 리스트 장전 완!" };
+      return { stage: "done", detail: "분석이 끝났어요. 보고서·단어장·확인 목록이 생겼어요." };
     case "error":
-      return { stage: "error", detail: "앗 초정밀 분석 엎어짐 대참사 ㅠㅠ", error: job.error ?? undefined };
+      return { stage: "error", detail: "분석이 멈췄어요. 다시 시작해 주세요.", error: job.error ?? undefined };
     default:
       return { stage: "idle", detail: "" };
   }
@@ -935,7 +935,7 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
     if (job.stage === "3a" && job.batch_id) {
       const r = await pollBatch(job.batch_id, batchCustomId("3a", shiftId));
       if (!r.ended) return describeStage(job);
-      if (r.error) throw new Error(`1차 영혼 털기 엎어짐: ${r.error}`);
+      if (r.error) throw new Error(`1단계를 마치지 못했어요: ${r.error}`);
       const json = JSON.stringify(extractJson(r.message));
       await appendPipelineUsage(shiftId, { stage: "3a", usage: usageOf(r.message), at: Date.now() });
       await savePipelineJob({ shiftId, stage: "3a-done", stage3a: json });
@@ -948,12 +948,12 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
       // (3v 는 입력이 작아 실시간 Flash 로 충분하다).
       const r = await pollOpenAiBatch(job.batch_id, batchCustomId("3a", shiftId));
       if (!r.ended) return describeStage(job);
-      if (r.error) throw new Error(`1차 영혼 털기(GPT) 엎어짐: ${r.error}`);
+      if (r.error) throw new Error(`1단계를 마치지 못했어요: ${r.error}`);
       await appendPipelineUsage(shiftId, { stage: "3a", provider: "openai", usage: r.usage, at: Date.now() });
       const text = r.text ?? "";
       const s = text.indexOf("{");
       const e = text.lastIndexOf("}");
-      if (s < 0 || e <= s) throw new Error("GPT 놈이 뻘소리(JSON 안 줌) 시전 ㅠㅠ");
+      if (s < 0 || e <= s) throw new Error("GPT 답을 읽지 못했어요. 다시 분석해 주세요.");
       const data = JSON.parse(text.slice(s, e + 1)) as Stage3aData;
 
       const transcript = await maskedTranscript(shiftId);
@@ -975,12 +975,12 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
     } else if (job.stage === "h3b" && job.batch_id) {
       const r = await pollGeminiBatch(job.batch_id, batchCustomId("3b", shiftId));
       if (!r.ended) return describeStage(job);
-      if (r.error) throw new Error(`2차 폭풍 구글링(Gemini) 엎어짐: ${r.error}`);
+      if (r.error) throw new Error(`2단계를 마치지 못했어요: ${r.error}`);
       await appendPipelineUsage(shiftId, { stage: "3b", provider: "gemini", usage: r.usage, at: Date.now() });
       const text = r.text ?? "";
       const s = text.indexOf("{");
       const e = text.lastIndexOf("}");
-      if (s < 0 || e <= s) throw new Error("Gemini 놈이 뻘소리(JSON 안 줌) 시전 ㅠㅠ");
+      if (s < 0 || e <= s) throw new Error("Gemini 답을 읽지 못했어요. 다시 분석해 주세요.");
       const json = JSON.stringify(JSON.parse(text.slice(s, e + 1)));
       await savePipelineJob({ shiftId, stage: "4", stage3b: json });
       const fresh = await getPipelineJob(shiftId);
@@ -988,7 +988,7 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
     } else if (job.stage === "3b" && job.batch_id) {
       const r = await pollBatch(job.batch_id, batchCustomId("3b", shiftId));
       if (!r.ended) return describeStage(job);
-      if (r.error) throw new Error(`2차 폭풍 구글링 엎어짐: ${r.error}`);
+      if (r.error) throw new Error(`2단계를 마치지 못했어요: ${r.error}`);
       const json = JSON.stringify(extractJson(r.message));
       await appendPipelineUsage(shiftId, { stage: "3b", usage: usageOf(r.message), at: Date.now() });
       await savePipelineJob({ shiftId, stage: "4", stage3b: json });
@@ -1000,7 +1000,7 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
   } catch (e) {
     const msg = e instanceof Error ? e.message : "귀신 곡할 노릇 (원인 모름)";
     await savePipelineJob({ shiftId, stage: "error", error: msg });
-    await logDebug(`초정밀 분석 폭망: ${msg}`);
+    await logDebug(`심층 분석 실패: ${msg}`);
   }
   return describeStage(await getPipelineJob(shiftId));
 }

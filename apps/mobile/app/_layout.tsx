@@ -146,7 +146,7 @@ function Gate() {
               paddingHorizontal: 40,
             }}
           >
-            인증 창이 뜨지 않으면 '잠금 해제'를 다시 눌러 주십시오.
+            인증 창이 안 뜨면 '잠금 해제'를 다시 눌러 주세요.
           </Text>
         ) : null}
       </View>

@@ -100,12 +100,12 @@ export async function shareWardPack(pack: WardPack): Promise<void> {
 
   if (!(await Sharing.isAvailableAsync())) {
     throw new Error(
-      `이 폰에선 카톡 공유 같은 거 못 열어요 ㅠㅠ 파일 여기 짱박혀 있음: ${file.uri}`,
+      `이 폰에서는 공유 창을 열 수 없어요. 파일은 여기 있어요: ${file.uri}`,
     );
   }
   await Sharing.shareAsync(file.uri, {
     mimeType: "application/json",
-    dialogTitle: `${pack.name} 족보 밖으로 슝`,
+    dialogTitle: `${pack.name} 사전 보내기`,
     UTI: "public.json",
   });
 }
@@ -136,7 +136,7 @@ export async function importWardPackFromFile(): Promise<ImportOutcome> {
   } catch (e) {
     return {
       ...empty,
-      errors: [`엥 파일이 안 읽혀요 ㅠㅠ 고장 남: ${e instanceof Error ? e.message : e}`],
+      errors: [`파일을 읽지 못했어요: ${e instanceof Error ? e.message : e}`],
       canceled: false,
       saved: false,
     };

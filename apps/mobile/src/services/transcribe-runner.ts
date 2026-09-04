@@ -94,7 +94,7 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
   void (async () => {
     // 포그라운드 서비스를 잡는다 — 다른 앱으로 넘어가도 얼리지 않게.
     // notifyDone(성공·실패 공통)이 endWork 라서 여기와 짝이 맞는다.
-    await beginWork("뚝딱뚝딱 변환 준비 중", "폰 화면 꺼도 뒤에서 몰래 열일함");
+    await beginWork("바꿀 준비 중", "화면을 꺼도 계속돼요");
     // 캐시 정리 등으로 파일이 사라진 기록은 건너뛰고 마지막에 알린다.
     let missing = 0;
     try {
@@ -111,14 +111,14 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
         });
         if (!rec.file_uri || !new File(rec.file_uri).exists) {
           missing += 1;
-          await setRecordingState(rec.id, "discarded", "엥 폰 용량 없다고 파일 증발함 휑~");
+          await setRecordingState(rec.id, "discarded", "폰 용량이 없어 파일이 사라졌어요");
           continue;
         }
         await notifyProgress(
           NOTIF_ID,
           state.percent,
-          `영차영차 변환 중 ${state.percent}%`,
-          `파일 ${i + 1}/${files.length}개 뽀개는 중 · 화면 꺼도 알아서 열일함`,
+          `바꾸는 중 ${state.percent}%`,
+          `파일 ${i + 1}/${files.length} · 화면을 꺼도 계속돼요`,
         );
         sentenceTotal += await processRecording(rec, provider, (filePct, note) => {
           const overall = Math.round(((i + filePct / 100) / files.length) * 100);
@@ -132,8 +132,8 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
             void notifyProgress(
               NOTIF_ID,
               overall,
-              `전체 변환 중 ${overall}%`,
-              note ?? `파일 ${i + 1}/${files.length}개 뽀개는 중 · 화면 꺼도 알아서 열일함`,
+              `바꾸는 중 ${overall}%`,
+              note ?? `파일 ${i + 1}/${files.length} · 화면을 꺼도 계속돼요`,
             );
           }
         });
@@ -141,8 +141,8 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
       const doneCount = files.length - missing;
       const summary =
         missing > 0
-          ? `녹음 ${doneCount}건 글자로 싹 뽑았어요 · ${missing}건은 파일 증발해서 패스`
-          : `눈물 젖은 녹음 ${doneCount}건을 글로 쏵 뽑아냈습니다!`;
+          ? `녹음 ${doneCount}건을 글자로 바꿨어요 · ${missing}건은 파일이 없어 건너뛰었어요`
+          : `녹음 ${doneCount}건을 글자로 바꿨어요.`;
       // 앱 안 알림 — 홈의 기록 폴더가 이 값을 읽어 '새 전사 결과'를 띄운다.
       // 전사 결과 화면을 열면 seen 이 된다.
       await setSetting("transcribe.lastResult", {
@@ -156,15 +156,15 @@ export function startTranscription(shiftId: string, recordings: RecordingRow[]):
         percent: 100,
         fileId: null,
         note: null,
-        error: missing > 0 ? `엥 ${missing}건은 폰 용량 정리하다 파일이 증발해서 걍 쿨하게 패스했어요` : null,
+        error: missing > 0 ? `${missing}건은 파일이 없어 건너뛰었어요.` : null,
         completedAt: Date.now(),
       });
-      await notifyDone(NOTIF_ID, "글자 변환 피니시!", summary);
+      await notifyDone(NOTIF_ID, "글자로 다 바꿨어요", summary);
     } catch (e) {
-      const msg = e instanceof Error ? e.message : "앗 텍스트 변환 엎어졌어요 대참사 ㅠㅠ";
-      void logDebug(`텍스트 변환 폭망 ㅠㅠ: ${msg}`);
+      const msg = e instanceof Error ? e.message : "글자로 바꾸지 못했어요. 다시 해 주세요.";
+      void logDebug(`전사 실패: ${msg}`);
       emit({ running: false, fileId: null, note: null, error: msg, completedAt: Date.now() });
-      await notifyDone(NOTIF_ID, "가다 자빠짐 (변환 중단)", msg);
+      await notifyDone(NOTIF_ID, "바꾸다 멈췄어요", msg);
     }
   })();
 

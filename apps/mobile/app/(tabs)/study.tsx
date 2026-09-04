@@ -240,14 +240,14 @@ export default function Study() {
           cards.length === 0 ? (
             <Card>
               <Body muted>
-                근무를 기록하고 전사하면 실제 들은 문장으로 암기 카드가 생성됩니다. 내일
-                병동에서 바로 쓰이는 실전 용어가 정리됩니다.
+                근무를 기록하고 글자로 바꾸면 실제 들은 문장으로 카드가 생겨요. 내일 병동에서
+                바로 쓸 말이에요.
               </Body>
             </Card>
           ) : !current ? (
             <>
               <Card tone="accent">
-                <Body>{done > 0 ? `오늘 ${done}장을 복습했습니다.` : "현재 복습할 카드가 없습니다."}</Body>
+                <Body>{done > 0 ? `오늘 ${done}장을 복습했어요.` : "지금 복습할 카드가 없어요."}</Body>
                 <Small>
                   전체 {stats.total}장 · 익숙해진 카드 {stats.mature}장
                 </Small>
@@ -256,8 +256,8 @@ export default function Study() {
                 <Card>
                   <Badge text={`계속 틀리는 카드 ${stats.leeches}장`} tone="warn" />
                   <Small>
-                    반복해 틀리는 용어는 기초 개념 정리 부족일 수 있습니다. 해당 용어의 공식
-                    자료를 확인해 보십시오.
+                    자꾸 틀리는 말은 기초가 흔들린다는 뜻일 수 있어요. 그 말의 공식 자료를
+                    한 번 찾아봐요.
                   </Small>
                 </Card>
               ) : null}
@@ -323,8 +323,7 @@ export default function Study() {
           transcripts.length === 0 ? (
             <Card>
               <Body muted>
-                전사가 끝난 기록이 아직 없습니다. 근무 기록에서 전사를 실행하면 여기 파일별로
-                쌓입니다.
+                아직 글자로 바꾼 기록이 없어요. 근무 기록에서 녹음을 바꾸면 여기에 쌓여요.
               </Body>
             </Card>
           ) : (
@@ -404,7 +403,7 @@ export default function Study() {
             {sets.length === 0 ? (
               <Card>
                 <Body muted>
-                  {search ? "검색 결과가 없습니다." : "카드가 없습니다. 근무 전사 시 자동으로 만들어집니다."}
+                  {search ? "찾는 카드가 없어요." : "카드가 없어요. 분석을 돌리면 저절로 생겨요."}
                 </Body>
               </Card>
             ) : (
@@ -482,7 +481,7 @@ export default function Study() {
             <Card>
               <Body muted>
                 
-  보고서가 없습니다. 전사 후 ‘카드·보고서 만들기’를 실행하면 요약 보고서가 생성됩니다.
+  보고서가 없어요. 전사 결과 화면에서 분석을 돌리면 생겨요.
 </Body>
             </Card>
           ) : (
@@ -555,7 +554,7 @@ export default function Study() {
         {mode === "reports" ? (
           <Small>
             
-  AI 보조 기능을 켜면 보고서에 근무 평가가 포함됩니다 (설정 › 보조 기능).
+  AI 를 켜면 보고서에 근무 평가도 들어가요.
 </Small>
         ) : null}
       </ScrollView>

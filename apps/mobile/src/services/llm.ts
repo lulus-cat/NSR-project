@@ -115,8 +115,7 @@ async function callAnthropic(body: unknown): Promise<{
   const apiKey = await getApiKey("anthropic");
   if (!apiKey) {
     throw new Error(
-      "API 열쇠(키)가 읎어요! 설정 > AI 선배 셋팅 가서 꽂아주세용 " +
-        "열쇠는 폰 안쪽 깊숙한 금고(키체인/키스토어)에만 박아둬서 절대 안 털려요 안심!",
+      "AI 열쇠가 없어요. 설정 → 필수 기능에서 열쇠를 넣어 주세요.",
     );
   }
 
@@ -133,11 +132,11 @@ async function callAnthropic(body: unknown): Promise<{
   if (!res.ok) {
     // 상태 코드로 사람이 읽을 말을 만든다. SDK 의 오류 클래스 대신 쓰는 것이다.
     const detail = await res.text().catch(() => "");
-    if (res.status === 401) throw new Error("엥? API 열쇠(키) 짝퉁인데요? 안 맞음");
+    if (res.status === 401) throw new Error("열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.");
     if (res.status === 429) {
-      throw new Error("앗 너무 많이 찔러서 AI가 뻗었어요 ㅠㅠ 쿨타임 좀 돌고 다시 와주세용");
+      throw new Error("너무 자주 불러서 잠깐 막혔어요. 잠시 뒤 다시 해 주세요.");
     }
-    throw new Error(`API 놈이 에러 뱉음 ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`AI 가 답하지 못했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`);
   }
   return res.json();
 }
@@ -159,24 +158,24 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
  */
 export const MODEL_CHOICES: Record<Exclude<LlmProvider, "custom">, { id: string; hint: string }[]> = {
   anthropic: [
-    { id: "claude-opus-5", hint: "킹갓제너럴 정확도 (국룰)" },
-    { id: "claude-fable-5", hint: "최고 존엄 — 근데 돈 엄청 깨짐 주의" },
-    { id: "claude-sonnet-5", hint: "밸런스 패치 — 가격 반값 할인!" },
-    { id: "claude-haiku-4-5", hint: "젤 빠르고 젤 쌈 (가성비충)" },
+    { id: "claude-opus-5", hint: "가장 정확해요 (기본)" },
+    { id: "claude-fable-5", hint: "가장 똑똑한 대신 비싸요" },
+    { id: "claude-sonnet-5", hint: "값과 성능이 알맞아요" },
+    { id: "claude-haiku-4-5", hint: "가장 빠르고 싸요" },
   ],
   openai: [
-    { id: "gpt-5.6-terra", hint: "밸런스 패치 (국룰)" },
-    { id: "gpt-5.6-sol", hint: "킹갓제너럴 정확도" },
-    { id: "gpt-5.6-luna", hint: "젤 저렴이 (가성비)" },
+    { id: "gpt-5.6-terra", hint: "값과 성능이 알맞아요 (기본)" },
+    { id: "gpt-5.6-sol", hint: "가장 정확해요" },
+    { id: "gpt-5.6-luna", hint: "가장 싸요" },
   ],
   kimi: [
-    { id: "kimi-k3", hint: "국밥 기본 — 제일 최신형 똑똑이" },
-    { id: "kimi-k2.6", hint: "라떼 구형 — 옛날 계정 쓴 사람만 모심" },
+    { id: "kimi-k3", hint: "가장 새 모델이에요 (기본)" },
+    { id: "kimi-k2.6", hint: "예전 모델이에요" },
   ],
   gemini: [
-    { id: "gemini-3.7-flash", hint: "국밥 기본 — 공짜 티어 완전 혜자 낭낭함" },
-    { id: "gemini-3.1-pro-preview", hint: "킹갓제너럴 정확도" },
-    { id: "gemini-3.5-flash-lite", hint: "젤 저렴이 (가성비)" },
+    { id: "gemini-3.7-flash", hint: "무료로 넉넉하게 써요 (기본)" },
+    { id: "gemini-3.1-pro-preview", hint: "가장 정확해요" },
+    { id: "gemini-3.5-flash-lite", hint: "가장 싸요" },
   ],
 };
 
@@ -231,12 +230,12 @@ async function callOpenAi(input: {
   const provider = input.override?.provider ?? (await getProvider());
   const custom = provider === "custom" ? await getCustomServer() : null;
   if (provider === "custom" && !custom) {
-    throw new Error("엥 내 서버 주소가 비었어요! 설정 > AI 선배 셋팅 가서 주소랑 녀석(모델) 좀 채워줘용");
+    throw new Error("주소가 비었어요. 설정에서 주소와 모델을 넣어 주세요.");
   }
   const apiKey = await getApiKey(provider === "anthropic" ? "openai" : provider);
   if (!custom && !apiKey) {
     throw new Error(
-      "API 열쇠(키)가 읎어요! 설정 > AI 선배 셋팅 가서 꽂아주세용",
+      "AI 열쇠가 없어요. 설정 → 필수 기능에서 열쇠를 넣어 주세요.",
     );
   }
 
@@ -275,11 +274,11 @@ async function callOpenAi(input: {
 
   if (!res.ok) {
     const detail = await res.text().catch(() => "");
-    if (res.status === 401) throw new Error("엥? API 열쇠(키) 짝퉁인데요? 안 맞음");
+    if (res.status === 401) throw new Error("열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.");
     if (res.status === 429) {
-      throw new Error("앗 너무 굴려서 지쳤거나 잔고(크레딧) 털렸어요 쿨타임 차고 다시 고!");
+      throw new Error("한도를 다 썼거나 잔액이 없어요. 잠시 뒤 다시 해 주세요.");
     }
-    throw new Error(`API 놈이 뻘소 시전 ${res.status}: ${detail.slice(0, 200)}`);
+    throw new Error(`AI 가 답하지 못했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`);
   }
   const data = (await res.json()) as {
     choices?: { message?: { content?: string } }[];
@@ -513,7 +512,7 @@ export async function summarizeShift(
 
   const toolUse = response.content.find((b) => b.type === "tool_use");
   if (!toolUse) {
-    throw new Error("엥? 녀석이 뻘소리로 답했어요(구조화 실패). 다시 한 번 찔러볼게요");
+    throw new Error("AI 답을 읽지 못했어요. 한 번 더 해 주세요.");
   }
   // 툴 입력의 JSON 이스케이프는 모델마다 다를 수 있으므로 항상 파서를 거친다.
   const parsed =
@@ -759,13 +758,13 @@ async function runClinicalTool(
     const ok = await db.clinicalUpdateCard(args.card_id, args.front, args.back, args.reason);
     return ok
       ? { result: "예쁘게 고쳐놨어요", action: `카드 수정(${args.card_id}) — ${args.reason}` }
-      : { result: "엥? 그 번호 단어장이 안 보여요" };
+      : { result: "그 번호의 단어가 없어요." };
   }
   if (name === "delete_card") {
     const ok = await db.clinicalDeleteCard(args.card_id, args.reason);
     return ok
       ? { result: "가차 없이 펑! 날렸어요", action: `카드 삭제(${args.card_id}) — ${args.reason}` }
-      : { result: "엥? 그 번호 단어장이 안 보여요" };
+      : { result: "그 번호의 단어가 없어요." };
   }
   if (name === "add_card") {
     const id = await db.clinicalAddCard({
@@ -782,7 +781,7 @@ async function runClinicalTool(
         };
   }
   if (name === "update_report_section") {
-    if (!reportShiftId) return { result: "엥? 뜯어고칠 리포트가 안 보여요" };
+    if (!reportShiftId) return { result: "고칠 보고서가 없어요." };
     const ok = await db.clinicalUpdateReportSection(
       reportShiftId,
       args.section,
@@ -791,15 +790,15 @@ async function runClinicalTool(
     );
     return ok
       ? { result: "리포트 찰지게 고쳐놨어요", action: `보고서 '${args.section}' 수정 — ${args.reason}` }
-      : { result: "엥? 리포트가 없는데요" };
+      : { result: "보고서가 없어요." };
   }
   if (name === "resolve_confirmation") {
     const ok = await db.resolveConfirmation(args.item_id, args.result, args.reason);
     return ok
       ? { result: "물음표 리스트에서 시원하게 지워버림 싹-", action: `확인 해소(${args.item_id}) — ${args.result}` }
-      : { result: "엥? 그 번호 궁금증이 안 보여요" };
+      : { result: "그 번호의 확인 항목이 없어요." };
   }
-  return { result: "엥 이건 모르는 스킬인데?" };
+  return { result: "이건 할 수 없는 일이에요." };
 }
 
 /**
@@ -880,7 +879,7 @@ async function clinicalChatAnthropic(
         toolResults.push({
           type: "tool_result",
           tool_use_id: b.id,
-          content: `폭망: ${e instanceof Error ? e.message : "귀신 곡할 노릇(원인 모름)"}`,
+          content: `실패: ${e instanceof Error ? e.message : "원인을 알 수 없어요"}`,
           is_error: true,
         });
       }
@@ -899,7 +898,7 @@ async function clinicalChatGemini(
   input: { context: string; reportShiftId?: string; webSearch?: boolean },
 ): Promise<ClinicalReply> {
   const apiKey = await getApiKey("gemini");
-  if (!apiKey) throw new Error("구글 AI 열쇠(키)가 어딨어요! 설정 → 필수 셋팅 가서 꽂아주세용");
+  if (!apiKey) throw new Error("구글 열쇠가 없어요. 설정 → 필수 기능에서 넣어 주세요.");
   const system =
     `${CLINICAL_SYSTEM}\n\n[학습 자료·배치 판단 컨텍스트]\n${input.context}` +
     (input.webSearch
@@ -960,7 +959,7 @@ async function clinicalChatGemini(
         if (out.action) actions.push(out.action);
         result = out.result;
       } catch (e) {
-        result = `폭망: ${e instanceof Error ? e.message : "귀신 곡할 노릇(원인 모름)"}`;
+        result = `실패: ${e instanceof Error ? e.message : "원인을 알 수 없어요"}`;
       }
       messages.push({ role: "tool", tool_call_id: call.id, content: result });
     }
@@ -975,11 +974,11 @@ export async function llmReady(): Promise<{ ok: boolean; reason?: string }> {
   if (p === "custom") {
     return (await getCustomServer())
       ? { ok: true }
-      : { ok: false, reason: "엥 내 서버 주소가 비었어요! 설정 → AI 선배 셋팅 가서 채워줘용" };
+      : { ok: false, reason: "주소가 비었어요. 설정에서 주소를 넣어 주세요." };
   }
   return (await getApiKey(p))
     ? { ok: true }
-    : { ok: false, reason: "열쇠(키)가 읎어요! 설정 → AI 선배 셋팅 가서 누구 쓸 건지 고르고 꽂아주세용" };
+    : { ok: false, reason: "AI 열쇠가 없어요. 설정에서 골라 넣어 주세요." };
 }
 
 /** 키가 유효한지 가볍게 확인한다. 설정 화면의 "연결 테스트" 버튼용. */
@@ -998,11 +997,11 @@ export async function testConnection(): Promise<{ ok: boolean; message: string }
         messages: [{ role: "user", content: "ping" }],
       });
     }
-    return { ok: true, message: "오 찰떡 연결 완료!" };
+    return { ok: true, message: "연결됐어요." };
   } catch (error) {
     return {
       ok: false,
-      message: error instanceof Error ? error.message : "엥 몰라 귀신 곡할 노릇",
+      message: error instanceof Error ? error.message : "연결하지 못했어요. 다시 해 주세요.",
     };
   }
 }

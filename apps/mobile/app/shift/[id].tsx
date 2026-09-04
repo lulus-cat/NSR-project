@@ -96,13 +96,13 @@ function groupPending(rows: RecordingRow[]): PendingGroup[] {
 function stateBadge(state: string): { text: string; tone: "ok" | "muted" | "warn" } {
   switch (state) {
     case "recorded":
-      return { text: "미전사", tone: "warn" };
+      return { text: "안 바꿈", tone: "warn" };
     case "transcribing":
-      return { text: "전사 중", tone: "muted" };
+      return { text: "바꾸는 중", tone: "muted" };
     case "transcribed":
-      return { text: "전사됨", tone: "ok" };
+      return { text: "다 바꿈", tone: "ok" };
     case "discarded":
-      return { text: "버림", tone: "muted" };
+      return { text: "버린 파일", tone: "muted" };
     default:
       return { text: "녹음 중", tone: "muted" };
   }
@@ -200,7 +200,7 @@ export default function ShiftDetail() {
       }
       setRunner(s.running ? s : null);
       if (s.running) {
-        setBusy(`텍스트 변환 중 ${s.percent}% (${s.fileIndex}/${s.fileCount})`);
+        setBusy(`바꾸는 중 ${s.percent}%`);
         if (s.fileId !== lastFileRef.current) {
           lastFileRef.current = s.fileId;
           void listRecordings(shiftId).then(setRecordings);
@@ -219,7 +219,7 @@ export default function ShiftDetail() {
   const runTranscription = useCallback(() => {
     setError(null);
     if (!startTranscription(shiftId, pending)) {
-      setError("이미 다른 거 돌리고 있거나 변환할 녹음이 없어요!");
+      setError("다른 근무를 바꾸는 중이에요. 끝난 뒤에 다시 눌러 주세요.");
     }
   }, [shiftId, pending]);
 
@@ -286,7 +286,7 @@ export default function ShiftDetail() {
         player.play();
         setPreviewId(rec.id);
       } catch (e) {
-        setError(e instanceof Error ? e.message : "삐빅 재생 불가");
+        setError(e instanceof Error ? e.message : "소리를 열지 못했어요. 파일이 남아 있는지 확인해 주세요.");
       }
     },
     [previewId],
@@ -307,7 +307,7 @@ export default function ShiftDetail() {
           (sentences > 0 ? `\n이 파일로 만든 전사 ${sentences}문장도 함께 지워져요.` : "") +
           "\n한 번 지우면 되살릴 수 없어요.",
         [
-          { text: "앗차차 (취소)", style: "cancel" },
+          { text: "그만두기", style: "cancel" },
           {
             text: "지우기",
             style: "destructive",
@@ -326,7 +326,7 @@ export default function ShiftDetail() {
                     }
                   }
                 } catch (e) {
-                  setError(e instanceof Error ? e.message : "녹음을 지우지 못했어요.");
+                  setError(e instanceof Error ? e.message : "녹음을 지우지 못했어요. 잠시 뒤 다시 눌러 주세요.");
                 }
                 await load();
               })();
@@ -347,13 +347,13 @@ export default function ShiftDetail() {
   const pickExport = useCallback(
     async (kind: "transcript" | "report" | "reportPdf" | "cards" | "analysis") => {
       setError(null);
-      setBusy("내보낼 것 챙기는 중");
+      setBusy("파일 만드는 중");
       try {
         const base = exportBaseName(date, dutyLabel);
         if (kind === "transcript") {
           const segs = await listSegments(shiftId);
           if (segs.length === 0) {
-            setError("아직 글로 바뀐 문장이 없어요. 변환부터 돌리고 오세요.");
+            setError("아직 글자로 바뀐 문장이 없어요. 녹음부터 바꿔 주세요.");
             return;
           }
           setPreview({
@@ -366,7 +366,7 @@ export default function ShiftDetail() {
         }
         if (kind === "report" || kind === "reportPdf") {
           if (!reportMd) {
-            setError("아직 보고서가 없어요. 심층 분석부터 돌리고 오세요.");
+            setError("아직 보고서가 없어요. 전사 결과 화면에서 분석을 돌려 주세요.");
             return;
           }
           setPreview({
@@ -381,7 +381,7 @@ export default function ShiftDetail() {
         if (kind === "cards") {
           const cards = await listCardsForShift(shiftId);
           if (cards.length === 0) {
-            setError("이 근무에서 만들어진 단어장이 없어요.");
+            setError("이 근무에서 만든 단어가 없어요. 분석을 돌리면 생겨요.");
             return;
           }
           setPreview({
@@ -394,7 +394,7 @@ export default function ShiftDetail() {
         }
         const rep = await getShiftReport(shiftId);
         if (!rep) {
-          setError("심층 분석 결과가 없어요. 분석부터 돌리고 오세요.");
+          setError("분석 결과가 없어요. 전사 결과 화면에서 분석을 돌려 주세요.");
           return;
         }
         setPreview({
@@ -413,7 +413,7 @@ export default function ShiftDetail() {
           ),
         });
       } catch (e) {
-        setError(e instanceof Error ? e.message : "내보낼 것을 챙기지 못했습니다.");
+        setError(e instanceof Error ? e.message : "파일을 만들지 못했어요. 잠시 뒤 다시 해 주세요.");
       } finally {
         setBusy(null);
       }
@@ -423,7 +423,7 @@ export default function ShiftDetail() {
 
   const doShare = useCallback(async () => {
     if (!preview) return;
-    setBusy("밖으로 빼는 중");
+    setBusy("보내는 중");
     try {
       if (preview.pdf) {
         await exportNotePdf(preview.fileName, preview.redacted.text);
@@ -434,12 +434,12 @@ export default function ShiftDetail() {
         text: preview.redacted.text,
         fileName: preview.fileName,
         format: preview.format,
-        title: `${dutyLabel} ${preview.label} 밖으로 슝`,
+        title: `${dutyLabel} ${preview.label}`,
       });
       if (!outcome.shared && outcome.message) setError(outcome.message);
       else setPreview(null);
     } catch (e) {
-      setError(e instanceof Error ? e.message : "앗 공유 엎어짐");
+      setError(e instanceof Error ? e.message : "공유 창을 열지 못했어요. 다시 눌러 주세요.");
     } finally {
       setBusy(null);
     }
@@ -469,7 +469,7 @@ export default function ShiftDetail() {
         >
           <Pressable
             accessibilityRole="button"
-            accessibilityLabel={playingThis ? "그만 듣기" : "맛보기 재생"}
+            accessibilityLabel={playingThis ? "그만 듣기" : "미리 듣기"}
             disabled={!r.file_uri}
             onPress={() => togglePreview(r)}
             style={({ pressed }) => ({
@@ -495,13 +495,13 @@ export default function ShiftDetail() {
               {mb ? ` · ${mb}MB` : ""}
               {mine && r.separate === 1 ? " · 따로 보기" : ""}
               {mine && sentences > 0 ? ` · ${sentences}문장` : ""}
-              {r.file_uri ? "" : " · 파일 없음 휑~"}
+              {r.file_uri ? "" : " · 파일 없음"}
             </Text>
           </View>
           <Badge
             text={
               r.state === "transcribing" && runner?.fileId === r.id
-                ? `전사 중 ${runner.filePercent}%`
+                ? `바꾸는 중 ${runner.filePercent}%`
                 : badge.text
             }
             tone={badge.tone}
@@ -546,20 +546,21 @@ export default function ShiftDetail() {
           {date} · {dutyLabel}
         </Heading>
         <Small>
-          기록 {recordings.length}개 · 총 {Math.round(durationSec / 60)}분 · 전사{" "}
-          {sentenceCount}문장
+          녹음 {recordings.length}개 · 총 {Math.round(durationSec / 60)}분 · 문장{" "}
+          {sentenceCount}개
         </Small>
+        {pending.length > 0 ? <Small>아직 안 바꾼 녹음이 {pending.length}건 있어요.</Small> : null}
         {pending.length > 0 ? (
           <Button
             label={
-              busy?.startsWith("텍스트 변환")
-                ? busy
+              busy?.startsWith("바꾸는 중")
+                ? "바꾸는 중"
                 : runnerBusy
-                  ? "딴 듀티 변환하느라 바쁨"
-                  : `밀린 녹음 ${pending.length}건 싹 다 바꾸기`
+                  ? "기다려 주세요"
+                  : "녹음 바꾸기"
             }
             tone="primary"
-            busy={busy?.startsWith("텍스트 변환") ?? false}
+            busy={busy?.startsWith("바꾸는 중") ?? false}
             disabled={runnerBusy}
             onPress={() => void runTranscription()}
           />
@@ -569,7 +570,7 @@ export default function ShiftDetail() {
             <GaugeBar ratio={runner.percent / 100} color={t.accent} height={8} />
             <View style={{ flexDirection: "row", justifyContent: "space-between", gap: space.sm }}>
               <Text style={[type.small, { color: t.textMuted, flexShrink: 1 }]}>
-                {runner.note ?? `파일 ${runner.fileIndex}/${runner.fileCount} 받아적는 중`}
+                {runner.note ?? `${runner.fileIndex}번째 파일을 글자로 바꾸는 중`}
               </Text>
               <Text style={[type.small, TABULAR, { color: t.text, fontWeight: "700" }]}>
                 {runner.percent}%
@@ -584,12 +585,13 @@ export default function ShiftDetail() {
 
       {/* ── 날짜 고르기 — 어느 날 녹음이 밀렸는지 잊지 않게 ── */}
       <Card tone={allPending.length > 0 ? "warn" : "default"}>
-        <Heading>밀린 녹음</Heading>
+        <Heading>안 바꾼 녹음</Heading>
         <Small>
           {allPending.length > 0
-            ? `아직 글자로 안 바꾼 녹음이 ${allPending.length}건 · ${pendingShifts.length}일치 남았어요. 날짜를 누르면 그날 근무로 갑니다.`
-            : "밀린 녹음이 없어요. 다 바꿨습니다!"}
+            ? `안 바꾼 녹음이 ${allPending.length}건, ${pendingShifts.length}일치 남았어요.`
+            : "안 바꾼 녹음이 없어요."}
         </Small>
+        {allPending.length > 0 ? <Small>날짜를 누르면 그날 근무로 가요.</Small> : null}
         <ScrollView
           horizontal
           showsHorizontalScrollIndicator={false}
@@ -636,8 +638,8 @@ export default function ShiftDetail() {
           <Button
             label={
               showAll
-                ? "이 근무 파일만 보기"
-                : `밀린 녹음 전체 보기 (${allPending.length}건)`
+                ? "이 근무만 보기"
+                : `전체 보기 ${allPending.length}건`
             }
             onPress={() => setShowAll((v) => !v)}
           />
@@ -647,11 +649,9 @@ export default function ShiftDetail() {
       {/* ── 음성 파일 — 날짜·파일 이름·시각. 들어보고, 잘못 올린 것은 지운다 ── */}
       {showAll ? (
         <Card>
-          <Heading>밀린 녹음 전체</Heading>
-          <Small>
-            모든 날의 아직 안 바꾼 녹음이에요. 바꾸려면 그 날짜 근무로 가서 &lsquo;녹음 바꾸기&rsquo;를
-            누르세요.
-          </Small>
+          <Heading>안 바꾼 녹음 전체</Heading>
+          <Small>모든 날의 안 바꾼 녹음이에요.</Small>
+          <Small>날짜를 눌러 그 근무로 가서 바꿔요.</Small>
           {pendingShifts.map((g) => (
             <View key={g.shiftId} style={{ gap: space.xs }}>
               <Divider />
@@ -686,11 +686,9 @@ export default function ShiftDetail() {
         </Card>
       ) : recordings.length > 0 ? (
         <Card>
-          <Heading>음성 파일 원본</Heading>
-          <Small>
-            {date} · {dutyLabel} 녹음 원본이에요. 바꾸기 전에 재생 버튼으로 먼저 들어볼 수 있고,
-            잘못 올린 파일은 휴지통 버튼으로 뺄 수 있어요
-          </Small>
+          <Heading>음성 파일</Heading>
+          <Small>재생 버튼으로 먼저 들어 봐요.</Small>
+          <Small>잘못 올린 파일은 휴지통으로 지워요.</Small>
           {recordings.map((r, i) => (
             <View key={r.id}>
               {i > 0 ? <Divider /> : null}
@@ -703,15 +701,13 @@ export default function ShiftDetail() {
       {/* 전사 결과로 가는 문 — 결과는 전용 화면에서 본다 */}
       {sentenceCount > 0 ? (
         <Card tone="accent">
-          <Heading>변환 결과물</Heading>
-          <Small>
-            {sentenceCount}문장 · 문장별 재생, 화자 지정, 단어 수정, AI 다듬기, 심층 분석 시작은
-            결과 화면에서 합니다.
-          </Small>
+          <Heading>전사 결과</Heading>
+          <Small>문장 {sentenceCount}개가 만들어졌어요.</Small>
+          <Small>재생·단어 고치기·분석은 결과 화면에서 해요.</Small>
           {mergedCount > 0 ? (
             <Button
               label={
-                separateDone.length > 0 ? `합친 전사본 까보기 (${mergedCount}문장)` : "결과물 까보기"
+                separateDone.length > 0 ? `합친 전사본 열기` : "전사본 열기"
               }
               tone="primary"
               onPress={() => router.push(`/transcript/${encodeURIComponent(shiftId)}`)}
@@ -720,7 +716,7 @@ export default function ShiftDetail() {
           {separateDone.map((r) => (
             <Button
               key={r.id}
-              label={`${r.label ?? startClock(r.started_at)} 따로 보기 (${counts.get(r.id) ?? 0}문장)`}
+              label={`${r.label ?? startClock(r.started_at)} 열기`}
               tone={mergedCount > 0 ? "default" : "primary"}
               onPress={() =>
                 router.push(
@@ -737,44 +733,40 @@ export default function ShiftDetail() {
           없어서 아예 감춘다 — 예전엔 분석 버튼 바로 아래에 같이 서 있어 순서가 어긋났다. */}
       {sentenceCount > 0 && !preview ? (
         <Card>
-          <Heading>파일로 빼내기</Heading>
-          <Small>
-            고른 것을 파일로 만들어 공유 창을 엽니다. 나가기 전에 가려진 개인정보
-            내역을 먼저 보여드립니다.
-          </Small>
+          <Heading>파일로 내보내기</Heading>
+          <Small>고른 것을 파일로 만들어요.</Small>
+          <Small>보내기 전에 가린 개인정보를 보여드려요.</Small>
           <Divider />
           <Button
-            label="전사본 (.txt) — 원문·교정본 함께"
-            busy={busy === "내보낼 것 챙기는 중"}
+            label="전사본 보내기"
+            busy={busy === "파일 만드는 중"}
             onPress={() => void pickExport("transcript")}
           />
           {reportMd ? (
             <>
               <Button
-                label="보고서 (.md 텍스트)"
+                label="보고서 보내기"
                 onPress={() => void pickExport("report")}
               />
-              <Button label="보고서 (.pdf 문서)" onPress={() => void pickExport("reportPdf")} />
-              <Button label="단어장 (.csv — 엑셀·앙키)" onPress={() => void pickExport("cards")} />
+              <Button label="PDF로 보내기" onPress={() => void pickExport("reportPdf")} />
+              <Button label="단어장 보내기" onPress={() => void pickExport("cards")} />
               <Button
-                label="분석 원본 (.json — 교정 규칙 만들기용)"
+                label="분석 기록 보내기"
                 onPress={() => void pickExport("analysis")}
               />
             </>
           ) : (
-            <Small>
-              보고서·단어장·분석 원본은 심층 분석을 돌려야 생겨요. 분석은 위 '변환 결과물' 에서
-              결과 화면으로 들어가면 있습니다.
-            </Small>
+            <>
+              <Small>보고서와 단어장은 분석을 돌려야 생겨요.</Small>
+              <Small>분석은 전사 결과 화면에서 시작해요.</Small>
+            </>
           )}
         </Card>
       ) : null}
 
       {preview ? (
         <Card tone={preview.redacted.masked ? "default" : "warn"}>
-          <Heading>
-이 내용 그대로 쏠게요
-</Heading>
+          <Heading>이대로 보낼까요</Heading>
           <Badge
             text={preview.redacted.summary}
             tone={preview.redacted.masked ? "ok" : "danger"}
@@ -798,21 +790,19 @@ export default function ShiftDetail() {
             </ScrollView>
           </View>
           <Divider />
-          <Small>
-
-저쪽 폰이랑 카톡 서버에 박제되는 거 알죠? 환자 정보 진짜진짜 없는지 마지막으로 눈 크게 뜨고 확인!
-</Small>
+          <Small>보낸 내용은 받는 곳에 그대로 남아요.</Small>
+          <Small>환자 정보가 없는지 마지막으로 확인해요.</Small>
           <View style={{ flexDirection: "row", gap: space.sm }}>
             <View style={{ flex: 1 }}>
               <Button
-                label="슝 보내버려"
+                label="공유 창 열기"
                 tone="primary"
-                busy={busy === "밖으로 빼는 중"}
+                busy={busy === "보내는 중"}
                 onPress={() => void doShare()}
               />
             </View>
             <View style={{ flex: 1 }}>
-              <Button label="앗차차 (취소)" onPress={() => setPreview(null)} />
+              <Button label="그만두기" onPress={() => setPreview(null)} />
             </View>
           </View>
         </Card>

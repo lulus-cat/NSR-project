@@ -158,7 +158,7 @@ export default function NoteEditor() {
       await persist();
       await exportNotePdf(title, body);
     } catch (e) {
-      Alert.alert("PDF 내보내기 실패", e instanceof Error ? e.message : "다시 시도해 보십시오.");
+      Alert.alert("PDF 를 만들지 못했어요", e instanceof Error ? e.message : "잠시 뒤 다시 해 주세요.");
     } finally {
       setBusyPdf(false);
     }
@@ -216,7 +216,7 @@ export default function NoteEditor() {
           accessibilityRole="button"
           accessibilityLabel="삭제"
           onPress={() => {
-            Alert.alert("노트 삭제", "이 노트를 지웁니다. 복구할 수 없습니다.", [
+            Alert.alert("이 노트를 지울까요", "지우면 되살릴 수 없어요.", [
               { text: "취소", style: "cancel" },
               {
                 text: "삭제",
@@ -284,7 +284,7 @@ export default function NoteEditor() {
               }}
             />
           ) : (
-            <Small>내용이 없습니다. 편집 버튼을 눌러 작성해 보십시오.</Small>
+            <Small>내용이 없어요. 고치기 버튼을 눌러 적어요.</Small>
           )}
         </Card>
       ) : (
@@ -338,12 +338,11 @@ export default function NoteEditor() {
             value={body}
             onChange={changeBody}
             placeholder={
-              "내용을 적습니다. 쓰는 동안에도 서식이 보입니다.\n\n## 제목\n- 목록\n- [ ] 할 일\n[[다른 노트]] 로 연결, #태그 로 분류\n> [!주의] 콜아웃"
+              "여기에 적어요. 쓰는 동안에도 모양이 보여요.\n\n## 제목\n- 목록\n- [ ] 할 일\n[[다른 노트]] 로 연결, #태그 로 분류"
             }
           />
           <Small>
-            글자 크기는 편집에선 같게 보입니다 — 제목 크기 등 실제 판형은 &lsquo;문서&rsquo;
-            보기와 PDF 에 적용됩니다.
+            고칠 때는 글자 크기가 같아 보여요. 실제 모양은 문서 보기와 PDF 에서 보여요.
           </Small>
         </>
       )}
