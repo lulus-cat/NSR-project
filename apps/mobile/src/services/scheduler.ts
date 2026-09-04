@@ -237,7 +237,7 @@ export async function startManual(shiftId: string, now = Date.now()): Promise<bo
     policy,
     now,
   );
-  return activeSession !== null;
+  return activeSession?.isActive === true;
 }
 
 export async function stopManual(now = Date.now()): Promise<void> {

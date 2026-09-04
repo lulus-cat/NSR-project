@@ -93,7 +93,9 @@ export class RecordingSession {
     await this.backend.prepareSession({ silent: this.policy.silentStart });
     this.state = "recording";
     await this.beginChunk(now);
-    return true;
+    // beginChunk 이 실패하면 state 가 idle 로 돌아온다. 그때도 true 를 주면
+    // 화면이 "기록 중"으로 보이고 사용자는 안 되는 줄 모른 채 근무를 다 보낸다.
+    return this.state === "recording";
   }
 
   /** 근무 종료 또는 사용자 중지. */

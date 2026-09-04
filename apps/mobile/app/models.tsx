@@ -27,10 +27,10 @@ import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/
 import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
 import { getApiKey, migrateRetiredModel, setApiKey } from "../src/services/llm";
-import { getHfToken, setHfToken } from "../src/services/asr";
+import { getHfToken, setHfToken, getTiroKey, setTiroKey } from "../src/services/asr";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 
-type ServerMode = "colab" | "pc" | "gemini";
+type ServerMode = "colab" | "pc" | "gemini" | "tiro";
 
 interface ServerAsr {
   enabled: boolean;
@@ -160,6 +160,8 @@ export default function TranscriptionSetup() {
   // Gemini 키 — 보조 기능과 같은 보안 저장소 항목을 쓴다(구글 AI 키는 하나).
   const [hasGeminiKey, setHasGeminiKey] = useState(false);
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
+  const [tiroKeyInput, setTiroKeyInput] = useState("");
+  const [hasTiroKey, setHasTiroKey] = useState(false);
   // 화자 분리 토큰 — 앱에서 받아 전사 요청에 실어 보낸다(콜랩에서 설정하지 않는다).
   const [hasHfToken, setHasHfToken] = useState(false);
   const [hfTokenInput, setHfTokenInput] = useState("");
@@ -179,6 +181,7 @@ export default function TranscriptionSetup() {
         : saved.geminiModel;
       setServer({ ...saved, mode: m, endpoints, geminiModel });
       setHasGeminiKey((await getApiKey("gemini")) !== null);
+      setHasTiroKey((await getTiroKey()) !== null);
       setHasHfToken((await getHfToken()) !== null);
     })();
   }, []);
@@ -192,7 +195,9 @@ export default function TranscriptionSetup() {
 
 
   const mode = inferMode(server);
-  const models = mode === "gemini" ? [] : serverModelsFor(mode);
+  // 티로·제미나이는 키만 있으면 되는 모드다 — 서버 주소도 모델 선택도 없다.
+  const keyOnly = mode === "gemini" || mode === "tiro";
+  const models = keyOnly ? [] : serverModelsFor(mode);
   // 콜랩은 비워 둬도 노트 기본값이 같은 모델이라, 화면에서는 기본 모델이 선택된 것으로 보여준다.
   const selectedModelId =
     server.model ?? (mode === "colab" ? DEFAULT_COLAB_MODEL_ID : undefined);
@@ -216,7 +221,7 @@ export default function TranscriptionSetup() {
       // 전사를 시도하는 헛걸음이 없도록, 그 모드에서 마지막으로 쓰던 주소로
       // 갈아끼운다. 모델도 모드 목록에 없는 것이면 비운다.
       const usable = (id?: string) =>
-        nextMode !== "gemini" && id && serverModelsFor(nextMode).some((m) => m.id === id)
+        nextMode !== "gemini" && nextMode !== "tiro" && id && serverModelsFor(nextMode).some((m) => m.id === id)
           ? id
           : undefined;
       const keepModel = usable(server.models?.[nextMode]) ?? usable(server.model);
@@ -226,7 +231,7 @@ export default function TranscriptionSetup() {
         model: keepModel,
         // 떠나는 모드의 선택은 남겨 둔다 — 돌아오면 그대로 되살아난다.
         models:
-          mode === "gemini" ? server.models : { ...server.models, [mode]: server.model },
+          keyOnly ? server.models : { ...server.models, [mode]: server.model },
         mode: nextMode,
       });
     },
@@ -255,6 +260,13 @@ export default function TranscriptionSetup() {
       message: key ? "키를 기기 보안 저장소에 넣었습니다." : "키를 지웠습니다.",
     });
   }, [geminiKeyInput]);
+
+  const saveTiroKey = useCallback(async () => {
+    const key = tiroKeyInput.trim();
+    await setTiroKey(key || null);
+    setHasTiroKey(key.length > 0);
+    setTiroKeyInput("");
+  }, [tiroKeyInput]);
 
   const checkGemini = useCallback(async () => {
     const key = await getApiKey("gemini");
@@ -364,6 +376,13 @@ export default function TranscriptionSetup() {
             selected={mode === "gemini"}
             onPress={() => switchMode("gemini")}
           />
+          <ModeTile
+            icon="mic-outline"
+            title="티로"
+            caption="API 키 하나 · 한국어 전용"
+            selected={mode === "tiro"}
+            onPress={() => switchMode("tiro")}
+          />
         </View>
       </Card>
 
@@ -461,7 +480,7 @@ export default function TranscriptionSetup() {
       ) : null}
 
       {/* ── 모델 선택(휘스퍼 경로): 콜랩·PC 는 같은 문법, Gemini 는 자기 카드에서 ── */}
-      {mode !== "gemini" ? (
+      {!keyOnly ? (
       <Card>
         <Heading>전사 모델</Heading>
         <Small>
@@ -613,6 +632,46 @@ export default function TranscriptionSetup() {
       ) : null}
 
       {/* ── Gemini 직접 전사 — 휘스퍼와 다른 세계라 설정도 따로 논다 ── */}
+      {mode === "tiro" ? (
+        <Card tone="accent">
+          <Heading>티로 직접 전사</Heading>
+          <Small>
+            서버 없이 API 키 하나로 씁니다. 한국어 전용이라 병동 대화에 강하고, 문장마다
+            <Text style={{ fontWeight: "700" }}> 실측 시각과 화자 라벨</Text>이 옵니다.
+            파일을 올린 뒤 티로가 받아적을 때까지 기다리는 방식이라, 20~60분짜리 하나에
+            3~6분쯤 걸립니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>알고 쓰십시오</Small>
+          <Small>
+            기록 음성이 티로 서버로 전송됩니다. 병동 음성이므로 회사의 이용약관과
+            보관 정책을 한 번 확인하고 쓰십시오. 전사가 끝나면 앱은 결과만 가져옵니다.
+          </Small>
+          <Divider />
+          <Small muted={false}>API 키{hasTiroKey ? " — 저장돼 있습니다" : ""}</Small>
+          <Button
+            label="키 발급 열기 (tiro.ooo)"
+            onPress={() => void Linking.openURL("https://docs.tiro.ooo/ko/developers/")}
+          />
+          <TextInput
+            value={tiroKeyInput}
+            onChangeText={setTiroKeyInput}
+            placeholder="아이디.시크릿 형태의 키 붙여넣기"
+            placeholderTextColor={t.textMuted}
+            autoCapitalize="none"
+            autoCorrect={false}
+            secureTextEntry
+            style={input}
+          />
+          <Button
+            label={hasTiroKey && tiroKeyInput.trim().length === 0 ? "키 지우기" : "키 저장"}
+            tone={hasTiroKey && tiroKeyInput.trim().length === 0 ? "default" : "primary"}
+            onPress={() => void saveTiroKey()}
+          />
+          <Small>키는 기기 보안 저장소에만 보관됩니다.</Small>
+        </Card>
+      ) : null}
+
       {mode === "gemini" ? (
         <Card tone="accent">
           <Heading>Gemini 직접 전사</Heading>

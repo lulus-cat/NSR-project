@@ -89,6 +89,25 @@ export interface AsrProvider {
  * 사용자 본인의 토큰이 필요하다. 토큰은 기기 보안 저장소에만 두고, 전사
  * 요청에 실려 **사용자가 띄운 콜랩 서버로만** 간다. 설정 DB·로그에 안 남긴다.
  */
+// 티로는 전사만 한다 — 대화 LLM 공급자가 아니므로 키도 여기 따로 둔다.
+const TIRO_KEY = "nsr.tiro.key";
+
+export async function getTiroKey(): Promise<string | null> {
+  const SecureStore = await import("expo-secure-store");
+  return SecureStore.getItemAsync(TIRO_KEY);
+}
+
+export async function setTiroKey(key: string | null): Promise<void> {
+  const SecureStore = await import("expo-secure-store");
+  if (key && key.trim()) {
+    await SecureStore.setItemAsync(TIRO_KEY, key.trim(), {
+      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
+    });
+  } else {
+    await SecureStore.deleteItemAsync(TIRO_KEY);
+  }
+}
+
 const HF_TOKEN_KEY = "nsr.hf.token";
 
 export async function getHfToken(): Promise<string | null> {
@@ -864,6 +883,12 @@ export async function resolveProvider(): Promise<AsrProvider> {
     diarize?: boolean;
   }>(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" });
 
+  if (cloud.mode === "tiro") {
+    const key = await getTiroKey();
+    if (!key) throw new Error("티로 열쇠(키)가 없어요! 설정 → 텍스트 변환 가서 티로 카드에 열쇠 꽂아주세용");
+    return createTiroProvider(key);
+  }
+
   if (cloud.mode === "gemini") {
     const { getApiKey } = await import("./llm");
     const key = await getApiKey("gemini");
@@ -896,4 +921,123 @@ export async function resolveProvider(): Promise<AsrProvider> {
     diarize: cloud.diarize,
     hfToken,
   });
+}
+
+/* ── Tiro ────────────────────────────────────────────────────────────────
+ *
+ * 4단계다: 작업 만들기 → presigned URL 로 파일 올리기 → 올렸다고 알리기 → 폴링.
+ * 다른 제공자처럼 한 번에 끝나지 않는 대신, 긴 파일을 통째로 받는다.
+ *
+ * 제약 (2026-09 문서 확인)
+ *   - 인증: `Bearer {id}.{secret}` — 발급받은 API 키를 그대로 쓴다.
+ *   - presigned URL 유효기간 1시간. 그 안에 다 올려야 한다.
+ *   - 파일 길이·크기 상한은 문서에 없다. 사용자가 아는 한도는 300분이고,
+ *     앱은 그 한참 아래(기본 30분)로 쪼개 올리므로 걸릴 일이 없다.
+ *   - 처리 시간 안내: 20~60분 파일에 3~6분. 폴링 간격을 그에 맞춘다.
+ *   - STT 는 아직 API 과금이 없다고 문서가 밝히고 있다 (바뀔 수 있다).
+ */
+const TIRO_API = "https://api.tiro.ooo";
+
+async function tiroError(res: Response, doing: string): Promise<string> {
+  const detail = await res.text().catch(() => "");
+  if (res.status === 401 || res.status === 403) return "티로 열쇠(키)가 안 맞아요! 설정에서 다시 넣어주세용";
+  if (res.status === 429) return "티로가 너무 바빠요 ㅠㅠ 좀 이따 다시 해주세요";
+  return `티로가 에러 뱉음 (${doing}, ${res.status}): ${detail.slice(0, 200)}`;
+}
+
+export function createTiroProvider(apiKey: string): AsrProvider {
+  const auth = { authorization: `Bearer ${apiKey}` };
+  return {
+    id: "tiro",
+    // 세그먼트에 speakerLabel 이 온다. 단어 단위 시각은 안 준다.
+    capabilities: { diarization: true, wordTimestamps: false },
+    async transcribe(fileUri, _options, onProgress) {
+      const FileSystem = await import("expo-file-system/legacy");
+      const info = await FileSystem.getInfoAsync(fileUri);
+      const size = info.exists && "size" in info ? (info.size ?? 0) : 0;
+      if (size <= 0) throw new Error("엥? 녹음 파일이 안 읽혀요 ㅠㅠ 고장 남");
+
+      // 1) 작업을 만든다. 올릴 주소를 받아온다.
+      onProgress?.(2, "티로한테 자리 잡는 중");
+      const created = await fetch(`${TIRO_API}/v1/external/voice-file/jobs`, {
+        method: "POST",
+        headers: { ...auth, "content-type": "application/json" },
+        body: "{}",
+      });
+      if (!created.ok) throw new Error(await tiroError(created, "작업 만들기"));
+      const { id, uploadUri } = (await created.json()) as { id: string; uploadUri: string };
+      if (!id || !uploadUri) throw new Error("티로가 올릴 주소를 안 줘요 (먹튀?)");
+
+      // 2) presigned URL 에 파일 본문을 올린다. 여기가 진행률의 대부분이다.
+      const task = FileSystem.createUploadTask(
+        uploadUri,
+        fileUri,
+        {
+          httpMethod: "PUT",
+          uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
+          headers: { "content-type": /\.wav$/i.test(fileUri) ? "audio/wav" : "audio/mp4" },
+        },
+        (p) => {
+          if (p.totalBytesExpectedToSend > 0) {
+            const ratio = p.totalBytesSent / p.totalBytesExpectedToSend;
+            onProgress?.(Math.round(2 + ratio * 38), "티로한테 파일 던지는 중");
+          }
+        },
+      );
+      const uploaded = await task.uploadAsync();
+      if (!uploaded || uploaded.status < 200 || uploaded.status >= 300) {
+        throw new Error(`티로 업로드 폭망 ㅠㅠ (${uploaded?.status ?? "?"}). 와이파이 확인해 주세요`);
+      }
+
+      // 3) 다 올렸다고 알린다. 이때부터 전사가 시작된다.
+      onProgress?.(42, "티로가 듣기 시작함");
+      const done = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}/upload-complete`, {
+        method: "PUT",
+        headers: auth,
+      });
+      if (!done.ok) throw new Error(await tiroError(done, "업로드 완료 알리기"));
+
+      // 4) 끝날 때까지 물어본다. 20~60분 파일에 3~6분 걸린다고 하니 5초 간격이면
+      //    넉넉하고, 한 시간을 넘기면 뭔가 잘못된 것으로 본다.
+      const deadline = Date.now() + 60 * 60_000;
+      for (let tick = 0; Date.now() < deadline; tick++) {
+        await new Promise((r) => setTimeout(r, 5_000));
+        const res = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}`, { headers: auth });
+        if (!res.ok) throw new Error(await tiroError(res, "상태 물어보기"));
+        const job = (await res.json()) as { status: string; errorMessage?: string | null };
+        if (job.status === "FAILED") {
+          throw new Error(`티로가 전사를 포기했어요: ${job.errorMessage ?? "이유를 안 알려줌"}`);
+        }
+        if (job.status === "COMPLETED") break;
+        // 45%에서 시작해 95%까지 천천히 채운다. 남은 시간을 모르니 눈속임이 아니라
+        // "아직 도는 중"을 보여주는 용도다.
+        onProgress?.(Math.min(95, 45 + tick), "티로가 받아적는 중");
+        if (Date.now() >= deadline) throw new Error("티로가 한 시간 넘게 안 끝나요. 나중에 다시 해주세요");
+      }
+
+      onProgress?.(97, "받아적은 거 가져오는 중");
+      const out = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}/transcript`, { headers: auth });
+      if (!out.ok) throw new Error(await tiroError(out, "결과 가져오기"));
+      const body = (await out.json()) as {
+        text?: string;
+        segments?: { startTimeMillis?: number; endTimeMillis?: number; text?: string; speakerLabel?: string }[];
+      };
+
+      const segments = (body.segments ?? [])
+        .map((s) => ({
+          startSec: (s.startTimeMillis ?? 0) / 1000,
+          endSec: (s.endTimeMillis ?? 0) / 1000,
+          text: (s.text ?? "").trim(),
+          speakerId: s.speakerLabel,
+        }))
+        .filter((s) => s.text);
+
+      // 세그먼트가 없으면 전체 텍스트라도 한 덩어리로 살린다 — 버리는 것보다 낫다.
+      if (segments.length === 0 && body.text?.trim()) {
+        segments.push({ startSec: 0, endSec: 0, text: body.text.trim(), speakerId: undefined });
+      }
+      onProgress?.(100, "티로 끝");
+      return { segments, durationSec: segments.at(-1)?.endSec ?? 0 };
+    },
+  };
 }

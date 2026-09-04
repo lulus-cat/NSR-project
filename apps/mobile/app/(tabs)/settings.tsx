@@ -657,7 +657,7 @@ export default function Settings() {
           label="파일 분할"
           value={policy.segmentMinutes}
           unit="분"
-          options={[10, 15, 20, 30]}
+          options={[10, 20, 30, 50]}
           onSelect={(v) => void app.updatePolicy({ ...policy, segmentMinutes: v })}
           hint="긴 근무를 나눕니다. 중간에 끊겨도 안전하며, 완성된 조각부터 전사할 수 있습니다."
         />

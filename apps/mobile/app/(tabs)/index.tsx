@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Easing,
   Pressable,
@@ -666,7 +667,15 @@ export default function Home() {
             accessibilityLabel={app.recording ? "기록 정지" : "기록 시작"}
             onPress={async () => {
               if (app.recording) await stopManual();
-              else await startManual(`${today}:MANUAL`);
+              else if (!(await startManual(`${today}:MANUAL`))) {
+                // 조용히 실패하면 사용자는 기록되는 줄 알고 근무를 다 보낸다.
+                const last = await getSetting<{ message?: string } | null>("recording.lastError", null);
+                Alert.alert(
+                  "기록이 안 켜졌어요",
+                  last?.message ??
+                    "마이크 권한이 없는 것 같아요. 설정 > 앱 > NSR > 권한에서 마이크를 켜주세요.",
+                );
+              }
               await app.refresh();
             }}
             style={({ pressed }) => ({
