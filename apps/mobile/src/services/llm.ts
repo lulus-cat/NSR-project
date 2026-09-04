@@ -19,7 +19,7 @@
  * 캐시가 실제로 맞는지는 `usage.cache_read_input_tokens`로 확인한다.
  */
 
-import { buildGlossaryForLLM, type Lexicon } from "@nsr/core";
+import { buildGlossaryForLLM, buildCorrectionRulesForLLM, type Lexicon } from "@nsr/core";
 import { getSetting, setSetting } from "../db";
 import { redactForNetwork } from "./export";
 
@@ -316,10 +316,12 @@ export async function postEditTranscript(
 ): Promise<{ text: string; redactedCount: number; cacheHit: boolean }> {
   const redacted = await redactForNetwork(correctedText);
   const glossary = buildGlossaryForLLM(lexicon);
+  // 확정된 오인식 대응표. 용어집(aliases)만으로는 "대노관"이 데노간인 줄 모른다.
+  const rules = buildCorrectionRulesForLLM(lexicon);
 
   if ((await getProvider()) !== "anthropic") {
     const text = await callOpenAi({
-      system: `${POST_EDIT_SYSTEM}\n\n참고 용어집:\n${glossary}`,
+      system: `${POST_EDIT_SYSTEM}\n\n${rules}\n\n참고 용어집:\n${glossary}`,
       messages: [{ role: "user", content: redacted.text }],
       maxTokens: 16000,
     });
@@ -333,8 +335,8 @@ export async function postEditTranscript(
       { type: "text", text: POST_EDIT_SYSTEM },
       {
         type: "text",
-        text: `참고 용어집:\n${glossary}`,
-        // 용어집은 요청마다 동일하다. 1시간 캐시로 반복 요청 비용을 줄인다.
+        text: `${rules}\n\n참고 용어집:\n${glossary}`,
+        // 규칙표와 용어집은 요청마다 동일하다. 1시간 캐시로 반복 요청 비용을 줄인다.
         cache_control: { type: "ephemeral", ttl: "1h" },
       },
     ],

@@ -25,6 +25,7 @@
 
 import type { Lexicon, LexiconEntry, TermCategory } from "../lexicon/index.js";
 import { toHangulReading } from "../hangul/initialism.js";
+import { AMBIGUOUS_NOTES } from "../lexicon/common-words.js";
 
 /** initial_prompt에 들어갈 수 있는 토큰 예산. Whisper의 prev 컨텍스트 상한. */
 export const WHISPER_PROMPT_TOKEN_LIMIT = 224;
@@ -235,4 +236,31 @@ export function buildGlossaryForLLM(lexicon: Lexicon): string {
   // id 순으로 정렬해 출력이 결정적이도록 만든다. 순서가 흔들리면 캐시가 깨진다.
   lines.sort();
   return lines.join("\n");
+}
+
+/**
+ * 확정 교정 규칙을 LLM 에게 준다.
+ *
+ * `buildGlossaryForLLM` 은 사람이 실제로 쓰는 표기(aliases)만 보낸다. 음성인식이 잘못 적는
+ * 표기(misheard)는 안 보낸다 — 그래서 LLM 은 "대노관" 이 데노간인 줄 모른다. 이 함수가 그
+ * 대응표를 채운다. 사전에서 만들므로 목록을 두 벌 관리하지 않는다.
+ *
+ * 뒤에 `AMBIGUOUS_NOTES` 를 붙인다. 규칙으로 만들 수 없는 것들(문맥에 따라 뜻이 갈리는 말)은
+ * 사람 판단이 필요하고, 그 판단 기준을 LLM 이 알아야 한다.
+ */
+export function buildCorrectionRulesForLLM(lexicon: Lexicon): string {
+  const lines: string[] = [];
+  for (const e of lexicon.entries) {
+    if (!e.misheard?.length) continue;
+    lines.push(`- ${e.ko} ← ${e.misheard.join(" · ")}`);
+  }
+  lines.sort();
+
+  return [
+    "음성인식이 이렇게 적었으면 이렇게 읽는다 (사용자가 실제 녹음에서 확정한 것):",
+    ...lines,
+    "",
+    "문맥으로 판단할 것 — 규칙으로 고치면 안 되는 말들:",
+    ...AMBIGUOUS_NOTES.map((n) => `- ${n}`),
+  ].join("\n");
 }

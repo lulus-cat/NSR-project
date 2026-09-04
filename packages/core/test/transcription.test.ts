@@ -4,6 +4,7 @@ import {
   buildInitialPrompt,
   buildHotwords,
   buildKeywordBoosting,
+  buildCorrectionRulesForLLM,
   estimateWhisperTokens,
   WHISPER_PROMPT_TOKEN_LIMIT,
   createMemory,
@@ -378,5 +379,24 @@ describe("2026-09-03 사용자 확정 62건", () => {
 
   it("간병사와 요양보호사는 다른 직역이라 섞지 않는다", () => {
     expect(fix("감동사가 바뀌었어요")).not.toContain("요양보호사");
+  });
+});
+
+describe("LLM 에 보내는 규칙표", () => {
+  it("사전의 오인식 표기를 담는다 — 용어집만으로는 LLM 이 모른다", () => {
+    const rules = buildCorrectionRulesForLLM(defaultLexicon);
+    expect(rules).toContain("데노간 ← ");
+    expect(rules).toContain("대노관");
+    expect(rules).toContain("간병사 ← ");
+  });
+
+  it("문맥으로만 판단할 말들의 이유를 함께 보낸다", () => {
+    const rules = buildCorrectionRulesForLLM(defaultLexicon);
+    // 규칙으로 못 만든 것은 LLM 이 문맥으로 판단해야 하므로 기준을 준다.
+    expect(rules).toContain("행위");
+    expect(rules).toContain("추석");
+    // 그 말들이 대응표 쪽에 규칙으로 들어가 있으면 안 된다.
+    expect(rules).not.toContain("← 추석");
+    expect(rules).not.toContain("← 음료수");
   });
 });

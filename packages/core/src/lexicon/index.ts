@@ -23,7 +23,7 @@ export { OR_TERMS, LTC_TERMS, OR_LTC_TERMS };
 export * from "./ward-pack.js";
 export * from "./pack-privacy.js";
 export { ASR_MISHEARD } from "./misheard.js";
-export { COMMON_WORDS } from "./common-words.js";
+export { COMMON_WORDS, AMBIGUOUS_NOTES } from "./common-words.js";
 export { ALL_ABBREVS } from "./abbreviations.js";
 export type { AbbrevRow } from "./abbreviations.js";
 

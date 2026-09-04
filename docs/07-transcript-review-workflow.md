@@ -76,42 +76,35 @@ data/corrections/confirmed.jsonl 에 규칙 추가 (커밋됨)
 2. `packages/core/test/transcription.test.ts` 에 그 문장으로 회귀 테스트 한 줄.
 3. `npm test` 통과 확인 → 커밋. APK CI 가 돌아 앱에도 들어간다.
 
-## 같은 스킬을 세 곳에서 쓴다
+## 같은 규칙을 두 곳에서 쓴다
 
 | 어디 | 무엇을 읽나 | 어떻게 |
 | --- | --- | --- |
-| Claude Code (Fable·Opus, 이 저장소) | `.claude/skills/nsr-transcript-review/` | 저장소에 있으니 자동. 도구도 돌릴 수 있다 |
-| Claude API (앱·스크립트가 부름) | 같은 폴더를 올린 API 스킬 | `tools/upload-skill.mjs` 로 올리고 `container.skills` 로 붙임 |
-| 앱 안 (`apps/mobile/src/services/llm.ts`) | 시스템 프롬프트 `POST_EDIT_SYSTEM` | 지금은 짧은 규칙만. 스킬이 검증되면 그 요약을 여기 반영 |
+| Claude Code (이 저장소) | `.claude/skills/nsr-transcript-review/` | 저장소에 있으니 자동. 도구도 돌릴 수 있다 |
+| 앱 (`apps/mobile/src/services/llm.ts`) | 사전에서 만든 규칙표 | `buildCorrectionRulesForLLM(lexicon)` 이 시스템 프롬프트에 붙는다 |
 
-### API 스킬 올리기
+### 앱은 규칙을 어떻게 받나
 
-```bash
-ANTHROPIC_API_KEY=sk-ant-... node tools/upload-skill.mjs --save        # 처음
-ANTHROPIC_API_KEY=sk-ant-... node tools/upload-skill.mjs --update skill_01…   # 고친 뒤 새 판
-```
+`postEditTranscript` 가 요청을 만들 때 시스템 프롬프트가 세 덩어리다.
 
-올라간 뒤 Messages API 요청은 이 모양이다 (베타 헤더 없음, 코드 실행 도구가 필요하다).
+1. `POST_EDIT_SYSTEM` — 무엇을 고치고 무엇을 두는지
+2. `buildCorrectionRulesForLLM(lexicon)` — **확정된 오인식 대응표**("데노간 ← 대문원 · 대노관 …")와
+   문맥으로만 판단할 말들(`AMBIGUOUS_NOTES`)
+3. `buildGlossaryForLLM(lexicon)` — 용어집
 
-```json
-{
-  "model": "claude-opus-5",
-  "max_tokens": 16000,
-  "container": { "skills": [{ "type": "custom", "skill_id": "skill_01…", "version": "latest" }] },
-  "tools": [{ "type": "code_execution_20250825", "name": "code_execution" }],
-  "messages": [{ "role": "user", "content": "<가려진 전사본>" }]
-}
-```
+2와 3은 요청마다 같으므로 한 덩어리로 묶어 1시간 캐시(`cache_control`)를 건다. 사전을 고치면
+다음 판부터 자동으로 반영된다 — 따로 올리거나 맞출 것이 없다.
 
-"네이티브 스킬"이라는 말이 뜻하는 것이 이것이다 — 프롬프트에 규칙을 매번 붙여 넣는 대신,
-Anthropic 쪽에 올려 둔 스킬 폴더를 요청마다 이름으로 부른다. 모델은 요청을 받으면 SKILL.md 를
-읽고 필요할 때 `references/` 를 연다. 규칙을 고치면 새 판만 올리면 되고 앱은 손댈 필요가 없다.
+### 왜 API 스킬(`/v1/skills`)로 올리지 않나
 
-### 앱 연동 (다음 단계, 스킬 검증 후)
+한때 `tools/upload-skill.mjs` 로 스킬 폴더를 Anthropic 에 올리는 길을 뒀다가 뺐다. 이유는 셋이다.
 
-`llm.ts` 의 `postEditTranscript` 에 설정값(스킬 id)이 있으면 위 요청 모양으로 바꾼다.
-비용이 달라지므로(코드 실행 컨테이너) 설정 화면에 "스킬 사용" 스위치와 안내가 함께 들어가야 한다.
-`redactForNetwork` 를 거치는 것은 그대로다 — 스킬을 써도 전사본이 나가는 사실은 변하지 않는다.
+- **계정이 다르다.** 올린 스킬은 올린 사람의 계정에 붙는다. 앱에서 사용자가 넣은 키는 다른
+  계정이므로 그 스킬을 못 쓴다. 쓰려면 앱이 사용자 키로 다시 올려야 한다.
+- **두 벌이 된다.** 규칙을 고칠 때마다 사전과 올린 스킬을 둘 다 맞춰야 하고, 어긋나면 앱과
+  저장소가 다른 판단을 한다.
+- **필요가 없다.** 규칙표는 2KB 다. 용어집과 함께 캐시되므로 반복 요청 비용이 사실상 없다.
+  컨테이너·코드 실행 도구를 붙일 이유가 없다.
 
 ## 왜 파인튜닝을 다시 하지 않나
 
