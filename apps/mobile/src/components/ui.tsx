@@ -147,7 +147,8 @@ export function Button({
         borderRadius: radius.lg,
         minHeight: TOUCH_MIN,
         paddingVertical: space.md,
-        paddingHorizontal: space.lg,
+        // 좁은 폰에서 버튼 두세 개가 한 줄에 서면 좌우 여백이 글자를 밀어낸다.
+        paddingHorizontal: space.md,
         alignItems: "center",
         flexDirection: "row",
         justifyContent: "center",
@@ -155,7 +156,10 @@ export function Button({
       })}
     >
       {busy ? <ActivityIndicator size="small" color={fg} /> : null}
-      <Text style={[type.button, { color: fg }]}>{label}</Text>
+      {/* 한 줄로 자르고 말줄임 — 글자가 잘려 반만 보이는 것보다 낫다. */}
+      <Text numberOfLines={1} style={[type.button, { color: fg, flexShrink: 1 }]}>
+        {label}
+      </Text>
     </Pressable>
   );
 }
@@ -218,7 +222,9 @@ export function Badge({ text, tone }: { text: string; tone: "ok" | "warn" | "dan
         paddingVertical: 2,
       }}
     >
-      <Text style={[type.caption, { color }]}>{text}</Text>
+      <Text numberOfLines={1} style={[type.caption, { color }]}>
+        {text}
+      </Text>
     </View>
   );
 }

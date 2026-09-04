@@ -15,7 +15,7 @@ export type ShiftCode =
   | "D" // 데이
   | "E" // 이브닝
   | "N" // 나이트
-  | "OFF" // 휴무
+  | "OFF" // 오프(휴무)
   | "ADM" // 상근 (평일 고정 근무)
   | "SPC" // 스페셜 (환자 전담 등 병동이 따로 정하는 근무)
   | "EDU" // 교육
@@ -76,7 +76,8 @@ export const DEFAULT_TEMPLATES: Record<ShiftCode, ShiftTemplate> = {
   },
   OFF: {
     code: "OFF",
-    label: "휴무",
+    // 병동에서 부르는 말은 '오프'다 (사용자 확정 2026-09-04).
+    label: "오프",
     startTime: "",
     endTime: "",
     crossesMidnight: false,

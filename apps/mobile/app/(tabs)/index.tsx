@@ -368,12 +368,18 @@ export default function Home() {
       if (!map.has(date)) map.set(date, taeumTemperature(sc.score));
     }
     setTemps(map);
-    // 전사는 서버(콜랩·내 컴퓨터)나 Gemini가 한다. 준비가 안 됐으면 연결부터 안내한다.
+    // 전사는 티로·콜랩·내 컴퓨터·Gemini 중 한 곳이 한다. 준비가 안 됐으면 안내한다.
+    // 모드마다 '준비됨'의 뜻이 다르다 — 티로·Gemini 는 열쇠, 서버 경로는 주소다.
+    // (예전엔 주소만 봐서, 티로 열쇠를 넣어도 안내가 사라지지 않았다.)
     const server = await getSetting<{ endpoint?: string; mode?: string }>(
       SETTINGS_KEYS.cloudTranscription,
       {},
     );
-    if (server.mode === "gemini") {
+    const mode = server.mode ?? (server.endpoint ? "pc" : "tiro");
+    if (mode === "tiro") {
+      const { getTiroKey } = await import("../../src/services/asr");
+      setNeedsServer(!(await getTiroKey()));
+    } else if (mode === "gemini") {
       const { getApiKey } = await import("../../src/services/llm");
       setNeedsServer(!(await getApiKey("gemini")));
     } else {

@@ -89,7 +89,11 @@ function ModeTile({
       accessibilityState={{ selected }}
       onPress={onPress}
       style={({ pressed }) => ({
-        flex: 1,
+        // 폰에서 넷을 한 줄에 늘어놓으면 "Gemi/ni" 처럼 글자가 잘린다.
+        // 두 개씩 두 줄로 접히게 두고, 넓은 화면에서만 한 줄이 된다.
+        flexGrow: 1,
+        flexBasis: "46%",
+        minWidth: 150,
         minHeight: 96,
         borderRadius: radius.lg,
         borderWidth: 2,
@@ -104,8 +108,12 @@ function ModeTile({
         <Ionicons name={icon} size={20} color={selected ? t.accent : t.textMuted} />
         {selected ? <Badge text="사용 중" tone="ok" /> : null}
       </View>
-      <Text style={[type.heading, { color: t.text }]}>{title}</Text>
-      <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]}>{caption}</Text>
+      <Text style={[type.heading, { color: t.text }]} numberOfLines={1}>
+        {title}
+      </Text>
+      <Text style={[type.small, { color: t.textMuted, fontWeight: "600" }]} numberOfLines={2}>
+        {caption}
+      </Text>
     </Pressable>
   );
 }
@@ -372,7 +380,7 @@ export default function TranscriptionSetup() {
         <Small>글자로 바꾸는 일은 폰이 아니라 아래 넷 중 한 곳이 해요.</Small>
         <Small>기본은 티로예요. 한국어를 가장 잘 받아적었어요.</Small>
         <Small>녹음한 소리가 고른 곳으로 전송돼요.</Small>
-        <View style={{ flexDirection: "row", gap: space.sm }}>
+        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
           <ModeTile
             icon="mic-outline"
             title="티로"
@@ -770,7 +778,8 @@ export default function TranscriptionSetup() {
 
       <Card>
         <Small>바뀐 전사본은 폰에만 저장돼요.</Small>
-        <Small>콜랩은 탭을 닫으면 그쪽 사본도 사라져요.</Small>
+        {mode === "colab" ? <Small>콜랩은 탭을 닫으면 그쪽 사본도 사라져요.</Small> : null}
+        {mode === "tiro" ? <Small>티로에 올린 파일은 티로 계정에 남아요.</Small> : null}
       </Card>
     </ScrollView>
   );

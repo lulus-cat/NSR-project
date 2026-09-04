@@ -53,6 +53,7 @@ import {
 } from "../db";
 import { getSetting, setSetting } from "../db";
 import { SETTINGS_KEYS } from "./scheduler";
+import { logDebug } from "./debug";
 
 export interface AsrResult {
   segments: {
@@ -91,6 +92,8 @@ export interface AsrProvider {
  */
 // 티로는 전사만 한다 — 대화 LLM 공급자가 아니므로 키도 여기 따로 둔다.
 const TIRO_KEY = "nsr.tiro.key";
+/** 찾아 둔 워크스페이스 guid. 열쇠가 바뀌면 지운다. */
+const TIRO_WORKSPACE_KEY = "tiro.workspaceGuid";
 
 export async function getTiroKey(): Promise<string | null> {
   const SecureStore = await import("expo-secure-store");
@@ -99,6 +102,9 @@ export async function getTiroKey(): Promise<string | null> {
 
 export async function setTiroKey(key: string | null): Promise<void> {
   const SecureStore = await import("expo-secure-store");
+  // 열쇠가 바뀌면 워크스페이스도 사전도 새 계정 기준으로 다시 잡아야 한다.
+  await setSetting(TIRO_WORKSPACE_KEY, "");
+  await setSetting("tiro.pushedWords", []);
   if (key && key.trim()) {
     await SecureStore.setItemAsync(TIRO_KEY, key.trim(), {
       keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
@@ -954,7 +960,50 @@ async function tiroError(res: Response, doing: string): Promise<string> {
   const detail = await res.text().catch(() => "");
   if (res.status === 401 || res.status === 403) return "티로 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.";
   if (res.status === 429) return "티로가 바빠요. 잠시 뒤 다시 해 주세요.";
-  return `티로가 에러 뱉음 (${doing}, ${res.status}): ${detail.slice(0, 200)}`;
+  // 원문 JSON 은 사용자에게 보여줄 말이 아니다. 진단은 디버그 기록으로 남긴다.
+  void logDebug(`티로 ${doing} 실패 ${res.status}: ${detail.slice(0, 300)}`);
+  if (detail.includes("workspaceGuid")) {
+    return "티로 워크스페이스를 찾지 못했어요. 열쇠를 다시 넣고 해 보세요.";
+  }
+  return `티로가 ${doing}에 실패했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`;
+}
+
+/**
+ * 이 열쇠가 쓸 워크스페이스 guid.
+ *
+ * 티로 열쇠에는 워크스페이스에 매인 것과 안 매인 것이 있다. 안 매인 열쇠(개인
+ * 계정 열쇠가 그렇다)로 작업을 만들면 400 을 준다 — "workspaceGuid is required
+ * for workspace-unbound API keys". 그래서 만들기 전에 한 번 물어보고 함께 보낸다.
+ * 매인 열쇠는 이 값을 안 보내도 되고, 보내면 자기 워크스페이스와 같아야 하므로
+ * `/workspaces/me` 가 준 값을 그대로 쓰는 것이 양쪽 모두에 맞다.
+ *
+ * 한 번 찾으면 설정에 남긴다. 열쇠를 바꾸면 `setTiroKey` 가 지운다.
+ */
+async function tiroWorkspaceGuid(apiKey: string): Promise<string | undefined> {
+  const cached = await getSetting<string>(TIRO_WORKSPACE_KEY, "");
+  if (cached) return cached;
+  const headers = { authorization: `Bearer ${apiKey}` };
+  try {
+    // 1) 열쇠에 딸린 워크스페이스가 있으면 그것이 정답이다.
+    const me = await fetch(`${TIRO_API}/v1/external/workspaces/me`, { headers });
+    let guid = me.ok ? ((await me.json()) as { guid?: string }).guid : undefined;
+    // 2) 없으면(404) 갈 수 있는 워크스페이스 목록에서 첫 번째를 쓴다.
+    if (!guid) {
+      const list = await fetch(`${TIRO_API}/v1/external/workspaces`, { headers });
+      if (list.ok) {
+        const data = (await list.json()) as {
+          workspaces?: { guid?: string }[];
+          content?: { guid?: string }[];
+        };
+        guid = (data.workspaces ?? data.content ?? [])[0]?.guid;
+      }
+    }
+    if (guid) await setSetting(TIRO_WORKSPACE_KEY, guid);
+    return guid;
+  } catch {
+    // 못 물어봤으면 안 보낸다. 매인 열쇠면 그래도 돌아간다.
+    return undefined;
+  }
 }
 
 /**
@@ -1070,11 +1119,16 @@ export function createTiroProvider(apiKey: string): AsrProvider {
 
       // 1) 작업을 만든다. 올릴 주소를 받아온다.
       onProgress?.(2, "티로에 자리 만드는 중");
+      const workspaceGuid = await tiroWorkspaceGuid(apiKey);
       const created = await fetch(`${TIRO_API}/v1/external/voice-file/jobs`, {
         method: "POST",
         headers: { ...auth, "content-type": "application/json" },
         // 언어를 안 주면 자동 감지다. 병동 대화는 한국어뿐이라 못박는 편이 낫다.
-        body: JSON.stringify({ transcriptLocaleHints: ["ko_KR"] }),
+        // workspaceGuid 는 워크스페이스에 안 매인 열쇠에 필수다(없으면 400).
+        body: JSON.stringify({
+          transcriptLocaleHints: ["ko_KR"],
+          ...(workspaceGuid ? { workspaceGuid } : {}),
+        }),
       });
       if (!created.ok) throw new Error(await tiroError(created, "작업 만들기"));
       const { id, uploadUri } = (await created.json()) as { id: string; uploadUri: string };
@@ -1111,8 +1165,20 @@ export function createTiroProvider(apiKey: string): AsrProvider {
 
       // 4) 끝날 때까지 물어본다. 20~60분 파일에 3~6분 걸린다고 하니 5초 간격이면
       //    넉넉하고, 한 시간을 넘기면 뭔가 잘못된 것으로 본다.
-      const deadline = Date.now() + 60 * 60_000;
-      for (let tick = 0; Date.now() < deadline; tick++) {
+      //
+      // 진행률에 대하여: 티로는 몇 %인지 알려주지 않는다. 그래서 막대는
+      // **경과 시간**으로 민다 — 안내(3~6분)를 기준으로 6분에 걸쳐 45→90% 로 가고
+      // 거기서 멈춘다. 예전에는 5초마다 1%씩 올려서 4분이면 95%에 붙어 놓고
+      // 한참을 더 기다렸다. 대신 몇 분째인지와 지금 무슨 단계인지를 글로 적는다.
+      const startedAt = Date.now();
+      const deadline = startedAt + 60 * 60_000;
+      const waitNote = (status: string, min: number) => {
+        const 걸린 = min > 0 ? ` · ${min}분째` : "";
+        if (status === "UPLOADED") return `티로가 차례를 기다리는 중${걸린}`;
+        if (status === "PROCESSING") return `티로가 받아적는 중${걸린}`;
+        return `티로가 준비하는 중${걸린}`;
+      };
+      for (;;) {
         await new Promise((r) => setTimeout(r, 5_000));
         const res = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}`, { headers: auth });
         if (!res.ok) throw new Error(await tiroError(res, "진행 상태 확인"));
@@ -1121,9 +1187,9 @@ export function createTiroProvider(apiKey: string): AsrProvider {
           throw new Error(`티로가 바꾸지 못했어요: ${job.errorMessage ?? "이유를 알 수 없어요"}`);
         }
         if (job.status === "COMPLETED") break;
-        // 45%에서 시작해 95%까지 천천히 채운다. 남은 시간을 모르니 눈속임이 아니라
-        // "아직 도는 중"을 보여주는 용도다.
-        onProgress?.(Math.min(95, 45 + tick), "티로가 받아적는 중");
+        const elapsed = Date.now() - startedAt;
+        const pct = Math.min(90, 45 + Math.round((elapsed / (6 * 60_000)) * 45));
+        onProgress?.(pct, waitNote(job.status, Math.floor(elapsed / 60_000)));
         if (Date.now() >= deadline) throw new Error("티로가 한 시간 넘게 끝나지 않았어요. 잠시 뒤 다시 해 주세요.");
       }
 
