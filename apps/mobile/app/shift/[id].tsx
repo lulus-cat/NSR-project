@@ -6,7 +6,7 @@
  * 문장이 이 화면에 쏟아져 모든 것이 무거워진다. 여기는 가볍게 남는다.
  */
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Pressable, ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, View } from "react-native";
 import { Text } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -21,7 +21,7 @@ import { Badge, Body, Button, Card, Divider, GaugeBar, Heading, Small } from "..
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   countSegments,
-  getPipelineJob,
+  deleteShiftRecordings,
   getShiftReportMarkdown,
   getShiftReport,
   getTaeumScore,
@@ -33,14 +33,6 @@ import {
   type ConfirmationRow,
   type RecordingRow,
 } from "../../src/db";
-import { refreshTaeumScore } from "../../src/services/asr";
-import {
-  checkDeepAnalysis,
-  describeStage,
-  pipelineReady,
-  startDeepAnalysis,
-  type PipelineState,
-} from "../../src/services/pipeline";
 import {
   runnerState,
   startTranscription,
@@ -120,71 +112,30 @@ export default function ShiftDetail() {
     redacted: RedactedText;
   } | null>(null);
 
-  // ── 심층 분석 (3a→3b→4 파이프라인) ──
-  const [deep, setDeep] = useState<PipelineState | null>(null);
-  const [deepGate, setDeepGate] = useState<{ ok: boolean; reason?: string } | null>(null);
-  const [deepBusy, setDeepBusy] = useState(false);
+  // 심층 분석은 전사 결과 화면(`/transcript/[id]`)으로 옮겼다 — 전사가 끝난 자리에서
+  // 거는 것이 순서에 맞다. 여기는 그 결과(보고서·확인 필요 목록)를 보는 곳으로 남는다.
   const [confirmations, setConfirmations] = useState<ConfirmationRow[]>([]);
 
   const load = useCallback(async () => {
-    const [count, recs, score, md, job, gate, cfs, perRec] = await Promise.all([
+    const [count, recs, score, md, cfs, perRec] = await Promise.all([
       countSegments(shiftId),
       listRecordings(shiftId),
       getTaeumScore(shiftId),
       getShiftReportMarkdown(shiftId),
-      getPipelineJob(shiftId),
-      pipelineReady(),
       listConfirmations(shiftId),
       segmentCountsByRecording(shiftId),
     ]);
     setSentenceCount(count);
     setRecordings(recs);
     setCounts(perRec);
-    // 문장이 있는데 지표가 없으면 지금 센다 — 규칙 기반이라 AI 가 필요 없다.
-    setTaeum(score ?? (count > 0 ? await refreshTaeumScore(shiftId) : null));
+    // 지표는 심층 분석이 끝날 때만 센다. 여기서 자동으로 세면 AI 다듬기만 해도
+    // 온도 측정이 끝나 있어, 분석해야 나오는 것이라는 말과 어긋난다.
+    setTaeum(score);
     setReportMd(md);
-    setDeep(describeStage(job));
-    setDeepGate(gate);
     setConfirmations(cfs);
   }, [shiftId]);
 
-  // 배치가 도는 동안 화면이 열려 있으면 30초마다 한 걸음씩 민다.
-  useEffect(() => {
-    if (!deep || !["3a", "3b", "4"].includes(deep.stage)) return;
-    const timer = setInterval(() => {
-      void (async () => {
-        const next = await checkDeepAnalysis(shiftId);
-        setDeep(next);
-        if (next.stage === "done") void load();
-      })();
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [deep, load, shiftId]);
-
-  const runDeep = useCallback(async () => {
-    setDeepBusy(true);
-    setError(null);
-    try {
-      setDeep(await startDeepAnalysis(shiftId));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "심층 분석을 시작하지 못했습니다.");
-    } finally {
-      setDeepBusy(false);
-    }
-  }, [shiftId]);
-
-  const pokeDeep = useCallback(async () => {
-    setDeepBusy(true);
-    try {
-      const next = await checkDeepAnalysis(shiftId);
-      setDeep(next);
-      if (next.stage === "done") await load();
-    } finally {
-      setDeepBusy(false);
-    }
-  }, [load, shiftId]);
-
-  // 전사 결과 화면에서 지우고 돌아오는 길 — 문장 수·상태가 낡지 않게 다시 읽는다.
+  // 전사 결과 화면에서 지우고(또는 분석을 걸고) 돌아오는 길 — 낡지 않게 다시 읽는다.
   useFocusEffect(
     useCallback(() => {
       void load();
@@ -268,6 +219,20 @@ export default function ShiftDetail() {
     return () => clearInterval(timer);
   }, [previewId]);
 
+  const stopPreview = useCallback(() => {
+    try {
+      previewRef.current?.remove();
+    } catch {
+      // 이미 해제됐으면 그만이다.
+    }
+    previewRef.current = null;
+    setPreviewId(null);
+  }, []);
+
+  // 이 화면을 떠나면 맛보기 재생을 멈춘다. 예전에는 전사 결과 화면으로 넘어가도
+  // 소리가 계속 흘러나왔다 — 화면이 뒤에 남아 있어 해제가 걸리지 않았다.
+  useFocusEffect(useCallback(() => () => stopPreview(), [stopPreview]));
+
   const togglePreview = useCallback(
     (rec: RecordingRow) => {
       try {
@@ -291,6 +256,52 @@ export default function ShiftDetail() {
       }
     },
     [previewId],
+  );
+
+  /**
+   * 이 녹음 하나를 지운다 — 잘못 올린 파일을 전사 전에 여기서 뺀다.
+   *
+   * 되돌릴 수 없어 한 번 묻는다. 전사된 문장이 딸려 있으면 그 말도 함께 한다.
+   * 음성 파일 삭제는 DB 가 돌려준 경로로 이 자리에서 한다.
+   */
+  const removeRecording = useCallback(
+    (rec: RecordingRow) => {
+      const sentences = counts.get(rec.id) ?? 0;
+      Alert.alert(
+        "이 녹음 지울까요?",
+        `${rec.label ?? startClock(rec.started_at)} — 음성 파일이 폰에서 사라집니다.` +
+          (sentences > 0 ? `\n이 파일로 만든 전사 ${sentences}문장도 함께 지워져요.` : "") +
+          "\n한 번 지우면 되살릴 수 없어요.",
+        [
+          { text: "앗차차 (취소)", style: "cancel" },
+          {
+            text: "지우기",
+            style: "destructive",
+            onPress: () => {
+              void (async () => {
+                if (previewId === rec.id) stopPreview();
+                setError(null);
+                try {
+                  const uris = await deleteShiftRecordings(shiftId, [rec.id]);
+                  const FileSystem = await import("expo-file-system/legacy");
+                  for (const uri of uris) {
+                    try {
+                      await FileSystem.deleteAsync(uri, { idempotent: true });
+                    } catch {
+                      // 파일이 이미 없어도 기록 삭제는 끝났다.
+                    }
+                  }
+                } catch (e) {
+                  setError(e instanceof Error ? e.message : "녹음을 지우지 못했어요.");
+                }
+                await load();
+              })();
+            },
+          },
+        ],
+      );
+    },
+    [counts, load, previewId, shiftId, stopPreview],
   );
 
   /**
@@ -455,7 +466,8 @@ export default function ShiftDetail() {
         <Card>
           <Heading>음성 파일 원본</Heading>
           <Small>
-            요 듀티 때 털린 녹음 원본이에요. 변환하기 전에 재생 버튼 눌러서 먼저 살짝 들어볼 수 있어요
+            요 듀티 때 털린 녹음 원본이에요. 변환하기 전에 재생 버튼 눌러서 먼저 살짝 들어볼 수
+            있고, 잘못 올린 파일은 휴지통 버튼으로 뺄 수 있어요
           </Small>
           {recordings.map((r, i) => {
             const badge = stateBadge(r.state);
@@ -516,6 +528,22 @@ export default function ShiftDetail() {
                     }
                     tone={badge.tone}
                   />
+                  {/* 지우기 — 변환 중인 파일만 막는다. 도는 중에 빼면 러너가 헛돈다. */}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="이 녹음 지우기"
+                    disabled={r.state === "transcribing"}
+                    onPress={() => removeRecording(r)}
+                    style={({ pressed }) => ({
+                      width: TOUCH_MIN,
+                      height: TOUCH_MIN,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      opacity: r.state === "transcribing" ? 0.3 : pressed ? 0.5 : 1,
+                    })}
+                  >
+                    <Ionicons name="trash-outline" size={18} color={t.danger} />
+                  </Pressable>
                 </View>
                 {r.state === "transcribing" && runner?.fileId === r.id ? (
                   <View style={{ marginTop: space.xs }}>
@@ -533,8 +561,8 @@ export default function ShiftDetail() {
         <Card tone="accent">
           <Heading>변환 결과물</Heading>
           <Small>
-            {sentenceCount}문장 · 문장별 재생, 화자 지정, 단어 수정, AI 다듬기는 결과
-            화면에서 합니다.
+            {sentenceCount}문장 · 문장별 재생, 화자 지정, 단어 수정, AI 다듬기, 심층 분석 시작은
+            결과 화면에서 합니다.
           </Small>
           {mergedCount > 0 ? (
             <Button
@@ -560,51 +588,9 @@ export default function ShiftDetail() {
         </Card>
       ) : null}
 
-      {/* ── 심층 분석 — Claude 추출·조사 + Gemini 보고서. 배치라 몇 분~몇 십 분 ── */}
-      {sentenceCount > 0 ? (
-        <Card>
-          <Heading>초정밀 심층 분석 (AI 3단 콤보)</Heading>
-          <Small>
-            똑순이 Claude 5가 피드백 포인트 딱 짚어내고, Claude Fable 5가 폭풍 구글링으로 팩트 체크 갈기고, Gemini가 리포트랑 단어장으로 예쁘게 빚어냅니다. 이 콤보 돌아가는 데 몇 분~몇 십 분 걸려요. 화면 꺼도 알아서 열일하니까 이따 와서 결과만 쏙 빼먹으세요
-          </Small>
-          {deepGate && !deepGate.ok ? (
-            <Body muted>{deepGate.reason}</Body>
-          ) : deep && deep.stage !== "idle" ? (
-            <>
-              <Badge
-                text={
-                  deep.stage === "done"
-                    ? "갓벽하게 끝"
-                    : deep.stage === "error"
-                      ? "엎어짐"
-                      : `열일 중 땀뻘뻘 · ${deep.stage} 단계`
-                }
-                tone={deep.stage === "done" ? "ok" : deep.stage === "error" ? "danger" : "warn"}
-              />
-              <Small muted={false}>{deep.detail}</Small>
-              {deep.error ? <Text style={[type.small, { color: t.danger }]}>{deep.error}</Text> : null}
-              {["3a", "3b", "4"].includes(deep.stage) ? (
-                <Button label="어디쯤 왔나 찌르기" busy={deepBusy} onPress={() => void pokeDeep()} />
-              ) : (
-                <Button
-                  label={deep.stage === "error" ? "재시동 부릉" : "처음부터 다시 갈기기"}
-                  busy={deepBusy}
-                  onPress={() => void runDeep()}
-                />
-              )}
-            </>
-          ) : (
-            <Button
-              label="심층 분석 풀악셀 시작!"
-              tone="primary"
-              busy={deepBusy}
-              onPress={() => void runDeep()}
-            />
-          )}
-        </Card>
-      ) : null}
-
-      {/* ── 내보내기 — 전사본·보고서·단어장·분석 원본을 파일로 ── */}
+      {/* ── 내보내기 — 전사본·보고서·단어장·분석 원본을 파일로 ──
+          보고서·단어장·분석 원본은 심층 분석이 만든 것이다. 분석 전에는 눌러도 나올 게
+          없어서 아예 감춘다 — 예전엔 분석 버튼 바로 아래에 같이 서 있어 순서가 어긋났다. */}
       {sentenceCount > 0 && !preview ? (
         <Card>
           <Heading>파일로 빼내기</Heading>
@@ -618,16 +604,25 @@ export default function ShiftDetail() {
             busy={busy === "내보낼 것 챙기는 중"}
             onPress={() => void pickExport("transcript")}
           />
-          <Button
-            label="보고서 (.md 텍스트)"
-            onPress={() => void pickExport("report")}
-          />
-          <Button label="보고서 (.pdf 문서)" onPress={() => void pickExport("reportPdf")} />
-          <Button label="단어장 (.csv — 엑셀·앙키)" onPress={() => void pickExport("cards")} />
-          <Button
-            label="분석 원본 (.json — 교정 규칙 만들기용)"
-            onPress={() => void pickExport("analysis")}
-          />
+          {reportMd ? (
+            <>
+              <Button
+                label="보고서 (.md 텍스트)"
+                onPress={() => void pickExport("report")}
+              />
+              <Button label="보고서 (.pdf 문서)" onPress={() => void pickExport("reportPdf")} />
+              <Button label="단어장 (.csv — 엑셀·앙키)" onPress={() => void pickExport("cards")} />
+              <Button
+                label="분석 원본 (.json — 교정 규칙 만들기용)"
+                onPress={() => void pickExport("analysis")}
+              />
+            </>
+          ) : (
+            <Small>
+              보고서·단어장·분석 원본은 심층 분석을 돌려야 생겨요. 분석은 위 '변환 결과물' 에서
+              결과 화면으로 들어가면 있습니다.
+            </Small>
+          )}
         </Card>
       ) : null}
 
@@ -837,7 +832,7 @@ export default function ShiftDetail() {
           <Card>
             <Body muted>
 
-  텍스트 변환 창에서 누가 말한 건지 콕콕 찍어준 다음 ‘단어장·리포트 만들기’ 누르면 훨씬 깔쌈해져요
+  온도 측정은 심층 분석이 끝나면 나옵니다. 결과 화면에서 누가 말한 건지 콕콕 찍어준 다음 ‘심층 분석 풀악셀 시작!’ 을 눌러주세요
 </Body>
           </Card>
         )

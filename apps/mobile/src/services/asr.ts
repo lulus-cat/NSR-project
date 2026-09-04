@@ -714,9 +714,12 @@ export async function processRecording(
     const options = await buildAsrOptions(lexicon);
     const asr = await provider.transcribe(recording.file_uri, options, onProgress);
     const memory = await loadCorrectionMemory();
-    // 오인식 목록은 휘스퍼가 어떻게 틀리는지의 기록이다. 제미나이 전사본에 들이대면
-    // 맞지도 않고 엉뚱한 말을 바꾼다 (@nsr/core CorrectionOptions.asrEngine).
-    const asrEngine = provider.id.startsWith("gemini:") ? ("other" as const) : ("whisper" as const);
+    // 오인식 목록은 **휘스퍼가** 어떻게 틀리는지의 기록이다. 제미나이·티로 전사본에
+    // 들이대면 맞지도 않고 엉뚱한 말을 바꾼다 (@nsr/core CorrectionOptions.asrEngine).
+    // 휘스퍼로 도는 것은 서버 경로(콜랩·내 PC)뿐이라, 그것만 "whisper" 로 본다.
+    const asrEngine = provider.id.startsWith("self-hosted:")
+      ? ("whisper" as const)
+      : ("other" as const);
 
     // 1) ASR 덩어리를 문장으로 편다.
     //
@@ -883,13 +886,16 @@ export async function resolveProvider(): Promise<AsrProvider> {
     diarize?: boolean;
   }>(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" });
 
-  if (cloud.mode === "tiro") {
+  // 아무것도 고르지 않은 새 사용자는 티로다 — 설정 화면(models.tsx)의 inferMode 와 같은 규칙.
+  const mode = cloud.mode ?? (cloud.endpoint ? inferAsrMode(cloud) : "tiro");
+
+  if (mode === "tiro") {
     const key = await getTiroKey();
     if (!key) throw new Error("티로 열쇠(키)가 없어요! 설정 → 텍스트 변환 가서 티로 카드에 열쇠 꽂아주세용");
     return createTiroProvider(key);
   }
 
-  if (cloud.mode === "gemini") {
+  if (mode === "gemini") {
     const { getApiKey } = await import("./llm");
     const key = await getApiKey("gemini");
     if (!key) {

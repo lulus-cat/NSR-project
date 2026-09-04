@@ -36,8 +36,13 @@ const PARTS = [
  */
 const METHOD_CHOICES = [
   {
+    key: "tiro",
+    title: "티로 (한국어 전용, 추천)",
+    body: "API 키 하나면 끝입니다. 한국어 받아쓰기 정확도가 가장 좋았습니다 — 병동 말도 문장 꼴이 살아 있습니다. 키 발급은 설정 → 전사에서 안내합니다.",
+  },
+  {
     key: "colab",
-    title: "구글 콜랩 (무료 GPU, 추천)",
+    title: "구글 콜랩 (무료 GPU, 휘스퍼)",
     body: "컴퓨터 없이 무료 GPU가 전사합니다. 준비 3분 — 자세한 연결은 설정 → 전사에서 안내합니다.",
   },
   {
@@ -346,7 +351,7 @@ export default function Onboarding() {
   어디서 전사할지 선택하십시오.
 </Text>
             <Small>
-              전사는 폰이 아니라 콜랩(무료 GPU)·내 컴퓨터 또는 Gemini(구글 AI)가
+              전사는 폰이 아니라 티로·콜랩(무료 GPU)·내 컴퓨터 또는 Gemini(구글 AI)가
               합니다. 기록 음성이 선택한 곳으로 전송됩니다. 여기서 고르면 설정 →
               전사에 기본으로 잡힙니다.
             </Small>
@@ -365,7 +370,12 @@ export default function Onboarding() {
               label="다음"
               tone="primary"
               onPress={() => {
-                if (model === "colab" || model === "pc" || model === "gemini") {
+                if (
+                  model === "tiro" ||
+                  model === "colab" ||
+                  model === "pc" ||
+                  model === "gemini"
+                ) {
                   // 설정 → 전사 화면이 이 모드로 열린다. 주소는 거기서 잇는다.
                   // 통째로 덮어쓰면 이미 고른 모델·화자 분리·주소가 날아간다.
                   void save(async () => {

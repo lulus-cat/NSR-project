@@ -62,8 +62,10 @@ const COLAB_NOTEBOOK_URL =
 /** 저장된 설정에 mode 가 없던 옛 판 사용자 — 주소 생김새로 짐작한다. */
 function inferMode(server: ServerAsr): ServerMode {
   if (server.mode) return server.mode;
-  if (server.endpoint && !server.endpoint.includes("trycloudflare.com")) return "pc";
-  return "colab";
+  if (server.endpoint) return server.endpoint.includes("trycloudflare.com") ? "colab" : "pc";
+  // 주소도 모드도 없는 새 사용자 — 티로가 기본이다. 같은 녹음을 네 엔진으로
+  // 돌려 보니 한국어 정확도가 가장 좋았다 (티로 > 클로바노트 > 다글로 > 휘스퍼).
+  return "tiro";
 }
 
 /** 전사 방식 타일 — 콜랩/내 컴퓨터를 한눈에 가르는 큰 선택지. */
@@ -368,11 +370,19 @@ export default function TranscriptionSetup() {
       <Card>
         <Heading>어디서 전사합니까</Heading>
         <Small>
-          전사는 폰이 아니라 아래 셋 중 한 곳이 합니다. 콜랩·내 컴퓨터는 휘스퍼
-          모델을 돌리는 서버 방식이고, Gemini 는 서버 없이 구글 AI 에 직접 보내는
-          다른 방식입니다. 기록 음성이 선택한 곳으로 전송됩니다.
+          전사는 폰이 아니라 아래 넷 중 한 곳이 합니다. 기본은 티로입니다 — 같은 녹음을
+          네 곳으로 돌려 보니 한국어를 가장 잘 받아적었습니다. 콜랩·내 컴퓨터는 휘스퍼
+          모델을 돌리는 서버 방식이고, 티로·Gemini 는 서버 없이 키 하나로 보내는
+          방식입니다. 기록 음성이 선택한 곳으로 전송됩니다.
         </Small>
         <View style={{ flexDirection: "row", gap: space.sm }}>
+          <ModeTile
+            icon="mic-outline"
+            title="티로"
+            caption="한국어 전용 · 추천"
+            selected={mode === "tiro"}
+            onPress={() => switchMode("tiro")}
+          />
           <ModeTile
             icon="logo-google"
             title="콜랩"
@@ -393,13 +403,6 @@ export default function TranscriptionSetup() {
             caption="API 키 하나 · 서버 없이"
             selected={mode === "gemini"}
             onPress={() => switchMode("gemini")}
-          />
-          <ModeTile
-            icon="mic-outline"
-            title="티로"
-            caption="API 키 하나 · 한국어 전용"
-            selected={mode === "tiro"}
-            onPress={() => switchMode("tiro")}
           />
         </View>
       </Card>

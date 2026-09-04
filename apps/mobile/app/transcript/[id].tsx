@@ -13,7 +13,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, FlatList, Pressable, TextInput, View } from "react-native";
 import { Text } from "react-native";
-import { useLocalSearchParams, useRouter } from "expo-router";
+import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
@@ -32,9 +32,11 @@ import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/the
 import {
   deleteShiftRecordings,
   deleteTranscript,
+  getPipelineJob,
   getSetting,
   listRecordings,
   listSegments,
+  listUserTerms,
   loadCorrectionMemory,
   saveCorrectionMemory,
   saveUserTerm,
@@ -45,6 +47,13 @@ import {
   type RecordingRow,
 } from "../../src/db";
 import { loadLexicon } from "../../src/services/asr";
+import {
+  checkDeepAnalysis,
+  describeStage,
+  pipelineReady,
+  startDeepAnalysis,
+  type PipelineState,
+} from "../../src/services/pipeline";
 import { llmReady, polishTranscriptSegments } from "../../src/services/llm";
 import { redactForExport, shareText } from "../../src/services/export";
 import { exportBaseName, transcriptToText } from "../../src/services/export-bundle";
@@ -285,6 +294,16 @@ export default function TranscriptView() {
     ? (recordings.find((r) => r.id === recId)?.label ?? "따로 보는 파일")
     : null;
 
+  /** AI 에게 함께 실려 가는 것 — 내 단어장과 확정된 교정 규칙. 눈에 보여야 믿는다. */
+  const [dictInfo, setDictInfo] = useState<{ terms: number; confirmed: number } | null>(null);
+  const loadDictInfo = useCallback(async () => {
+    const [terms, memory] = await Promise.all([listUserTerms(), loadCorrectionMemory()]);
+    const confirmed = Object.values(memory.rules).filter(
+      (r) => r.count >= memory.minCount,
+    ).length;
+    setDictInfo({ terms: terms.length, confirmed });
+  }, []);
+
   const load = useCallback(async () => {
     const [segs, recs] = await Promise.all([
       listSegments(shiftId, recId ? { recordingId: recId } : { mergedOnly: true }),
@@ -294,7 +313,8 @@ export default function TranscriptView() {
     // 재생·삭제가 이 화면에 보이는 문장과 같은 파일을 가리켜야 한다 — 따로 보는
     // 파일이면 그 파일만, 합친 전사본이면 따로 둔 파일을 뺀 나머지만.
     setRecordings(recs.filter((r) => (recId ? r.id === recId : r.separate !== 1)));
-  }, [shiftId, recId]);
+    await loadDictInfo();
+  }, [shiftId, recId, loadDictInfo]);
 
   useEffect(() => {
     void load();
@@ -309,6 +329,52 @@ export default function TranscriptView() {
       }
     })();
   }, [load, shiftId]);
+
+  // ── 심층 분석 (3a→3b→4 파이프라인) ──
+  // 근무 기록 화면에 있던 것을 여기로 옮겼다. 전사가 끝나고 결과를 읽는 자리에서
+  // 분석을 거는 것이 순서에 맞다 — 분석도 안 했는데 '보고서 내보내기'가 먼저
+  // 보이던 어긋남도 여기서 풀린다.
+  const [deep, setDeep] = useState<PipelineState | null>(null);
+  const [deepGate, setDeepGate] = useState<{ ok: boolean; reason?: string } | null>(null);
+  const [deepBusy, setDeepBusy] = useState(false);
+
+  useEffect(() => {
+    void (async () => {
+      const [job, gate] = await Promise.all([getPipelineJob(shiftId), pipelineReady()]);
+      setDeep(describeStage(job));
+      setDeepGate(gate);
+    })();
+  }, [shiftId]);
+
+  // 배치가 도는 동안 화면이 열려 있으면 30초마다 한 걸음씩 민다.
+  useEffect(() => {
+    if (!deep || !["3a", "3b", "4"].includes(deep.stage)) return;
+    const timer = setInterval(() => {
+      void checkDeepAnalysis(shiftId).then(setDeep);
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [deep, shiftId]);
+
+  const runDeep = useCallback(async () => {
+    setDeepBusy(true);
+    setError(null);
+    try {
+      setDeep(await startDeepAnalysis(shiftId));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "심층 분석을 시작하지 못했습니다.");
+    } finally {
+      setDeepBusy(false);
+    }
+  }, [shiftId]);
+
+  const pokeDeep = useCallback(async () => {
+    setDeepBusy(true);
+    try {
+      setDeep(await checkDeepAnalysis(shiftId));
+    } finally {
+      setDeepBusy(false);
+    }
+  }, [shiftId]);
 
   const coverage = useMemo(() => speakerCoverage(segments), [segments]);
   const speakerOrder = useMemo(() => {
@@ -403,6 +469,23 @@ export default function TranscriptView() {
     pendingSeekRef.current = null;
     setPlayback(null);
   }, []);
+
+  // 이 화면을 떠나면 소리를 멈춘다. 예전에는 재생 중에 다른 화면으로 넘어가도
+  // 계속 흘러나왔다 — 화면이 사라지지 않는(뒤에 남는) 길로 나가면 해제가 안 됐다.
+  // 멈추기만 하고 플레이어는 남긴다. 돌아오면 듣던 자리에서 다시 누를 수 있다.
+  useFocusEffect(
+    useCallback(
+      () => () => {
+        try {
+          playerRef.current?.pause();
+        } catch {
+          // 이미 해제된 플레이어.
+        }
+        setPlayback((prev) => (prev ? { ...prev, playing: false } : prev));
+      },
+      [],
+    ),
+  );
 
   const playRecording = useCallback(
     (recId: string, atSec: number) => {
@@ -554,7 +637,8 @@ export default function TranscriptView() {
     await updateSegmentText(segmentId, nextText);
     const memory = await loadCorrectionMemory();
     await saveCorrectionMemory(recordCorrection(memory, word, to, Date.now()));
-  }, [segments, wordTarget]);
+    await loadDictInfo();
+  }, [loadDictInfo, segments, wordTarget]);
 
   const addToMyDict = useCallback(async () => {
     if (!wordTarget) return;
@@ -573,7 +657,8 @@ export default function TranscriptView() {
     setWordTarget(null);
     setError(null);
     setNotice(`'${surface}'${josa(surface, "을")} 우리 족보에 모셔왔습니다! 자세한 뜻은 이따 단어장에서 예쁘게 다듬어주세요`);
-  }, [wordTarget]);
+    await loadDictInfo();
+  }, [loadDictInfo, wordTarget]);
 
   const onPressWord = useCallback((segmentId: string, word: string) => {
     setWordTarget({ segmentId, word, replacement: word });
@@ -600,10 +685,14 @@ export default function TranscriptView() {
               setBusy("AI 슨생님 폭풍 첨삭 중");
               try {
                 const lexicon = await loadLexicon();
+                // 확정된 내 교정 기록도 함께 보낸다 — 사전에 없는 이 병동만의
+                // 오인식은 여기에만 있어서, 안 보내면 AI 가 같은 말을 또 틀린다.
+                const memory = await loadCorrectionMemory();
                 const changed = await polishTranscriptSegments(
                   segments.map((s) => ({ id: s.id, text: s.text })),
                   lexicon,
                   (done, total) => setBusy(`AI 슨생님 첨삭 중... ${done}/${total} 문장 갈기기 완`),
+                  memory,
                 );
                 for (const [id, text] of changed) {
                   await updateSegmentText(id, text);
@@ -735,6 +824,15 @@ export default function TranscriptView() {
               disabled={busy !== null}
               onPress={() => void runPolish()}
             />
+            {dictInfo ? (
+              <Small>
+                AI 에게 같이 보내는 것: 내 단어장 {dictInfo.terms}개 · 내가 고쳐 확정한 교정{" "}
+                {dictInfo.confirmed}건 · 병동 기본 사전.
+                {dictInfo.confirmed === 0
+                  ? " 단어를 길게 눌러 고치면 확정 목록이 쌓이고, 다음부터 AI 도 같이 씁니다."
+                  : ""}
+              </Small>
+            ) : null}
             <Button
               label="텍스트 파일로 빼내기 (.txt)"
               busy={busy === "내보낼 것 챙기는 중"}
@@ -764,6 +862,62 @@ export default function TranscriptView() {
         {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
         {notice ? <Small muted={false}>{notice}</Small> : null}
       </Card>
+
+      {/* ── 심층 분석 — Claude 추출·조사 + Gemini 보고서. 배치라 몇 분~몇 십 분 ── */}
+      {segments.length > 0 ? (
+        <Card>
+          <Heading>초정밀 심층 분석 (AI 3단 콤보)</Heading>
+          <Small>
+            똑순이 Claude 5가 피드백 포인트 딱 짚어내고, Claude Fable 5가 폭풍 구글링으로 팩트 체크
+            갈기고, Gemini가 리포트랑 단어장으로 예쁘게 빚어냅니다. 이 콤보 돌아가는 데 몇 분~몇 십 분
+            걸려요. 화면 꺼도 알아서 열일하니까 이따 와서 결과만 쏙 빼먹으세요
+          </Small>
+          {recId ? (
+            <Small muted={false}>
+              분석은 이 파일만이 아니라 {date} {dutyLabel} 근무 전체 문장으로 돕니다.
+            </Small>
+          ) : null}
+          {deepGate && !deepGate.ok ? (
+            <Body muted>{deepGate.reason}</Body>
+          ) : deep && deep.stage !== "idle" ? (
+            <>
+              <Badge
+                text={
+                  deep.stage === "done"
+                    ? "갓벽하게 끝"
+                    : deep.stage === "error"
+                      ? "엎어짐"
+                      : `열일 중 땀뻘뻘 · ${deep.stage} 단계`
+                }
+                tone={deep.stage === "done" ? "ok" : deep.stage === "error" ? "danger" : "warn"}
+              />
+              <Small muted={false}>{deep.detail}</Small>
+              {deep.error ? (
+                <Text style={[type.small, { color: t.danger }]}>{deep.error}</Text>
+              ) : null}
+              {deep.stage === "done" ? (
+                <Small>보고서·단어장·파일로 빼내기는 근무 기록 화면(뒤로 가기)에 있어요.</Small>
+              ) : null}
+              {["3a", "3b", "4"].includes(deep.stage) ? (
+                <Button label="어디쯤 왔나 찌르기" busy={deepBusy} onPress={() => void pokeDeep()} />
+              ) : (
+                <Button
+                  label={deep.stage === "error" ? "재시동 부릉" : "처음부터 다시 갈기기"}
+                  busy={deepBusy}
+                  onPress={() => void runDeep()}
+                />
+              )}
+            </>
+          ) : (
+            <Button
+              label="심층 분석 풀악셀 시작!"
+              tone="primary"
+              busy={deepBusy}
+              onPress={() => void runDeep()}
+            />
+          )}
+        </Card>
+      ) : null}
 
       {segments.length > 0 ? (
         <Card tone={coverage.readyForScoring ? "default" : "warn"}>

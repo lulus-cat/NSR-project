@@ -26,6 +26,7 @@
 import type { Lexicon, LexiconEntry, TermCategory } from "../lexicon/index.js";
 import { toHangulReading } from "../hangul/initialism.js";
 import { AMBIGUOUS_NOTES } from "../lexicon/common-words.js";
+import type { CorrectionMemory } from "./learn.js";
 
 /** initial_prompt에 들어갈 수 있는 토큰 예산. Whisper의 prev 컨텍스트 상한. */
 export const WHISPER_PROMPT_TOKEN_LIMIT = 224;
@@ -248,7 +249,15 @@ export function buildGlossaryForLLM(lexicon: Lexicon): string {
  * 뒤에 `AMBIGUOUS_NOTES` 를 붙인다. 규칙으로 만들 수 없는 것들(문맥에 따라 뜻이 갈리는 말)은
  * 사람 판단이 필요하고, 그 판단 기준을 LLM 이 알아야 한다.
  */
-export function buildCorrectionRulesForLLM(lexicon: Lexicon): string {
+export function buildCorrectionRulesForLLM(
+  lexicon: Lexicon,
+  /**
+   * 사용자가 화면에서 직접 고쳐 쌓인 교정 기록. 주면 **확정된 것**
+   * (`minCount` 회 이상 반복돼 자동 적용 단계에 오른 규칙)만 함께 보낸다.
+   * 사전에 없는 이 병동만의 오인식은 여기에만 있어서, 안 보내면 LLM 이 모른다.
+   */
+  memory?: CorrectionMemory,
+): string {
   const lines: string[] = [];
   for (const e of lexicon.entries) {
     if (!e.misheard?.length) continue;
@@ -256,12 +265,26 @@ export function buildCorrectionRulesForLLM(lexicon: Lexicon): string {
   }
   lines.sort();
 
+  const mine = confirmedRuleLines(memory);
+
   return [
     "휘스퍼가 이렇게 적었으면 이렇게 읽는다 (사용자가 실제 녹음에서 확정한 것):",
     "— 아래는 휘스퍼의 오류 습관이다. 다른 엔진의 전사본이면 그대로 들이대지 않는다.",
     ...lines,
+    ...(mine.length > 0
+      ? ["", "내가 고쳐서 확정한 것 (이 병동·이 사람의 기록. 사전보다 우선한다):", ...mine]
+      : []),
     "",
     "문맥으로 판단할 것 — 규칙으로 고치면 안 되는 말들:",
     ...AMBIGUOUS_NOTES.map((n) => `- ${n}`),
   ].join("\n");
+}
+
+/** 교정 기록에서 확정된 것만 규칙 줄로. 확정 전(1회짜리)은 보내지 않는다. */
+function confirmedRuleLines(memory?: CorrectionMemory): string[] {
+  if (!memory) return [];
+  return Object.values(memory.rules)
+    .filter((r) => r.count >= memory.minCount)
+    .sort((a, b) => b.count - a.count || a.to.localeCompare(b.to))
+    .map((r) => `- ${r.to} ← ${r.from}`);
 }

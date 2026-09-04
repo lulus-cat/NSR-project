@@ -155,6 +155,19 @@ async function anthropicHeaders(): Promise<Record<string, string>> {
   };
 }
 
+/**
+ * 배치 요청에 붙일 이름.
+ *
+ * 근무 id 는 `2026-08-27:D` 처럼 콜론이 들어간다. Anthropic 배치는 custom_id 를
+ * `^[a-zA-Z0-9_-]{1,64}$` 로만 받아서, 그대로 보내면 400 으로 튕긴다
+ * ("requests.0.custom_id: String should match pattern"). 그래서 허용되지 않는
+ * 글자는 `-` 로 바꾸고 64자에서 자른다. 제출과 대조가 같은 규칙을 써야 하므로
+ * 두 곳 모두 이 함수를 지난다.
+ */
+function batchCustomId(stage: string, shiftId: string): string {
+  return `${stage}-${shiftId}`.replace(/[^0-9A-Za-z_-]/g, "-").slice(0, 64);
+}
+
 async function submitBatch(customId: string, params: unknown): Promise<string> {
   const res = await fetch(`${ANTHROPIC_API}/messages/batches`, {
     method: "POST",
@@ -247,7 +260,7 @@ const STAGE3A_SYSTEM = `당신은 신규간호사의 근무 전사본에서 학�
 async function submit3a(shiftId: string): Promise<void> {
   const transcript = await maskedTranscript(shiftId);
   if (!transcript.trim()) throw new Error("글로 바뀐 녹음본(전사본)이 없어요! 변환부터 얍 돌리고 오세요");
-  const batchId = await submitBatch(`3a-${shiftId}`, {
+  const batchId = await submitBatch(batchCustomId("3a", shiftId), {
     model: "claude-opus-5",
     max_tokens: 32000,
     // temperature 는 Opus 5 에서 제거된 파라미터라 보낼 수 없다(400).
@@ -280,7 +293,7 @@ const STAGE3B_SYSTEM = `당신은 1차 분석 JSON 을 검증·보강하는 조�
 
 async function submit3b(shiftId: string, stage3aJson: string): Promise<void> {
   const transcript = await maskedTranscript(shiftId);
-  const batchId = await submitBatch(`3b-${shiftId}`, {
+  const batchId = await submitBatch(batchCustomId("3b", shiftId), {
     model: "claude-fable-5",
     max_tokens: 32000,
     system: [{ type: "text", text: STAGE3B_SYSTEM }],
@@ -438,6 +451,12 @@ async function runStage4(shiftId: string, stage3a: string, stage3b: string): Pro
       sources: r.출처 ?? [],
     });
   }
+
+  // 온도 측정(태움 지표) — 심층 분석의 마지막 걸음이다. 예전에는 근무 화면이
+  // 열릴 때마다 조용히 다시 셌는데, 그러면 AI 다듬기만 해도 측정이 끝나 있어
+  // '분석해야 나오는 것'이라는 말과 어긋났다. 이제 여기서 한 번만 센다.
+  const { refreshTaeumScore } = await import("./asr");
+  await refreshTaeumScore(shiftId);
 
   await savePipelineJob({ shiftId, stage: "done" });
   await logDebug(
@@ -620,7 +639,7 @@ const STAGE3A_STRICT_SCHEMA = {
 async function submit3aHybrid(shiftId: string): Promise<void> {
   const transcript = await maskedTranscript(shiftId);
   if (!transcript.trim()) throw new Error("글로 바뀐 녹음본(전사본)이 없어요! 변환부터 얍 돌리고 오세요");
-  const batchId = await submitOpenAiBatch(`3a-${shiftId}`, {
+  const batchId = await submitOpenAiBatch(batchCustomId("3a", shiftId), {
     model: "gpt-5.6-sol",
     // 추론 모델: temperature 미지원(400), 출력 상한은 max_completion_tokens.
     max_completion_tokens: 32000,
@@ -809,7 +828,7 @@ async function submit3bHybrid(shiftId: string, stage3aJson: string): Promise<voi
                       },
                     ],
                   },
-                  metadata: { key: `3b-${shiftId}` },
+                  metadata: { key: batchCustomId("3b", shiftId) },
                 },
               ],
             },
@@ -914,7 +933,7 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
   if (!job) return describeStage(null);
   try {
     if (job.stage === "3a" && job.batch_id) {
-      const r = await pollBatch(job.batch_id, `3a-${shiftId}`);
+      const r = await pollBatch(job.batch_id, batchCustomId("3a", shiftId));
       if (!r.ended) return describeStage(job);
       if (r.error) throw new Error(`1차 영혼 털기 엎어짐: ${r.error}`);
       const json = JSON.stringify(extractJson(r.message));
@@ -927,7 +946,7 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
     } else if (job.stage === "h3a" && job.batch_id) {
       // 하이브리드: GPT 추출이 끝나면 기계 검증 → 3v 판정까지 여기서 돈다
       // (3v 는 입력이 작아 실시간 Flash 로 충분하다).
-      const r = await pollOpenAiBatch(job.batch_id, `3a-${shiftId}`);
+      const r = await pollOpenAiBatch(job.batch_id, batchCustomId("3a", shiftId));
       if (!r.ended) return describeStage(job);
       if (r.error) throw new Error(`1차 영혼 털기(GPT) 엎어짐: ${r.error}`);
       await appendPipelineUsage(shiftId, { stage: "3a", provider: "openai", usage: r.usage, at: Date.now() });
@@ -954,7 +973,7 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
     } else if (job.stage === "h3a-done") {
       await submit3bHybrid(shiftId, job.stage3a ?? "{}");
     } else if (job.stage === "h3b" && job.batch_id) {
-      const r = await pollGeminiBatch(job.batch_id, `3b-${shiftId}`);
+      const r = await pollGeminiBatch(job.batch_id, batchCustomId("3b", shiftId));
       if (!r.ended) return describeStage(job);
       if (r.error) throw new Error(`2차 폭풍 구글링(Gemini) 엎어짐: ${r.error}`);
       await appendPipelineUsage(shiftId, { stage: "3b", provider: "gemini", usage: r.usage, at: Date.now() });
@@ -967,7 +986,7 @@ export async function checkDeepAnalysis(shiftId: string): Promise<PipelineState>
       const fresh = await getPipelineJob(shiftId);
       await runStage4(shiftId, fresh?.stage3a ?? "{}", json);
     } else if (job.stage === "3b" && job.batch_id) {
-      const r = await pollBatch(job.batch_id, `3b-${shiftId}`);
+      const r = await pollBatch(job.batch_id, batchCustomId("3b", shiftId));
       if (!r.ended) return describeStage(job);
       if (r.error) throw new Error(`2차 폭풍 구글링 엎어짐: ${r.error}`);
       const json = JSON.stringify(extractJson(r.message));

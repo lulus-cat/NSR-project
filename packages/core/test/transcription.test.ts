@@ -399,6 +399,23 @@ describe("LLM 에 보내는 규칙표", () => {
     expect(rules).not.toContain("← 추석");
     expect(rules).not.toContain("← 음료수");
   });
+
+  it("내가 화면에서 고쳐 확정된 것도 함께 보낸다", () => {
+    let memory = createMemory(2);
+    memory = recordCorrection(memory, "취치", "튜브치", 1);
+    memory = recordCorrection(memory, "취치", "튜브치", 2);
+    const rules = buildCorrectionRulesForLLM(defaultLexicon, memory);
+    expect(rules).toContain("튜브치 ← 취치");
+  });
+
+  it("아직 한 번뿐인 교정은 확정이 아니라 보내지 않는다", () => {
+    const memory = recordCorrection(createMemory(2), "트라커", "트로카", 1);
+    expect(buildCorrectionRulesForLLM(defaultLexicon, memory)).not.toContain("트로카");
+  });
+
+  it("사전만 줬을 때와 같은 자리에 확정 목록이 없다", () => {
+    expect(buildCorrectionRulesForLLM(defaultLexicon)).not.toContain("내가 고쳐서 확정한 것");
+  });
 });
 
 describe("휘스퍼 전용 교정", () => {

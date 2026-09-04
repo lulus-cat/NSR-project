@@ -3,14 +3,24 @@ import { Alert, Linking, Platform, Pressable, ScrollView, Switch, TextInput, Vie
 import type { ComponentProps, ReactNode } from "react";
 import { Text } from "react-native";
 import { useRouter } from "expo-router";
-import { DEFAULT_RECORDING_POLICY, type ShiftCode } from "@nsr/core";
+import {
+  DEFAULT_RECORDING_POLICY,
+  DEFAULT_TEMPLATES,
+  type ShiftCode,
+  type ShiftTemplate,
+} from "@nsr/core";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { Badge, Body, Button, Card, Divider, Heading, Row, Small } from "../../src/components/ui";
-import { CONTENT_MAX, radius, space, type, useTheme } from "../../src/theme";
+import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import { useApp } from "../../src/state/AppContext";
 import { getSetting, resetDbHandle, setSetting, totalStorageBytes } from "../../src/db";
-import { SETTINGS_KEYS, platformCapability } from "../../src/services/scheduler";
+import {
+  SETTINGS_KEYS,
+  loadDutyTemplates,
+  platformCapability,
+  saveDutyTemplateOverride,
+} from "../../src/services/scheduler";
 import { deleteAllRecordings } from "../../src/services/files";
 import {
   clearWorkplace,
@@ -267,6 +277,17 @@ export default function Settings() {
 
   const router = useRouter();
   const policy = app.policy;
+
+  // ── 근무·기록 시간 — 듀티표 화면에 있던 것을 여기로 옮겼다.
+  // 설정에서 만지는 값이라 설정에 둔다. 달력·근무 통계·자동 기록·홈의 인계
+  // 체류 표시가 전부 이 값을 쓴다.
+  const [templates, setTemplates] = useState<Record<ShiftCode, ShiftTemplate>>(DEFAULT_TEMPLATES);
+  const [editCode, setEditCode] = useState<ShiftCode | null>(null);
+  const [editForm, setEditForm] = useState({ start: "", end: "", pre: "", post: "" });
+  const [timeMsg, setTimeMsg] = useState<string | null>(null);
+  useEffect(() => {
+    void loadDutyTemplates().then(setTemplates);
+  }, []);
   const capability = platformCapability(iosContinuous);
   // 3택과 같은 판정 — 어느 방식의 세부 설정을 펼칠지 정한다.
   const mode = policy.enabled ? "duty" : geoOn ? "geo" : "off";
@@ -511,12 +532,154 @@ export default function Settings() {
             </View>
             <Small>듀티표에 해당 코드가 있는 날만 자동으로 기록합니다.</Small>
             <Divider />
+            <Small muted={false}>근무·기록 시간</Small>
             <Small>
-              근무 시각·인계 앞뒤·기록 시작/유지 여유는{" "}
-              <Text style={{ fontWeight: "700" }}>듀티표 화면의 &lsquo;근무·기록 시간
-              설정&rsquo;</Text>에서 한 번에 바꿉니다 — 여기와 거기에 나뉘어 있던 것을
-              합쳤습니다.
+              근무를 눌러 시각과 인계 앞뒤 여유를 고치십시오. 달력·근무 통계·자동
+              기록·홈의 인계 체류 표시가 전부 이 값을 씁니다.
             </Small>
+            {(["D", "E", "N", "ADM", "SPC"] as ShiftCode[]).map((code) => {
+              const tpl = templates[code];
+              const editing = editCode === code;
+              return (
+                <View key={code}>
+                  <Pressable
+                    accessibilityRole="button"
+                    onPress={() => {
+                      if (editing) {
+                        setEditCode(null);
+                        return;
+                      }
+                      setEditCode(code);
+                      setEditForm({
+                        start: tpl.startTime ?? "",
+                        end: tpl.endTime ?? "",
+                        pre: String(tpl.preHandoverMin),
+                        post: String(tpl.postHandoverMin),
+                      });
+                    }}
+                    style={{
+                      flexDirection: "row",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      minHeight: TOUCH_MIN,
+                    }}
+                  >
+                    <Body>{tpl.label}</Body>
+                    <Small>
+                      {tpl.startTime}~{tpl.endTime} · 인계 앞 {tpl.preHandoverMin}분 / 뒤{" "}
+                      {tpl.postHandoverMin}분 {editing ? "▲" : "▼"}
+                    </Small>
+                  </Pressable>
+                  {editing ? (
+                    <View style={{ gap: space.sm, paddingBottom: space.md }}>
+                      <View style={{ flexDirection: "row", gap: space.sm }}>
+                        {(
+                          [
+                            ["start", "시작 (07:00)"],
+                            ["end", "종료 (15:00)"],
+                          ] as const
+                        ).map(([field, ph]) => (
+                          <TextInput
+                            key={field}
+                            value={editForm[field]}
+                            onChangeText={(v) => setEditForm((f) => ({ ...f, [field]: v }))}
+                            placeholder={ph}
+                            placeholderTextColor={t.textMuted}
+                            keyboardType="numbers-and-punctuation"
+                            style={{
+                              flex: 1,
+                              color: t.text,
+                              backgroundColor: t.surfaceAlt,
+                              borderRadius: radius.md,
+                              padding: space.md,
+                              fontSize: 14,
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <View style={{ flexDirection: "row", gap: space.sm }}>
+                        {(
+                          [
+                            ["pre", "인계 앞(분)"],
+                            ["post", "인계 뒤(분)"],
+                          ] as const
+                        ).map(([field, ph]) => (
+                          <TextInput
+                            key={field}
+                            value={editForm[field]}
+                            onChangeText={(v) => setEditForm((f) => ({ ...f, [field]: v }))}
+                            placeholder={ph}
+                            placeholderTextColor={t.textMuted}
+                            keyboardType="number-pad"
+                            style={{
+                              flex: 1,
+                              color: t.text,
+                              backgroundColor: t.surfaceAlt,
+                              borderRadius: radius.md,
+                              padding: space.md,
+                              fontSize: 14,
+                            }}
+                          />
+                        ))}
+                      </View>
+                      <Button
+                        label="저장"
+                        tone="primary"
+                        onPress={() => {
+                          void (async () => {
+                            const time = /^([01]?\d|2[0-3]):[0-5]\d$/;
+                            if (!time.test(editForm.start) || !time.test(editForm.end)) {
+                              setTimeMsg("시각은 07:00 같은 HH:MM 꼴이어야 합니다.");
+                              return;
+                            }
+                            const pre = Number(editForm.pre);
+                            const post = Number(editForm.post);
+                            if (
+                              !Number.isFinite(pre) ||
+                              !Number.isFinite(post) ||
+                              pre < 0 ||
+                              post < 0
+                            ) {
+                              setTimeMsg("인계 분은 0 이상의 숫자여야 합니다.");
+                              return;
+                            }
+                            await saveDutyTemplateOverride(code, {
+                              startTime: editForm.start,
+                              endTime: editForm.end,
+                              preHandoverMin: Math.round(pre),
+                              postHandoverMin: Math.round(post),
+                            });
+                            setTemplates(await loadDutyTemplates());
+                            setEditCode(null);
+                            setTimeMsg(null);
+                          })();
+                        }}
+                      />
+                    </View>
+                  ) : null}
+                  <Divider />
+                </View>
+              );
+            })}
+            {timeMsg ? <Small muted={false}>{timeMsg}</Small> : null}
+            <Small muted={false}>자동 기록 여유</Small>
+            <Small>
+              인계를 놓치지 않으려면 위의 인계 앞뒤보다 넉넉해야 합니다.
+            </Small>
+            <PresetRow
+              label="기록 시작 전"
+              value={policy.leadMinutes}
+              unit="분"
+              options={[15, 30, 45, 60]}
+              onSelect={(v) => void app.updatePolicy({ ...policy, leadMinutes: v })}
+            />
+            <PresetRow
+              label="종료 후 유지"
+              value={policy.trailMinutes}
+              unit="분"
+              options={[15, 30, 40, 60]}
+              onSelect={(v) => void app.updatePolicy({ ...policy, trailMinutes: v })}
+            />
           </>
         ) : null}
 

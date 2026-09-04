@@ -19,7 +19,12 @@
  * 캐시가 실제로 맞는지는 `usage.cache_read_input_tokens`로 확인한다.
  */
 
-import { buildGlossaryForLLM, buildCorrectionRulesForLLM, type Lexicon } from "@nsr/core";
+import {
+  buildGlossaryForLLM,
+  buildCorrectionRulesForLLM,
+  type CorrectionMemory,
+  type Lexicon,
+} from "@nsr/core";
 import { getSetting, setSetting } from "../db";
 import { redactForNetwork } from "./export";
 
@@ -313,11 +318,13 @@ const POST_EDIT_SYSTEM = `당신은 한국 병원 병동의 간호 인계 대화
 export async function postEditTranscript(
   correctedText: string,
   lexicon: Lexicon,
+  /** 내가 화면에서 고쳐 확정된 교정 기록. 사전에 없는 이 병동만의 오인식이 여기 있다. */
+  memory?: CorrectionMemory,
 ): Promise<{ text: string; redactedCount: number; cacheHit: boolean }> {
   const redacted = await redactForNetwork(correctedText);
   const glossary = buildGlossaryForLLM(lexicon);
   // 확정된 오인식 대응표. 용어집(aliases)만으로는 "대노관"이 데노간인 줄 모른다.
-  const rules = buildCorrectionRulesForLLM(lexicon);
+  const rules = buildCorrectionRulesForLLM(lexicon, memory);
 
   if ((await getProvider()) !== "anthropic") {
     const text = await callOpenAi({
@@ -367,13 +374,33 @@ export async function postEditTranscript(
  * LLM 출력에는 [이름] 같은 대체 표식이 남는데, 그걸 저장하면 **기기 안의
  * 원본이 지워진다** — 전사본은 증거라 기기 내 원본은 가리지 않는 것이 규칙이다.
  */
+/**
+ * 교정 기록에서 개인정보로 보이는 규칙을 빼낸 사본.
+ *
+ * 이 목록은 사용자가 손으로 친 말이라 환자 이름이 섞여 들어갈 수 있다. 밖으로
+ * 나가는 것은 전부 redactForNetwork 를 지나야 하므로, 가려지는 규칙은 아예 뺀다
+ * (가린 채로 보내면 "[이름] ← …" 같은 쓸모없는 규칙이 된다).
+ */
+async function redactMemory(memory: CorrectionMemory): Promise<CorrectionMemory> {
+  const rules: CorrectionMemory["rules"] = {};
+  for (const [key, rule] of Object.entries(memory.rules)) {
+    const red = await redactForNetwork(`${rule.from} ${rule.to}`);
+    if (red.result.redactedCount > 0) continue;
+    rules[key] = rule;
+  }
+  return { ...memory, rules };
+}
+
 export async function polishTranscriptSegments(
   segments: { id: string; text: string }[],
   lexicon: Lexicon,
   onProgress?: (done: number, total: number) => void,
+  /** 확정된 내 교정 기록. 개인정보로 보이는 줄은 여기서 걸러 보낸다. */
+  memory?: CorrectionMemory,
 ): Promise<Map<string, string>> {
   const changed = new Map<string, string>();
   const CHUNK = 60;
+  const safeMemory = memory ? await redactMemory(memory) : undefined;
 
   for (let at = 0; at < segments.length; at += CHUNK) {
     const part = segments.slice(at, at + CHUNK);
@@ -387,7 +414,7 @@ export async function polishTranscriptSegments(
       locked.push(red.result.redactedCount > 0);
     }
 
-    const { text } = await postEditTranscript(lines.join("\n"), lexicon);
+    const { text } = await postEditTranscript(lines.join("\n"), lexicon, safeMemory);
     const outLines = text.split("\n");
     if (outLines.length === part.length) {
       for (let i = 0; i < part.length; i++) {
