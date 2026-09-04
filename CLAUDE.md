@@ -38,6 +38,7 @@ npm ci && npm test && npm run typecheck          # core. 커밋 전 반드시
 cd apps/mobile && npm ci && npx tsc --noEmit     # 앱 타입체크 (Expo Go 로는 못 돌린다 — 네이티브 모듈)
 node tools/check-expo-versions.mjs apps/mobile   # 네이티브 의존성 건드렸으면 반드시
 node tools/review-transcript.mjs data/transcripts/<파일>   # 전사본 1차 검토 → 판정표·질문
+node tools/sync-skill-rules.mjs                  # 확정 규칙을 스킬 안으로 (confirmed.jsonl 을 고쳤으면 반드시)
 ```
 
 앱 실행 검증은 CI 가 만든 APK 를 폰에 설치해서 한다. 이 환경에서는 안드로이드 빌드가 안 돈다.

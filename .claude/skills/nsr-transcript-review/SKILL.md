@@ -11,8 +11,9 @@ Claude 가 교정하고, 그때 확정된 판단만 `references/` 에 남긴다.
 
 ## 지금 상태
 
-- 채워진 교정 세션: **0회.** `references/decisions.md`(확정 기준)와 `references/log.md`(세션 기록)는 비어 있다.
-- 비어 있는 동안의 태도: 문맥으로 후보를 세우되, 확신이 서지 않으면 **묻는 쪽**으로 기운다.
+- 채워진 교정 세션: **2회** (2026-09-02 규칙 검토, 2026-09-03 문맥 교정 · 녹음 8개 6,391문장).
+- 확정된 규칙 73건 · 표제어 55개 → `references/confirmed-rules.md`. 이 표에 있는 것은 묻지 않고 고친다.
+- 표에 없는 것: 문맥으로 후보를 세우되, 확신이 서지 않으면 **묻는 쪽**으로 기운다.
 
 ## 사용자가 정한 틀 (바뀌지 않는 부분)
 
@@ -83,13 +84,24 @@ Claude 가 교정하고, 그때 확정된 판단만 `references/` 에 남긴다.
 
 ## API 스킬로 쓰일 때
 
-`tools/upload-skill.mjs` 로 이 폴더가 그대로 Claude API 에 올라간다. 그때 모델은 저장소도 도구도
-없이 이 문서와 `references/` 만 읽는다. 절차 1은 건너뛰고, 출력은 판정표 + 질문만 낸다.
-입력의 `[이름]` 같은 가림 표시는 그대로 둔다.
+`tools/upload-skill.mjs` 로 이 폴더가 그대로 Claude API 에 올라간다. 그때 모델은 **저장소도 도구도
+없이 이 문서와 `references/` 만** 읽는다. 그러니 이렇게 한다.
+
+- 절차 1(검토 도구)은 건너뛴다. 대신 `references/confirmed-rules.md` 를 규칙표로 삼아 직접 적용한다.
+  그 표에 있는 말은 확신 "높음" 으로 조용히 고친다 — 다시 묻지 않는다.
+- 출력은 **읽는 판**(`references/context-correction.md` 의 출력 A 형식) + 못 정한 것 질문이다.
+  판정표만 내지 않는다. 사람이 읽을 수 있는 판이 산출물이다.
+- 고친 목록(출력 B)은 JSON 줄로 함께 낸다. 사용자가 그것으로 규칙을 늘린다.
+- 입력의 `[이름]`·`[생년월일]` 가림 표시는 그대로 둔다. 가려지지 않은 이름은 `[이름]` 으로 바꾼다.
+- 파일에 쓸 수 없으므로 답변 본문에 낸다. 길면 녹음 단위로 나눠 이어서 낸다.
+
+**규칙을 새로 만들지 않는다.** 확정은 사용자만 한다. 표에 없는 것은 `(?)`·`[?말]` 로 두고 묻는다.
 
 ## 참고
 
-- `references/decisions.md` — 확정된 판별 기준 (실제 세션에서만 채운다)
+- `references/confirmed-rules.md` — **확정 규칙표.** `confirmed.jsonl` 에서 자동 생성된다
+  (`node tools/sync-skill-rules.mjs`). 손으로 고치지 않는다.
+- `references/decisions.md` — 판별 기준과 뒤집힌 판정 (왜 그렇게 정했는지)
 - `references/context-correction.md` — 읽는 판을 만드는 규칙 (표기·문단·반복·출력 형식)
 - `references/log.md` — 세션별 교정 기록
 - `docs/07-transcript-review-workflow.md` — 누가 언제 무엇을 하는지
