@@ -1,34 +1,35 @@
 /**
- * 근무 기록 — 전사를 돌리고, 보고서와 근무 환경을 보는 화면.
+ * 근무 기록 — 녹음을 글자로 바꾸는 화면. 이 화면의 일은 셋뿐이다.
  *
- * 전사 **결과**(문장 목록·재생·수정)는 여기 없다. `/transcript/[id]` 로
- * 분리했다 — 결과와 실행이 한 화면에 있으면 전사가 끝나는 순간 수천
- * 문장이 이 화면에 쏟아져 모든 것이 무거워진다. 여기는 가볍게 남는다.
+ *   1. 녹음 바꾸기 — 이 근무에 밀린 녹음을 글자로.
+ *   2. 날짜 고르기 — 어느 날 녹음이 밀렸는지 한눈에. 안 그러면 어디까지
+ *      바꿨는지 잊는다. '전체 보기'를 켜면 모든 날의 밀린 녹음이 한 목록에 선다.
+ *   3. 음성 파일 — 날짜·파일 이름·시각. 들어보고, 잘못 올린 것은 지운다.
+ *
+ * 전사 **결과**(문장 목록·재생·수정)와 심층 분석은 `/transcript/[id]` 에 있다.
+ * 보고서는 학습 탭에서, 병동 분위기(온도)는 듀티표 달력에서 본다 — 여기 있던
+ * 두 탭은 뺐다.
  */
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Alert, Pressable, ScrollView, View } from "react-native";
 import { Text } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
-import {
-  DEFAULT_TEMPLATES,
-  type TaeumScore,
-  type ShiftCode,
-} from "@nsr/core";
-import { Badge, Body, Button, Card, Divider, GaugeBar, Heading, Small } from "../../src/components/ui";
+import { DEFAULT_TEMPLATES, type ShiftCode } from "@nsr/core";
+import { Badge, Button, Card, Divider, GaugeBar, Heading, Small } from "../../src/components/ui";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   countSegments,
   deleteShiftRecordings,
   getShiftReportMarkdown,
   getShiftReport,
-  getTaeumScore,
   listCardsForShift,
   listSegments,
   listConfirmations,
   listRecordings,
+  pendingTranscriptions,
   segmentCountsByRecording,
   type ConfirmationRow,
   type RecordingRow,
@@ -53,16 +54,42 @@ import {
 } from "../../src/services/export-bundle";
 import { exportNotePdf } from "../../src/services/note-doc";
 
-function formatTime(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
-  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
-}
-
 /** epoch ms → "HH:MM 시작". 이름 없는 녹음 파일을 부를 때. */
 function startClock(ms: number): string {
   const d = new Date(ms);
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 시작`;
+}
+
+const WEEKDAY = ["일", "월", "화", "수", "목", "금", "토"];
+
+/** 근무(날짜·듀티) 하나에 묶인 밀린 녹음. */
+interface PendingGroup {
+  shiftId: string;
+  date: string;
+  label: string;
+  rows: RecordingRow[];
+}
+
+/** 밀린 녹음을 근무별로 묶는다. 최근 날짜가 앞으로. */
+function groupPending(rows: RecordingRow[]): PendingGroup[] {
+  const map = new Map<string, RecordingRow[]>();
+  for (const r of rows) {
+    const key = r.shift_id;
+    if (!key) continue; // 근무에 안 붙은 기록은 날짜를 모른다.
+    if (!map.has(key)) map.set(key, []);
+    map.get(key)!.push(r);
+  }
+  return [...map.entries()]
+    .map(([sid, list]) => {
+      const [date, code] = sid.split(":");
+      return {
+        shiftId: sid,
+        date,
+        label: DEFAULT_TEMPLATES[(code as ShiftCode) ?? "OTHER"]?.label ?? "근무",
+        rows: list.sort((a, b) => a.started_at - b.started_at),
+      };
+    })
+    .sort((a, b) => b.date.localeCompare(a.date));
 }
 
 /** 녹음 상태를 사람이 읽는 배지로. */
@@ -81,8 +108,6 @@ function stateBadge(state: string): { text: string; tone: "ok" | "muted" | "warn
   }
 }
 
-type Tab = "report" | "environment";
-
 export default function ShiftDetail() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -91,14 +116,12 @@ export default function ShiftDetail() {
   const shiftId = decodeURIComponent(params.id ?? "");
   const [date, code] = shiftId.split(":");
 
-  const [tab, setTab] = useState<Tab>("report");
   const [sentenceCount, setSentenceCount] = useState(0);
   const [recordings, setRecordings] = useState<RecordingRow[]>([]);
   /** 기록별 문장 수 — 파일마다 몇 문장인지, 따로 둔 파일에 결과가 있는지. */
   const [counts, setCounts] = useState<Map<string, number>>(new Map());
   /** 이 근무를 돌리는 중인 러너 상태. 다른 근무 것이거나 안 돌면 null. */
   const [runner, setRunner] = useState<RunnerState | null>(null);
-  const [taeum, setTaeum] = useState<TaeumScore | null>(null);
   const [reportMd, setReportMd] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -116,23 +139,26 @@ export default function ShiftDetail() {
   // 거는 것이 순서에 맞다. 여기는 그 결과(보고서·확인 필요 목록)를 보는 곳으로 남는다.
   const [confirmations, setConfirmations] = useState<ConfirmationRow[]>([]);
 
+  /** 이 근무만이 아니라 **모든 날**의 밀린 녹음. 어느 날 것이 남았는지 잊지 않게. */
+  const [allPending, setAllPending] = useState<RecordingRow[]>([]);
+  /** 참이면 음성 파일 목록이 모든 날의 밀린 녹음을 보여준다. */
+  const [showAll, setShowAll] = useState(false);
+
   const load = useCallback(async () => {
-    const [count, recs, score, md, cfs, perRec] = await Promise.all([
+    const [count, recs, md, cfs, perRec, waiting] = await Promise.all([
       countSegments(shiftId),
       listRecordings(shiftId),
-      getTaeumScore(shiftId),
       getShiftReportMarkdown(shiftId),
       listConfirmations(shiftId),
       segmentCountsByRecording(shiftId),
+      pendingTranscriptions(),
     ]);
     setSentenceCount(count);
     setRecordings(recs);
     setCounts(perRec);
-    // 지표는 심층 분석이 끝날 때만 센다. 여기서 자동으로 세면 AI 다듬기만 해도
-    // 온도 측정이 끝나 있어, 분석해야 나오는 것이라는 말과 어긋난다.
-    setTaeum(score);
     setReportMd(md);
     setConfirmations(cfs);
+    setAllPending(waiting);
   }, [shiftId]);
 
   // 전사 결과 화면에서 지우고(또는 분석을 걸고) 돌아오는 길 — 낡지 않게 다시 읽는다.
@@ -152,6 +178,14 @@ export default function ShiftDetail() {
     .filter((r) => r.separate !== 1)
     .reduce((sum, r) => sum + (counts.get(r.id) ?? 0), 0);
   const dutyLabel = DEFAULT_TEMPLATES[(code as ShiftCode) ?? "OTHER"]?.label ?? "근무";
+  const pendingShifts = useMemo(() => groupPending(allPending), [allPending]);
+  // 지금 보고 있는 근무는 밀린 게 없어도 칩에 남는다 — 내가 어디에 있는지 보여야 한다.
+  const dateChips = useMemo(() => {
+    if (pendingShifts.some((g) => g.shiftId === shiftId)) return pendingShifts;
+    return [{ shiftId, date, label: dutyLabel, rows: [] as RecordingRow[] }, ...pendingShifts].sort(
+      (a, b) => b.date.localeCompare(a.date),
+    );
+  }, [date, dutyLabel, pendingShifts, shiftId]);
 
   const [runnerBusy, setRunnerBusy] = useState(false);
   // 파일이 바뀔 때마다 목록을 다시 읽는다 — 예전엔 다 끝나야 읽어서, 두 번째
@@ -282,7 +316,7 @@ export default function ShiftDetail() {
                 if (previewId === rec.id) stopPreview();
                 setError(null);
                 try {
-                  const uris = await deleteShiftRecordings(shiftId, [rec.id]);
+                  const uris = await deleteShiftRecordings(rec.shift_id ?? shiftId, [rec.id]);
                   const FileSystem = await import("expo-file-system/legacy");
                   for (const uri of uris) {
                     try {
@@ -411,6 +445,93 @@ export default function ShiftDetail() {
     }
   }, [dutyLabel, preview]);
 
+  /**
+   * 음성 파일 한 줄. 목록이 둘(이 근무 / 밀린 녹음 전체)이라 한 곳에 모았다.
+   * `mine` 이 참이면 이 근무 것이라 문장 수·따로 보기 표시까지 붙인다.
+   */
+  const recordingRow = (r: RecordingRow, mine: boolean) => {
+    const badge = stateBadge(r.state);
+    const started = new Date(r.started_at);
+    const clock = `${String(started.getHours()).padStart(2, "0")}:${String(started.getMinutes()).padStart(2, "0")}`;
+    const mins = Math.round(r.duration_sec / 60);
+    const mb = r.size_bytes > 0 ? (r.size_bytes / (1024 * 1024)).toFixed(1) : null;
+    const playingThis = previewId === r.id;
+    const sentences = counts.get(r.id) ?? 0;
+    return (
+      <View key={r.id}>
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: space.md,
+            minHeight: TOUCH_MIN,
+          }}
+        >
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={playingThis ? "그만 듣기" : "맛보기 재생"}
+            disabled={!r.file_uri}
+            onPress={() => togglePreview(r)}
+            style={({ pressed }) => ({
+              width: TOUCH_MIN,
+              height: TOUCH_MIN,
+              borderRadius: radius.full,
+              backgroundColor: playingThis ? t.accentSoft : t.surfaceAlt,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: r.file_uri ? 1 : 0.4,
+              transform: [{ scale: pressed ? 0.94 : 1 }],
+            })}
+          >
+            <Ionicons name={playingThis ? "stop" : "play"} size={18} color={t.accent} />
+          </Pressable>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={[type.body, { color: t.text, fontWeight: "600" }]} numberOfLines={1}>
+              {r.label ?? `${clock} 녹음`}
+            </Text>
+            <Text style={[type.small, TABULAR, { color: t.textMuted, fontWeight: "600" }]}>
+              {clock} 시작
+              {mins > 0 ? ` · ${mins}분` : ""}
+              {mb ? ` · ${mb}MB` : ""}
+              {mine && r.separate === 1 ? " · 따로 보기" : ""}
+              {mine && sentences > 0 ? ` · ${sentences}문장` : ""}
+              {r.file_uri ? "" : " · 파일 없음 휑~"}
+            </Text>
+          </View>
+          <Badge
+            text={
+              r.state === "transcribing" && runner?.fileId === r.id
+                ? `전사 중 ${runner.filePercent}%`
+                : badge.text
+            }
+            tone={badge.tone}
+          />
+          {/* 지우기 — 변환 중인 파일만 막는다. 도는 중에 빼면 러너가 헛돈다. */}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel="이 녹음 지우기"
+            disabled={r.state === "transcribing"}
+            onPress={() => removeRecording(r)}
+            style={({ pressed }) => ({
+              width: TOUCH_MIN,
+              height: TOUCH_MIN,
+              alignItems: "center",
+              justifyContent: "center",
+              opacity: r.state === "transcribing" ? 0.3 : pressed ? 0.5 : 1,
+            })}
+          >
+            <Ionicons name="trash-outline" size={18} color={t.danger} />
+          </Pressable>
+        </View>
+        {r.state === "transcribing" && runner?.fileId === r.id ? (
+          <View style={{ marginTop: space.xs }}>
+            <GaugeBar ratio={runner.filePercent / 100} color={t.accent} />
+          </View>
+        ) : null}
+      </View>
+    );
+  };
+
   return (
     <ScrollView
       contentContainerStyle={{
@@ -461,98 +582,121 @@ export default function ShiftDetail() {
         {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
       </Card>
 
-      {/* ── 음성 파일 — 건수 뒤에 숨어 있던 녹음이 파일별로 보인다 ── */}
-      {recordings.length > 0 ? (
+      {/* ── 날짜 고르기 — 어느 날 녹음이 밀렸는지 잊지 않게 ── */}
+      <Card tone={allPending.length > 0 ? "warn" : "default"}>
+        <Heading>밀린 녹음</Heading>
+        <Small>
+          {allPending.length > 0
+            ? `아직 글자로 안 바꾼 녹음이 ${allPending.length}건 · ${pendingShifts.length}일치 남았어요. 날짜를 누르면 그날 근무로 갑니다.`
+            : "밀린 녹음이 없어요. 다 바꿨습니다!"}
+        </Small>
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={{ gap: space.sm, paddingVertical: space.xs }}
+        >
+          {dateChips.map((g) => {
+            const on = g.shiftId === shiftId;
+            const d = new Date(`${g.date}T00:00:00`);
+            return (
+              <Pressable
+                key={g.shiftId}
+                accessibilityRole="button"
+                accessibilityState={{ selected: on }}
+                onPress={() => {
+                  if (on) return;
+                  stopPreview();
+                  router.replace(`/shift/${encodeURIComponent(g.shiftId)}`);
+                }}
+                style={{
+                  minWidth: 74,
+                  paddingVertical: space.sm,
+                  paddingHorizontal: space.md,
+                  borderRadius: radius.md,
+                  backgroundColor: on ? t.accent : t.surfaceAlt,
+                  alignItems: "center",
+                  gap: 2,
+                }}
+              >
+                <Text style={[type.small, { color: on ? "#FFFFFF" : t.textMuted }]}>
+                  {WEEKDAY[d.getDay()]}
+                </Text>
+                <Text style={[type.body, TABULAR, { color: on ? "#FFFFFF" : t.text, fontWeight: "700" }]}>
+                  {d.getMonth() + 1}/{d.getDate()}
+                </Text>
+                <Text style={[type.caption, { color: on ? "#FFFFFF" : t.textMuted }]}>
+                  {g.label}
+                  {g.rows.length > 0 ? ` · ${g.rows.length}건` : ""}
+                </Text>
+              </Pressable>
+            );
+          })}
+        </ScrollView>
+        {allPending.length > 0 ? (
+          <Button
+            label={
+              showAll
+                ? "이 근무 파일만 보기"
+                : `밀린 녹음 전체 보기 (${allPending.length}건)`
+            }
+            onPress={() => setShowAll((v) => !v)}
+          />
+        ) : null}
+      </Card>
+
+      {/* ── 음성 파일 — 날짜·파일 이름·시각. 들어보고, 잘못 올린 것은 지운다 ── */}
+      {showAll ? (
+        <Card>
+          <Heading>밀린 녹음 전체</Heading>
+          <Small>
+            모든 날의 아직 안 바꾼 녹음이에요. 바꾸려면 그 날짜 근무로 가서 &lsquo;녹음 바꾸기&rsquo;를
+            누르세요.
+          </Small>
+          {pendingShifts.map((g) => (
+            <View key={g.shiftId} style={{ gap: space.xs }}>
+              <Divider />
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`${g.date} ${g.label} 근무로 가기`}
+                onPress={() => {
+                  if (g.shiftId === shiftId) {
+                    setShowAll(false);
+                    return;
+                  }
+                  stopPreview();
+                  router.replace(`/shift/${encodeURIComponent(g.shiftId)}`);
+                }}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  minHeight: TOUCH_MIN,
+                }}
+              >
+                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>
+                  {g.date} · {g.label}
+                </Text>
+                <Small muted={false}>
+                  {g.rows.length}건 {g.shiftId === shiftId ? "· 지금 이 근무" : "›"}
+                </Small>
+              </Pressable>
+              {g.rows.map((r) => recordingRow(r, false))}
+            </View>
+          ))}
+        </Card>
+      ) : recordings.length > 0 ? (
         <Card>
           <Heading>음성 파일 원본</Heading>
           <Small>
-            요 듀티 때 털린 녹음 원본이에요. 변환하기 전에 재생 버튼 눌러서 먼저 살짝 들어볼 수
-            있고, 잘못 올린 파일은 휴지통 버튼으로 뺄 수 있어요
+            {date} · {dutyLabel} 녹음 원본이에요. 바꾸기 전에 재생 버튼으로 먼저 들어볼 수 있고,
+            잘못 올린 파일은 휴지통 버튼으로 뺄 수 있어요
           </Small>
-          {recordings.map((r, i) => {
-            const badge = stateBadge(r.state);
-            const started = new Date(r.started_at);
-            const clock = `${String(started.getHours()).padStart(2, "0")}:${String(started.getMinutes()).padStart(2, "0")}`;
-            const mins = Math.round(r.duration_sec / 60);
-            const mb = r.size_bytes > 0 ? (r.size_bytes / (1024 * 1024)).toFixed(1) : null;
-            const playingThis = previewId === r.id;
-            return (
-              <View key={r.id}>
-                {i > 0 ? <Divider /> : null}
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: space.md,
-                    minHeight: TOUCH_MIN,
-                  }}
-                >
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel={playingThis ? "그만 듣기" : "맛보기 재생"}
-                    disabled={!r.file_uri}
-                    onPress={() => togglePreview(r)}
-                    style={({ pressed }) => ({
-                      width: TOUCH_MIN,
-                      height: TOUCH_MIN,
-                      borderRadius: radius.full,
-                      backgroundColor: playingThis ? t.accentSoft : t.surfaceAlt,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      opacity: r.file_uri ? 1 : 0.4,
-                      transform: [{ scale: pressed ? 0.94 : 1 }],
-                    })}
-                  >
-                    <Ionicons name={playingThis ? "stop" : "play"} size={18} color={t.accent} />
-                  </Pressable>
-                  <View style={{ flex: 1, gap: 2 }}>
-                    <Text
-                      style={[type.body, { color: t.text, fontWeight: "600" }]}
-                      numberOfLines={1}
-                    >
-                      {r.label ?? `${clock} 시작`}
-                      {mins > 0 ? ` · ${mins}분 (순삭)` : ""}
-                    </Text>
-                    <Text style={[type.small, TABULAR, { color: t.textMuted, fontWeight: "600" }]}>
-                      {mb ? `${mb}MB` : "사이즈 모름"}
-                      {r.separate === 1 ? " · 따로 보기" : ""}
-                      {(counts.get(r.id) ?? 0) > 0 ? ` · ${counts.get(r.id)}문장` : ""}
-                      {r.file_uri ? "" : " · 파일 없음 휑~"}
-                    </Text>
-                  </View>
-                  <Badge
-                    text={
-                      r.state === "transcribing" && runner?.fileId === r.id
-                        ? `전사 중 ${runner.filePercent}%`
-                        : badge.text
-                    }
-                    tone={badge.tone}
-                  />
-                  {/* 지우기 — 변환 중인 파일만 막는다. 도는 중에 빼면 러너가 헛돈다. */}
-                  <Pressable
-                    accessibilityRole="button"
-                    accessibilityLabel="이 녹음 지우기"
-                    disabled={r.state === "transcribing"}
-                    onPress={() => removeRecording(r)}
-                    style={({ pressed }) => ({
-                      width: TOUCH_MIN,
-                      height: TOUCH_MIN,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      opacity: r.state === "transcribing" ? 0.3 : pressed ? 0.5 : 1,
-                    })}
-                  >
-                    <Ionicons name="trash-outline" size={18} color={t.danger} />
-                  </Pressable>
-                </View>
-                {r.state === "transcribing" && runner?.fileId === r.id ? (
-                  <View style={{ marginTop: space.xs }}>
-                    <GaugeBar ratio={runner.filePercent / 100} color={t.accent} />
-                  </View>
-                ) : null}
-              </View>
-            );
-          })}
+          {recordings.map((r, i) => (
+            <View key={r.id}>
+              {i > 0 ? <Divider /> : null}
+              {recordingRow(r, true)}
+            </View>
+          ))}
         </Card>
       ) : null}
 
@@ -674,169 +818,6 @@ export default function ShiftDetail() {
         </Card>
       ) : null}
 
-      {/* 탭 — 보고서와 근무 환경 */}
-      <View style={{ flexDirection: "row", gap: space.sm }}>
-        {(
-          [
-            ["report", "보고서"],
-            ["environment", "오늘 우리 병동 분위기"],
-          ] as [Tab, string][]
-        ).map(([key, label]) => {
-          const on = tab === key;
-          return (
-            <Pressable
-              key={key}
-              accessibilityRole="tab"
-              accessibilityState={{ selected: on }}
-              onPress={() => setTab(key)}
-              style={{
-                paddingVertical: space.sm,
-                paddingHorizontal: space.lg,
-                borderRadius: radius.sm,
-                backgroundColor: on ? t.accent : t.surfaceAlt,
-              }}
-            >
-              <Text style={{ color: on ? "#fff" : t.text, fontWeight: "600", fontSize: 14 }}>
-                {label}
-              </Text>
-            </Pressable>
-          );
-        })}
-      </View>
-
-      {tab === "report" ? (
-        <>
-          <Card>
-            {reportMd ? (
-              <Text style={[type.body, { color: t.text }]}>{reportMd}</Text>
-            ) : (
-              <Body muted>
-
-  아직 뽑아둔 리포트가 없어요! 글자 변환 다 끝내고 ‘단어장·리포트 뚝딱 만들기’ 꾹 눌러주세요.
-</Body>
-            )}
-          </Card>
-
-          {/* 확인 목록 — 웹 추정은 카드가 아니라 여기 남는다. 해소는 채팅의 임상 판단 모드에서. */}
-          {confirmations.length > 0 ? (
-            <Card tone="warn">
-              <Heading>쌤한테 물어볼 리스트</Heading>
-              <Small>
-                녹음이 웅얼거려서 안 들렸거나 AI가 뇌피셜로 때려 맞춘 것들이에요. 확실치 않아서 단어장엔 안 넣었어요 — 선배한테 리얼 팩트 체크하고, 채팅 탭 '임상 판단' 모드에서 털어버리세요!
-              </Small>
-              {confirmations.map((c) => (
-                <View key={c.id} style={{ gap: 2, paddingVertical: space.sm }}>
-                  <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
-                    <Badge text={c.resolved ? "궁금증 해결 완" : "아직 모름"} tone={c.resolved ? "ok" : "warn"} />
-                    {c.source_id ? <Small>{c.source_id}</Small> : null}
-                  </View>
-                  <Body>{c.question}</Body>
-                  {c.candidate ? <Small>후보: {c.candidate} (확정 아님)</Small> : null}
-                  {c.resolved && c.result ? <Small muted={false}>확인 결과: {c.result}</Small> : null}
-                  <Divider />
-                </View>
-              ))}
-            </Card>
-          ) : null}
-
-
-        </>
-      ) : null}
-
-      {tab === "environment" ? (
-        taeum ? (
-          <>
-            <Card>
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "baseline",
-                  gap: space.sm,
-                }}
-              >
-                <Text style={[type.title, { color: t.text }]}>{taeum.score}</Text>
-                <Badge
-                  text={taeum.levelLabel}
-                  tone={
-                    taeum.level === "severe"
-                      ? "danger"
-                      : taeum.level === "caution"
-                        ? "warn"
-                        : taeum.level === "watch"
-                          ? "muted"
-                          : "ok"
-                  }
-                />
-              </View>
-              <Small>{taeum.disclaimer}</Small>
-            </Card>
-
-            {taeum.events.length > 0 ? (
-              <Card>
-                <Heading>입에서 나온 찐 발언</Heading>
-                <Small>
-  숫자 쪼가리보다 실제 내뱉은 한마디 한마디가 찐 증거죠
-</Small>
-                {taeum.events.map((e, i) => (
-                  <View key={`${e.segmentId}-${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
-                    <View style={{ flexDirection: "row", gap: space.sm, alignItems: "center" }}>
-                      <Badge text={e.categoryLabel} tone="warn" />
-                      <Small>{formatTime(e.atSec)}</Small>
-                    </View>
-                    <Body>&ldquo;{e.quote}&rdquo;</Body>
-                    <Divider />
-                  </View>
-                ))}
-              </Card>
-            ) : (
-              <Card>
-                <Body muted>
-  오? 선 넘는 험악한 말은 안 잡혔어요
-</Body>
-                <Small>
-
-  그렇다고 진짜 아무 일도 없었단 건 아님! 텍스트엔 꼽주는 뉘앙스가 안 담기니까요
-</Small>
-              </Card>
-            )}
-
-            {taeum.patientAggression.length > 0 ? (
-              <Card>
-                <Heading>멱살잡이 텐션 (폭언)</Heading>
-                <Small>
-
-  환자/보호자가 쌍욕 박는 건 산업안전보건법 위반이에요 병원 매뉴얼대로 참교육(대응) 가즈아!
-</Small>
-                {taeum.patientAggression.map((e, i) => (
-                  <View key={`${e.segmentId}-p${i}`} style={{ gap: space.xs, paddingVertical: space.sm }}>
-                    <Small>{formatTime(e.atSec)}</Small>
-                    <Body>&ldquo;{e.quote}&rdquo;</Body>
-                    <Divider />
-                  </View>
-                ))}
-              </Card>
-            ) : null}
-
-            <Card>
-              <Heading>꿀팁 참고</Heading>
-              <Small>
-
-  근로기준법 센세는 직장 내 괴롭힘이랑 보복성 꼽주기를 절대 용서치 않습니다
-</Small>
-              <Small>
-                SOS 칠 곳: 소속 병원 고충처리 부서 · 대한간호협회 간호사 인권센터 · 고용노동부 노동포털
-              </Small>
-            </Card>
-          </>
-        ) : (
-          <Card>
-            <Body muted>
-
-  온도 측정은 심층 분석이 끝나면 나옵니다. 결과 화면에서 누가 말한 건지 콕콕 찍어준 다음 ‘심층 분석 풀악셀 시작!’ 을 눌러주세요
-</Body>
-          </Card>
-        )
-      ) : null}
     </ScrollView>
   );
 }
