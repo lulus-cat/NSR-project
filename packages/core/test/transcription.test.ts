@@ -349,3 +349,34 @@ describe("2026-09-03 문맥 교정 세션에서 사용자가 확정한 것", () 
     expect(fix("발차 쓰고 오후에 나갔어요")).toBe("발차 쓰고 오후에 나갔어요");
   });
 });
+
+describe("2026-09-03 사용자 확정 62건", () => {
+  const fix = (s: string) => correctTranscript(s, { lexicon: defaultLexicon }).text;
+
+  it("확정된 오인식을 고친다", () => {
+    expect(fix("대노관 한차례 들어갔고요")).toContain("데노간");
+    expect(fix("바이팜 걸고 나잘 마스크")).toContain("바이팹");
+    expect(fix("레블라이저 끝나면 빼세요")).toContain("네뷸라이저");
+    expect(fix("알바민 들어가고 있고요")).toContain("알부민");
+    expect(fix("나식스 한 앰플 줬어요")).toContain("라식스");
+    expect(fix("신전 도서 다시 찍는 거고")).toContain("심전도");
+    expect(fix("감동사가 바뀌었어요")).toContain("간병사");
+    expect(fix("오도 받으셨어요")).toContain("오더");
+  });
+
+  it("일반어와 겹치는 것은 건드리지 않는다", () => {
+    // 사용자가 "추석→석션", "음료수→옴니옥스" 를 확정했지만 둘 다 일상어라
+    // 규칙으로 만들지 않았다. 문맥으로만 판단한다.
+    for (const s of [
+      "추석 연휴에 근무 바꿨어요",
+      "음료수 드시고 싶다고",
+      "티켓 예매했어요",
+    ]) {
+      expect(fix(s)).toBe(s);
+    }
+  });
+
+  it("간병사와 요양보호사는 다른 직역이라 섞지 않는다", () => {
+    expect(fix("감동사가 바뀌었어요")).not.toContain("요양보호사");
+  });
+});

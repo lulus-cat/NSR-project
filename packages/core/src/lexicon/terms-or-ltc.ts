@@ -383,6 +383,16 @@ export const LTC_TERMS: LexiconEntry[] = [
     pitfall:
       "식이가 바뀌는 오더는 바뀌는 날 전날 근무가 받는다. 당일 근무가 받으면 하루 어긋난다.",
   },
+{
+    id: "caregiver",
+    ko: "간병사",
+    en: "caregiver",
+    aliases: ["간병인", "간병"],
+    category: "role",
+    definition: "환자 곁에서 식사·체위변경·기저귀 케어를 돕는 인력. 요양보호사와는 자격이 다르다.",
+    pitfall:
+      "투약과 의료행위는 넘길 수 없다. 식이·체위·기구 취급을 맡길 때는 무엇을 어떻게 할지 그 자리에서 확인한다.",
+  },
 ];
 
 export const OR_LTC_TERMS: LexiconEntry[] = [...OR_TERMS, ...LTC_TERMS];

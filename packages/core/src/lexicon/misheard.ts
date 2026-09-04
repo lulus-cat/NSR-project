@@ -19,16 +19,16 @@
  * 여기 없는 개인별 오인식은 쓸수록 자동으로 채워진다.
  */
 export const ASR_MISHEARD: Record<string, string[]> = {
-  "vital-sign": ["비에스"],
+  "vital-sign": ["비에스", "바이타", "풀바이트"],
   spo2: ["세츄레이션"],
-  ekg: ["이케이쥐"],
-  suction: ["섹션"],
-  dressing: ["드래싱"],
+  ekg: ["이케이쥐", "신전 도서", "순전도", "ekt", "이케이지"],
+  suction: ["섹션", "서킹", "박션", "옷션"],
+  dressing: ["드래싱", "드레잉"],
   "braden-scale": ["브래이든"],
   "foley-catheter": ["폴리 카데타", "폴리카데터", "포리"],
-  "levin-tube": ["엘트유브"],
-  "central-line": ["시라인", "체납기"], // 체납기: 2026-09-02 실제 전사본, 사용자 확인 (C-line removal 문맥)
-  abga: ["에비지에이"],
+  "levin-tube": ["엘트유브", "ltv", "일퇴구", "엘츠브"],
+  "central-line": ["시라인", "체납기", "세실리"], // 체납기: 2026-09-02 실제 전사본, 사용자 확인 (C-line removal 문맥)
+  abga: ["에비지에이", "에비제", "에이비제", "이비제"],
   "cardiac-arrest": ["아레스트"],
   expire: ["엑스파이어"],
   delirium: ["델리리움"],
@@ -45,7 +45,7 @@ export const ASR_MISHEARD: Record<string, string[]> = {
   "acting-nurse": ["엑팅"],
   preceptor: ["프리셉타", "쁘리셉터"],
   "back-duty": ["빽듀티"],
-  order: ["오다"],
+  order: ["오다", "오도", "오뎌", "우도"],
   "code-blue": ["코드블"],
   tracheostomy: ["트라키오"],
   "portable-xray": ["포타블"],
@@ -68,5 +68,36 @@ export const ASR_MISHEARD: Record<string, string[]> = {
   warmer: ["워먹이", "어먹이", "머목이"],
   po: ["키오"],
   pantoline: ["하트라인"],
+
+  // ── 2026-09-03 문맥 교정 세션, 사용자 확정 62건 ──
+  // KCl·TID·FiO2·캐뉼라는 아직 사전 표제어가 없어 confirmed.jsonl 에만 둔다.
+  // 흔한 일반어와 겹치는 셋("추석"=명절 · "음료수"=마실 것 · "티켓")은 여기 넣지 않는다.
+  // confirmed.jsonl 의 문맥 메모로만 두고 COMMON_WORDS 가 막는다.
+  denogan: ["대문원", "대농원", "대노안", "대노관", "대노가", "대동원", "대동안", "대도관", "의무관"],
+  bipap: ["바이팜", "바이팬", "아이팟", "가이팝", "바이팝"],
+  "oxygen-device": ["하이플로어", "하이플루", "타이플로", "팔플로어", "나자이 프룽", "나설 풍", "나자프론"],
+  omniox: ["음력수", "음력사"],
+  airvo: ["에어부", "에어본", "에어버드"],
+  calibration: ["칼리버션", "칼리비션", "칼리베이션"],
+  "t-tube": ["티츠부", "키트부", "틱토부"],
+  "t-piece": ["티피쓰"],
+  nebulizer: ["레블라이저", "네블라이저", "레블라이즈"],
+  recheck: ["리치클리"],
+  "nurse-station": ["스페션"],
+  flushing: ["클러싱"],
+  "arterial-line": ["오트라인"],
+  "sterile-strip": ["스테리 스트리비"],
+  hematuria: ["헤마츠비아", "헤마추리아"],
+  diarrhea: ["다이아리아"],
+  albumin: ["알바민", "알부미", "알보미", "알붕"],
+  lasix: ["나식스", "마식스", "아식스", "락식스"],
+  colistin: ["콜리스주", "콜리스 주"],
+  bactroban: ["박트란", "박트남"],
+  bosmin: ["보습인"],
+  mgo: ["mz오"],
+  "normal-saline": ["은에스"],
+  tpn: ["tpm", "티피넨", "췌피엔"],
+  caregiver: ["감동사", "감정사", "감경사", "금병사"],
+  "ltc-visiting-doctor": ["주취", "주씨"],
 
 };
