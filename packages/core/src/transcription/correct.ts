@@ -37,6 +37,17 @@ export interface CorrectionOptions {
   maxWordSpan?: number;
   /** 사용자 교정 이력. 있으면 사전보다 먼저 적용한다. */
   memory?: CorrectionMemory;
+  /**
+   * 이 전사본을 만든 음성인식 엔진.
+   *
+   * `misheard` 목록은 **휘스퍼가 어떻게 틀리는지**의 기록이다 ("대노관"=데노간,
+   * "감동사"=간병사). 다른 엔진은 다르게 틀리므로 그 목록을 들이대면 맞지도 않고
+   * 엉뚱한 말을 바꿀 수 있다. 그래서 휘스퍼가 아니면 misheard 경로를 끈다.
+   * 사전 표기·별칭·약어 읽기 교정은 엔진과 무관하므로 그대로 돈다.
+   *
+   * 기본값 "whisper" — 이 앱의 서버 전사 경로(콜랩·내 PC)가 둘 다 휘스퍼다.
+   */
+  asrEngine?: "whisper" | "other";
 }
 
 interface Token {
@@ -101,7 +112,7 @@ function findBestMatch(
   tokens: Token[],
   from: number,
   lexicon: Lexicon,
-  opts: Required<Pick<CorrectionOptions, "maxWordSpan" | "minPhoneticConfidence">>,
+  opts: Required<Pick<CorrectionOptions, "maxWordSpan" | "minPhoneticConfidence" | "asrEngine">>,
 ): Match | null {
   let best: Match | null = null;
   let bestScore = -1;
@@ -133,6 +144,9 @@ function findBestMatch(
 
       const hit = lexicon.lookup(candidate, opts.minPhoneticConfidence);
       if (!hit) continue;
+
+      // 휘스퍼 오인식 목록은 휘스퍼 전사본에만 쓴다 (CorrectionOptions.asrEngine 주석).
+      if (hit.via === "misheard" && opts.asrEngine !== "whisper") continue;
 
       // 발음 매칭은 짧을수록 우연히 걸릴 확률이 높다.
       // 그렇다고 2음절을 통째로 버리면 이 도메인의 핵심 용어(노티·폴리·오더·인계)가
@@ -238,6 +252,7 @@ export function correctTranscript(
   const settings = {
     maxWordSpan: options.maxWordSpan ?? 3,
     minPhoneticConfidence: options.minPhoneticConfidence ?? 0.9,
+    asrEngine: options.asrEngine ?? ("whisper" as const),
   };
 
   // 0단계: 사용자가 직접 고쳐온 이력을 먼저 적용한다.

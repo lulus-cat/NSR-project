@@ -400,3 +400,25 @@ describe("LLM 에 보내는 규칙표", () => {
     expect(rules).not.toContain("← 음료수");
   });
 });
+
+describe("휘스퍼 전용 교정", () => {
+  const lex = defaultLexicon;
+  const fix = (s: string, engine?: "whisper" | "other") =>
+    correctTranscript(s, { lexicon: lex, asrEngine: engine }).text;
+
+  it("휘스퍼 전사본이면 오인식을 고친다 (기본값)", () => {
+    expect(fix("대노관 한차례 들어갔고요")).toContain("데노간");
+    expect(fix("대노관 한차례 들어갔고요", "whisper")).toContain("데노간");
+  });
+
+  it("다른 엔진이면 오인식 목록을 쓰지 않는다", () => {
+    // 제미나이는 다르게 틀린다. 휘스퍼의 오류 습관을 들이대면 엉뚱한 말을 바꾼다.
+    expect(fix("대노관 한차례 들어갔고요", "other")).toBe("대노관 한차례 들어갔고요");
+    expect(fix("감동사가 바뀌었어요", "other")).toBe("감동사가 바뀌었어요");
+  });
+
+  it("엔진과 무관한 교정은 그대로 돈다", () => {
+    // 사전 표기·별칭은 사람이 실제로 그렇게 말하는 것이라 엔진과 상관없다.
+    expect(fix("브이에스 체크했어요", "other")).not.toBe("브이에스 체크했어요");
+  });
+});

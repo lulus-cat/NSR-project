@@ -257,7 +257,8 @@ export function buildCorrectionRulesForLLM(lexicon: Lexicon): string {
   lines.sort();
 
   return [
-    "음성인식이 이렇게 적었으면 이렇게 읽는다 (사용자가 실제 녹음에서 확정한 것):",
+    "휘스퍼가 이렇게 적었으면 이렇게 읽는다 (사용자가 실제 녹음에서 확정한 것):",
+    "— 아래는 휘스퍼의 오류 습관이다. 다른 엔진의 전사본이면 그대로 들이대지 않는다.",
     ...lines,
     "",
     "문맥으로 판단할 것 — 규칙으로 고치면 안 되는 말들:",

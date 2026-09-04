@@ -695,6 +695,9 @@ export async function processRecording(
     const options = await buildAsrOptions(lexicon);
     const asr = await provider.transcribe(recording.file_uri, options, onProgress);
     const memory = await loadCorrectionMemory();
+    // 오인식 목록은 휘스퍼가 어떻게 틀리는지의 기록이다. 제미나이 전사본에 들이대면
+    // 맞지도 않고 엉뚱한 말을 바꾼다 (@nsr/core CorrectionOptions.asrEngine).
+    const asrEngine = provider.id.startsWith("gemini:") ? ("other" as const) : ("whisper" as const);
 
     // 1) ASR 덩어리를 문장으로 편다.
     //
@@ -730,7 +733,7 @@ export async function processRecording(
         await new Promise((resolve) => setTimeout(resolve, 0));
       }
       const sentence = sentences[i];
-      const corrected = correctTranscript(sentence.text, { lexicon, memory });
+      const corrected = correctTranscript(sentence.text, { lexicon, memory, asrEngine });
       segments.push({ ...sentence, text: corrected.text });
       perSegment.push({ edits: corrected.edits, annotations: corrected.annotations });
     }
@@ -785,10 +788,12 @@ export async function finalizeShift(input: {
 
   // 세그먼트 본문을 다시 교정 파이프라인에 통과시켜 주석을 얻는다.
   // (DB의 annotations를 읽어도 되지만, 사용자가 본문을 직접 고쳤을 수 있어 재계산이 안전하다.)
+  // asrEngine: "other" — 여기 오는 본문은 이미 교정을 마친 것이라 오인식 표기가 없다.
+  // 다시 misheard 를 돌리면 교정된 말을 또 건드리고, 제미나이 전사본이면 애초에 안 맞는다.
   const cardSegments: CardSourceSegment[] = [];
   const termIds: string[] = [];
   for (const seg of segments) {
-    const corrected = correctTranscript(seg.text, { lexicon });
+    const corrected = correctTranscript(seg.text, { lexicon, asrEngine: "other" });
     cardSegments.push({
       segmentId: seg.id,
       text: corrected.text,
