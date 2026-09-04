@@ -688,18 +688,18 @@ export default function TranscriptionSetup() {
           />
           <Small>키는 기기 보안 저장소에만 보관됩니다.</Small>
           <Divider />
-          <Small muted={false}>병동 사전 올리기</Small>
+          <Small muted={false}>병동 사전 자동 연동</Small>
           <Small>
-            티로 계정에 단어를 등록해 두면 전사할 때 알아서 참조합니다. 전사 요청마다
-            보내는 것이 아니라 <Text style={{ fontWeight: "700" }}>한 번 올려 두면 그 뒤로 계속</Text>{" "}
-            쓰입니다. 사전을 고쳤으면 다시 누르십시오 — 이미 있는 말은 건너뜁니다.
+            <Text style={{ fontWeight: "700" }}>자동으로 맞춰집니다.</Text> 티로로 전사할 때마다
+            사전에 새로 생긴 말이 있으면 그것만 먼저 올립니다. 새 말이 없으면 아무것도 안 보냅니다.
+            아래 버튼은 지금 당장 맞추고 싶거나 잘 됐는지 확인하고 싶을 때만 쓰십시오.
           </Small>
           <Small>
             <Text style={{ fontWeight: "700" }}>사전이 티로 계정으로 나갑니다.</Text> 기본 임상
             용어뿐 아니라 직접 추가하신 병동 용어도 함께 올라갑니다. 환자 이름처럼 사람을
             알아볼 수 있는 말은 사전에 넣지 마십시오.
           </Small>
-          <Button label="병동 사전 올리기" onPress={() => void pushWordMemory()} disabled={!hasTiroKey} />
+          <Button label="지금 맞추기" onPress={() => void pushWordMemory()} disabled={!hasTiroKey} />
           {wordSync ? <Small>{wordSync}</Small> : null}
         </Card>
       ) : null}

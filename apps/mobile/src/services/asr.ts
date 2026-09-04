@@ -51,7 +51,7 @@ import {
   setRecordingState,
   type RecordingRow,
 } from "../db";
-import { getSetting } from "../db";
+import { getSetting, setSetting } from "../db";
 import { SETTINGS_KEYS } from "./scheduler";
 
 export interface AsrResult {
@@ -960,13 +960,10 @@ async function tiroError(res: Response, doing: string): Promise<string> {
  * 제약: entry 는 1~63자이고 공백을 못 넣는다. "팁 컬처" 처럼 띄어 쓰는 용어는
  * 그래서 못 올린다 — 건너뛴 개수를 돌려주니 화면이 알려 준다.
  */
-export async function syncTiroWordMemory(
-  lexicon: Lexicon,
-  onProgress?: (done: number, total: number) => void,
-): Promise<{ added: number; already: number; skipped: number; failed: number }> {
-  const key = await getTiroKey();
-  if (!key) throw new Error("티로 열쇠(키)가 없어요! 먼저 키부터 넣어주세용");
+const TIRO_PUSHED = "tiro.pushedWords";
 
+/** 사전에서 티로에 올릴 수 있는 말만 고른다. entry 는 1~63자·공백 불가다. */
+function tiroWordsOf(lexicon: Lexicon): { words: { entry: string; subEntry?: string }[]; skipped: number } {
   const ok = (w?: string) => !!w && w.length <= 63 && !/\s/.test(w);
   const words: { entry: string; subEntry?: string }[] = [];
   let skipped = 0;
@@ -978,6 +975,51 @@ export async function syncTiroWordMemory(
     const sub = [e.abbr, e.en].find(ok);
     words.push({ entry: e.ko, ...(sub ? { subEntry: sub } : {}) });
   }
+  return { words, skipped };
+}
+
+/**
+ * 전사 직전에 **새로 생긴 말만** 올린다.
+ *
+ * 사용자가 버튼을 눌러야 하는 기능은 결국 안 누르게 된다. 그래서 티로로 전사할 때마다
+ * 사전을 훑어 아직 안 올린 것이 있으면 그것만 보낸다. 새 말이 없으면 요청이 0건이라
+ * 평소에는 아무 비용이 없다.
+ *
+ * 사용자 교정 이력(CorrectionMemory)은 여기 안 넣는다. 그건 사용자가 화면에서 직접
+ * 타이핑한 것이라 환자 이름이 섞일 수 있다. 사전은 사람이 한 번 거른 목록이다.
+ */
+async function autoPushTiroWords(apiKey: string): Promise<void> {
+  const lexicon = await loadLexicon();
+  const { words } = tiroWordsOf(lexicon);
+  const pushed = new Set(await getSetting<string[]>(TIRO_PUSHED, []));
+  const fresh = words.filter((w) => !pushed.has(w.entry));
+  if (fresh.length === 0) return;
+
+  for (const w of fresh) {
+    try {
+      const res = await fetch(`${TIRO_API}/v1/external/users/me/word-memories`, {
+        method: "POST",
+        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+        body: JSON.stringify(w),
+      });
+      // 409 는 이미 있다는 뜻이라 성공과 같다. 그 밖의 실패는 다음 전사 때 다시 시도한다.
+      if (res.ok || res.status === 409) pushed.add(w.entry);
+    } catch {
+      // 단어장은 전사의 곁다리다. 여기서 죽으면 전사 자체를 못 하게 되므로 삼킨다.
+    }
+  }
+  await setSetting(TIRO_PUSHED, [...pushed]);
+}
+
+export async function syncTiroWordMemory(
+  lexicon: Lexicon,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ added: number; already: number; skipped: number; failed: number }> {
+  const key = await getTiroKey();
+  if (!key) throw new Error("티로 열쇠(키)가 없어요! 먼저 키부터 넣어주세용");
+
+  const { words, skipped } = tiroWordsOf(lexicon);
+  const pushed = new Set(await getSetting<string[]>(TIRO_PUSHED, []));
 
   let added = 0;
   let already = 0;
@@ -988,13 +1030,19 @@ export async function syncTiroWordMemory(
       headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
       body: JSON.stringify(words[i]),
     });
-    if (res.ok) added++;
-    else if (res.status === 409) already++;
+    if (res.ok) {
+      added++;
+      pushed.add(words[i].entry);
+    } else if (res.status === 409) {
+      already++;
+      pushed.add(words[i].entry);
+    }
     else if (res.status === 401 || res.status === 403) {
       throw new Error("티로 열쇠(키)가 안 맞아요! 설정에서 다시 넣어주세용");
     } else failed++;
     onProgress?.(i + 1, words.length);
   }
+  await setSetting(TIRO_PUSHED, [...pushed]);
   return { added, already, skipped, failed };
 }
 
@@ -1009,6 +1057,10 @@ export function createTiroProvider(apiKey: string): AsrProvider {
       const info = await FileSystem.getInfoAsync(fileUri);
       const size = info.exists && "size" in info ? (info.size ?? 0) : 0;
       if (size <= 0) throw new Error("엥? 녹음 파일이 안 읽혀요 ㅠㅠ 고장 남");
+
+      // 0) 사전에 새로 생긴 말이 있으면 먼저 올린다. 없으면 요청 0건이다.
+      onProgress?.(1, "병동 사전 맞추는 중");
+      await autoPushTiroWords(apiKey);
 
       // 1) 작업을 만든다. 올릴 주소를 받아온다.
       onProgress?.(2, "티로한테 자리 잡는 중");
