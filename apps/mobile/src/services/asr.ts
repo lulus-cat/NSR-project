@@ -935,6 +935,12 @@ export async function resolveProvider(): Promise<AsrProvider> {
  *     앱은 그 한참 아래(기본 30분)로 쪼개 올리므로 걸릴 일이 없다.
  *   - 처리 시간 안내: 20~60분 파일에 3~6분. 폴링 간격을 그에 맞춘다.
  *   - STT 는 아직 API 과금이 없다고 문서가 밝히고 있다 (바뀔 수 있다).
+ *
+ * 단어장
+ *   전사 요청에는 맥락·주제를 넣는 자리가 없다. 대신 **계정에 단어를 등록해 두면**
+ *   전사할 때 티로가 알아서 참조한다 (`Uses word memories from the key's user,
+ *   workspace, and organization scopes`). 그래서 `syncTiroWordMemory` 로 병동 사전을
+ *   한 번 올려 두면 그 뒤 모든 전사에 적용된다. 요청마다 보낼 필요가 없다.
  */
 const TIRO_API = "https://api.tiro.ooo";
 
@@ -943,6 +949,53 @@ async function tiroError(res: Response, doing: string): Promise<string> {
   if (res.status === 401 || res.status === 403) return "티로 열쇠(키)가 안 맞아요! 설정에서 다시 넣어주세용";
   if (res.status === 429) return "티로가 너무 바빠요 ㅠㅠ 좀 이따 다시 해주세요";
   return `티로가 에러 뱉음 (${doing}, ${res.status}): ${detail.slice(0, 200)}`;
+}
+
+/**
+ * 병동 사전을 티로 계정 단어장에 올린다.
+ *
+ * 한 번 올려 두면 그 뒤 전사에 자동으로 쓰인다. 이미 있는 말은 409 로 오는데,
+ * 그건 실패가 아니라 "이미 됨"이므로 성공으로 센다.
+ *
+ * 제약: entry 는 1~63자이고 공백을 못 넣는다. "팁 컬처" 처럼 띄어 쓰는 용어는
+ * 그래서 못 올린다 — 건너뛴 개수를 돌려주니 화면이 알려 준다.
+ */
+export async function syncTiroWordMemory(
+  lexicon: Lexicon,
+  onProgress?: (done: number, total: number) => void,
+): Promise<{ added: number; already: number; skipped: number; failed: number }> {
+  const key = await getTiroKey();
+  if (!key) throw new Error("티로 열쇠(키)가 없어요! 먼저 키부터 넣어주세용");
+
+  const ok = (w?: string) => !!w && w.length <= 63 && !/\s/.test(w);
+  const words: { entry: string; subEntry?: string }[] = [];
+  let skipped = 0;
+  for (const e of lexicon.entries) {
+    if (!ok(e.ko)) {
+      skipped++;
+      continue;
+    }
+    const sub = [e.abbr, e.en].find(ok);
+    words.push({ entry: e.ko, ...(sub ? { subEntry: sub } : {}) });
+  }
+
+  let added = 0;
+  let already = 0;
+  let failed = 0;
+  for (let i = 0; i < words.length; i++) {
+    const res = await fetch(`${TIRO_API}/v1/external/users/me/word-memories`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
+      body: JSON.stringify(words[i]),
+    });
+    if (res.ok) added++;
+    else if (res.status === 409) already++;
+    else if (res.status === 401 || res.status === 403) {
+      throw new Error("티로 열쇠(키)가 안 맞아요! 설정에서 다시 넣어주세용");
+    } else failed++;
+    onProgress?.(i + 1, words.length);
+  }
+  return { added, already, skipped, failed };
 }
 
 export function createTiroProvider(apiKey: string): AsrProvider {
@@ -962,7 +1015,8 @@ export function createTiroProvider(apiKey: string): AsrProvider {
       const created = await fetch(`${TIRO_API}/v1/external/voice-file/jobs`, {
         method: "POST",
         headers: { ...auth, "content-type": "application/json" },
-        body: "{}",
+        // 언어를 안 주면 자동 감지다. 병동 대화는 한국어뿐이라 못박는 편이 낫다.
+        body: JSON.stringify({ transcriptLocaleHints: ["ko_KR"] }),
       });
       if (!created.ok) throw new Error(await tiroError(created, "작업 만들기"));
       const { id, uploadUri } = (await created.json()) as { id: string; uploadUri: string };

@@ -27,7 +27,7 @@ import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/
 import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
 import { getApiKey, migrateRetiredModel, setApiKey } from "../src/services/llm";
-import { getHfToken, setHfToken, getTiroKey, setTiroKey } from "../src/services/asr";
+import { getHfToken, setHfToken, getTiroKey, setTiroKey, syncTiroWordMemory, loadLexicon } from "../src/services/asr";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 
 type ServerMode = "colab" | "pc" | "gemini" | "tiro";
@@ -162,6 +162,7 @@ export default function TranscriptionSetup() {
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
   const [tiroKeyInput, setTiroKeyInput] = useState("");
   const [hasTiroKey, setHasTiroKey] = useState(false);
+  const [wordSync, setWordSync] = useState<string | null>(null);
   // 화자 분리 토큰 — 앱에서 받아 전사 요청에 실어 보낸다(콜랩에서 설정하지 않는다).
   const [hasHfToken, setHasHfToken] = useState(false);
   const [hfTokenInput, setHfTokenInput] = useState("");
@@ -267,6 +268,23 @@ export default function TranscriptionSetup() {
     setHasTiroKey(key.length > 0);
     setTiroKeyInput("");
   }, [tiroKeyInput]);
+
+  const pushWordMemory = useCallback(async () => {
+    setWordSync("사전 올리는 중…");
+    try {
+      const lexicon = await loadLexicon();
+      const r = await syncTiroWordMemory(lexicon, (done, total) =>
+        setWordSync(`사전 올리는 중… ${done}/${total}`),
+      );
+      setWordSync(
+        `새로 ${r.added}개 · 이미 있던 것 ${r.already}개` +
+          (r.skipped ? ` · 띄어쓰기가 있어 못 올린 것 ${r.skipped}개` : "") +
+          (r.failed ? ` · 실패 ${r.failed}개` : ""),
+      );
+    } catch (e) {
+      setWordSync(e instanceof Error ? e.message : String(e));
+    }
+  }, []);
 
   const checkGemini = useCallback(async () => {
     const key = await getApiKey("gemini");
@@ -669,6 +687,20 @@ export default function TranscriptionSetup() {
             onPress={() => void saveTiroKey()}
           />
           <Small>키는 기기 보안 저장소에만 보관됩니다.</Small>
+          <Divider />
+          <Small muted={false}>병동 사전 올리기</Small>
+          <Small>
+            티로 계정에 단어를 등록해 두면 전사할 때 알아서 참조합니다. 전사 요청마다
+            보내는 것이 아니라 <Text style={{ fontWeight: "700" }}>한 번 올려 두면 그 뒤로 계속</Text>{" "}
+            쓰입니다. 사전을 고쳤으면 다시 누르십시오 — 이미 있는 말은 건너뜁니다.
+          </Small>
+          <Small>
+            <Text style={{ fontWeight: "700" }}>사전이 티로 계정으로 나갑니다.</Text> 기본 임상
+            용어뿐 아니라 직접 추가하신 병동 용어도 함께 올라갑니다. 환자 이름처럼 사람을
+            알아볼 수 있는 말은 사전에 넣지 마십시오.
+          </Small>
+          <Button label="병동 사전 올리기" onPress={() => void pushWordMemory()} disabled={!hasTiroKey} />
+          {wordSync ? <Small>{wordSync}</Small> : null}
         </Card>
       ) : null}
 
