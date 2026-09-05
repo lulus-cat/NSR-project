@@ -1244,8 +1244,12 @@ export async function syncTiroWordMemory(
  * 차례로 보내면 조각마다 결과가 쌓이고, 하나가 실패해도 앞의 것은 남는다.
  */
 const TIRO_PART_MINUTES = 180;
-/** 못 나누는 형식(mp3 등)이 이보다 길면 티로가 거절한다 — 미리 말해 준다. */
-const TIRO_MAX_MINUTES = 300;
+/**
+ * 티로가 한 파일에 받는 한계 — 4시간, 500MB (티로 튜토리얼의 준비물 항목).
+ * 못 나누는 형식(mp3 등)이 이보다 크면 올려도 거절당한다. 미리 말해 준다.
+ */
+const TIRO_MAX_MINUTES = 240;
+const TIRO_MAX_BYTES = 500 * 1024 * 1024;
 
 export function createTiroProvider(apiKey: string): AsrProvider {
   const auth = { authorization: `Bearer ${apiKey}` };
@@ -1401,6 +1405,12 @@ export function createTiroProvider(apiKey: string): AsrProvider {
         const 시간 = Math.round(totalSec / 3600);
         throw new Error(
           `녹음이 ${시간}시간이라 티로가 한 번에 못 받아요. 파일을 나눠서 다시 가져와 주세요.`,
+        );
+      }
+      if (parts.length === 0 && size > TIRO_MAX_BYTES) {
+        const 메가 = Math.round(size / (1024 * 1024));
+        throw new Error(
+          `파일이 ${메가}MB 라 티로가 한 번에 못 받아요. 파일을 나눠서 다시 가져와 주세요.`,
         );
       }
 
