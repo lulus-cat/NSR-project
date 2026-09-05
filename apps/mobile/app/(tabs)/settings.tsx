@@ -231,7 +231,8 @@ export default function Settings() {
   }, [load]);
 
   const router = useRouter();
-  // 전사 — 티로 열쇠 하나. 화면(models.tsx)을 없애고 여기로 들였다.
+  // 티로 — 열쇠 하나. 앱은 티로에 파일을 안 올린다. 티로가 받아적어 둔 글자를
+  // 가져오는 데만 쓴다 (그리고 병동 사전을 티로 단어장에 올리는 데).
   const [tiroKeyInput, setTiroKeyInput] = useState("");
   const [hasTiroKey, setHasTiroKey] = useState(false);
   const [tiroBusy, setTiroBusy] = useState(false);
@@ -1075,10 +1076,11 @@ export default function Settings() {
 </Small>
       </Card>
 
-      {/* 전사 — 티로 하나뿐이라 화면 없이 열쇠 한 칸이면 된다 */}
+      {/* 티로 — 앱이 하는 일은 가져오기뿐이라 열쇠 한 칸이면 된다 */}
       <Card>
-        <GroupHead icon="text-outline" color="#B3762F" title="전사" />
-        <Small>티로가 소리를 글자로 바꿔요. 한국어를 가장 잘 받아적었어요.</Small>
+        <GroupHead icon="cloud-download-outline" color="#B3762F" title="티로" />
+        <Small>티로 앱으로 녹음하면 티로가 글자로 바꿔요.</Small>
+        <Small>열쇠를 넣으면 그 글자를 이 앱으로 가져와요.</Small>
         <TextInput
           value={tiroKeyInput}
           onChangeText={setTiroKeyInput}
@@ -1098,7 +1100,12 @@ export default function Settings() {
         />
         <Button label="열쇠 저장" tone="primary" busy={tiroBusy} onPress={() => void saveTiro()} />
         {tiroNote ? <Small muted={false}>{tiroNote}</Small> : null}
-        <Small>티로 앱으로 녹음하고 홈에서 글자만 가져와요.</Small>
+        <Row
+          label="티로 노트에서 가져오기"
+          value="열기 ›"
+          onPress={() => router.push("/tiro-notes")}
+        />
+        <Small>가져올 때 병동 사전을 티로에 올려요. 다음 녹음이 정확해져요.</Small>
       </Card>
 
       {/* 디버그 */}

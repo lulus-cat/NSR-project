@@ -15,7 +15,13 @@ const Native = requireOptionalNativeModule<{
   workStop(): void;
 }>("NsrAudioDecode");
 
-/** 나눈 조각 하나. startSec 은 원본 안에서 이 조각이 시작하는 시각이다. */
+/**
+ * 나눈 조각 하나. startSec 은 원본 안에서 이 조각이 시작하는 시각이다.
+ *
+ * 지금은 부르는 곳이 없다. 티로에 파일을 올려 전사하던 길에서만 썼는데(3시간씩
+ * 나눠 올렸다), 티로가 그 API 를 이 계정에 안 열어 줘서 앱에서 지웠다.
+ * 네이티브 쪽은 남겨 둔다 — 티로가 열어 주거나 다른 업로드 경로가 생기면 그대로 쓴다.
+ */
 export interface AudioPart {
   /** file:// 를 붙인 경로 — 그대로 업로드에 쓴다. */
   uri: string;

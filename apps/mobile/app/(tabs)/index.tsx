@@ -42,7 +42,7 @@ import {
   listTaeumScores,
   pendingTranscriptions,
 } from "../../src/db";
-import { SETTINGS_KEYS, buildSchedule, startManual, stopManual } from "../../src/services/scheduler";
+import { buildSchedule, startManual, stopManual } from "../../src/services/scheduler";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
 import {
   runnerState,
@@ -323,7 +323,7 @@ export default function Home() {
     }[]
   >([]);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
-  const [needsServer, setNeedsServer] = useState(false);
+  const [needsTiroKey, setNeedsTiroKey] = useState(false);
   const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [weekStrip, setWeekStrip] = useState<
@@ -367,20 +367,10 @@ export default function Home() {
       if (!map.has(date)) map.set(date, taeumTemperature(sc.score));
     }
     setTemps(map);
-    // 전사는 티로·콜랩·내 컴퓨터·Gemini 중 한 곳이 한다. 준비가 안 됐으면 안내한다.
-    // 모드마다 '준비됨'의 뜻이 다르다 — 티로·Gemini 는 열쇠, 서버 경로는 주소다.
-    // (예전엔 주소만 봐서, 티로 열쇠를 넣어도 안내가 사라지지 않았다.)
-    const server = await getSetting<{ endpoint?: string; mode?: string }>(
-      SETTINGS_KEYS.cloudTranscription,
-      {},
-    );
-    const mode = server.mode ?? (server.endpoint ? "pc" : "tiro");
-    if (mode === "tiro") {
-      const { getTiroKey } = await import("../../src/services/asr");
-      setNeedsServer(!(await getTiroKey()));
-    } else {
-      setNeedsServer(!server.endpoint);
-    }
+    // 티로 노트를 가져오려면 열쇠가 있어야 한다. 없으면 가져오기 줄 위에 안내한다.
+    // (앱이 티로에 파일을 올리던 길은 없앴다 — 티로가 그걸 안 열어 준다.)
+    const { getTiroKey } = await import("../../src/services/asr");
+    setNeedsTiroKey(!(await getTiroKey()));
     // 마지막 전사가 끝났는데 아직 결과를 안 열어봤으면 알려 준다.
     const last = await getSetting<{ shiftId?: string; sentences?: number; seen?: boolean }>(
       "transcribe.lastResult",
@@ -532,7 +522,7 @@ export default function Home() {
     {
       key: "records",
       label: "기록",
-      alert: pendingCount > 0 || needsServer || newResult !== null,
+      alert: pendingCount > 0 || needsTiroKey || newResult !== null,
       body: (
         <>
           {newResult ? (
@@ -602,18 +592,6 @@ export default function Home() {
           {pendingCount > 3 ? (
             <Small>외 {pendingCount - 3}건은 근무 기록 화면에서 봐요.</Small>
           ) : null}
-          {needsServer ? (
-            <>
-              <DashedDivider />
-              <BriefRow
-                icon="cloud-outline"
-                label="티로 열쇠를 넣어 주세요"
-                value="설정 열기"
-                valueColor={t.warn}
-                onPress={() => router.push("/settings")}
-              />
-            </>
-          ) : null}
           <DashedDivider />
           <BriefRow
             icon="folder-open-outline"
@@ -622,12 +600,22 @@ export default function Home() {
             onPress={() => router.push("/import-audio")}
           />
           <DashedDivider />
-          <BriefRow
-            icon="cloud-download-outline"
-            label="티로 노트에서 글자 가져오기"
-            value="고르기"
-            onPress={() => router.push("/tiro-notes")}
-          />
+          {needsTiroKey ? (
+            <BriefRow
+              icon="cloud-download-outline"
+              label="티로 열쇠를 넣어 주세요"
+              value="설정 열기"
+              valueColor={t.warn}
+              onPress={() => router.push("/settings")}
+            />
+          ) : (
+            <BriefRow
+              icon="cloud-download-outline"
+              label="티로 노트에서 글자 가져오기"
+              value="고르기"
+              onPress={() => router.push("/tiro-notes")}
+            />
+          )}
         </>
       ),
     },

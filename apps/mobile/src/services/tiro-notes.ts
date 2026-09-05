@@ -30,6 +30,7 @@ import {
 } from "../db";
 import {
   TIRO_API,
+  autoPushTiroWords,
   getTiroKey,
   saveAsrSegments,
   tiroError,
@@ -46,7 +47,7 @@ export interface TiroNote {
 
 async function tiroHeaders(): Promise<{ authorization: string }> {
   const key = await getTiroKey();
-  if (!key) throw new Error("티로 열쇠가 없어요. 전사 설정에서 넣어 주세요.");
+  if (!key) throw new Error("티로 열쇠가 없어요. 설정에서 넣어 주세요.");
   return { authorization: `Bearer ${key}` };
 }
 
@@ -60,6 +61,10 @@ export async function listTiroNotes(limit = 50): Promise<TiroNote[]> {
   const headers = await tiroHeaders();
   const key = await getTiroKey();
   const guid = key ? await tiroWorkspaceGuid(key) : undefined;
+
+  // 겸사겸사 병동 사전에 새로 생긴 말을 티로 단어장에 올린다. 올려 두면 다음에
+  // 티로 앱으로 녹음할 때 그 말을 알아듣는다. 실패해도 목록은 그대로 나온다.
+  if (key) void autoPushTiroWords(key);
 
   const urls = [
     guid ? `${TIRO_API}/v1/external/workspaces/${guid}/notes?size=${limit}` : "",

@@ -54,7 +54,6 @@ import {
 import { getSetting, setSetting } from "../db";
 import { SETTINGS_KEYS } from "./scheduler";
 import { logDebug } from "./debug";
-import { audioDurationSec, splitAudio, type AudioPart } from "../../modules/nsr-audio-decode";
 
 export interface AsrResult {
   segments: {
@@ -585,8 +584,13 @@ export async function finalizeShift(input: {
  *
  * 전사 경로는 서버(콜랩 또는 내 컴퓨터)뿐이다. 주소가 없으면 전사를 시작할
  * 수 없고, 어디서 연결하는지까지 오류 문장이 말해 준다.
+ *
+ * 티로는 여기 없다. 티로에 파일을 올리는 길(Voice File Job)은 워크스페이스마다
+ * 티로가 켜 줘야 열리는데, 이 계정에는 안 켜져 있다. 그래서 앱이 티로에 하는
+ * 일은 두 가지뿐이다 — **녹음**과 **티로가 이미 받아적어 둔 글자 가져오기**
+ * (`tiro-notes.ts`). 올리기 경로는 0.1.8x 에서 지웠다.
  */
-/** 저장된 설정의 전사 방식. 설정 화면(models.tsx)의 inferMode 와 같은 규칙이다. */
+/** 저장된 설정의 전사 방식. 콜랩 연결 화면(connect.tsx)이 넣어 주는 값이다. */
 function inferAsrMode(cloud: { mode?: string; endpoint?: string }): string {
   if (cloud.mode) return cloud.mode;
   if (cloud.endpoint && !cloud.endpoint.includes("trycloudflare.com")) return "pc";
@@ -604,18 +608,9 @@ export async function resolveProvider(): Promise<AsrProvider> {
     diarize?: boolean;
   }>(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" });
 
-  // 아무것도 고르지 않은 새 사용자는 티로다 — 설정 화면(models.tsx)의 inferMode 와 같은 규칙.
-  const mode = cloud.mode ?? (cloud.endpoint ? inferAsrMode(cloud) : "tiro");
-
-  if (mode === "tiro") {
-    const key = await getTiroKey();
-    if (!key) throw new Error("티로 열쇠가 없어요. 설정 → 전사에서 열쇠를 넣어 주세요.");
-    return createTiroProvider(key);
-  }
-
   if (!cloud.endpoint) {
     throw new Error(
-      "어디서 바꿀지 아직 안 골랐어요. 설정 → 전사에서 한 곳을 골라 주세요.",
+      "글자로 바꿀 곳이 없어요. 콜랩을 잇거나 티로 노트에서 가져와 주세요.",
     );
   }
   const hfToken = cloud.diarize ? await getHfToken() : null;
@@ -633,22 +628,21 @@ export async function resolveProvider(): Promise<AsrProvider> {
 
 /* ── Tiro ────────────────────────────────────────────────────────────────
  *
- * 4단계다: 작업 만들기 → presigned URL 로 파일 올리기 → 올렸다고 알리기 → 폴링.
- * 다른 제공자처럼 한 번에 끝나지 않는 대신, 긴 파일을 통째로 받는다.
+ * 앱이 티로에 하는 일은 두 가지다.
+ *   1) 티로 앱으로 녹음해 **이미 전사된 노트의 글자를 가져온다** (`tiro-notes.ts`).
+ *   2) 병동 사전의 새 말을 **티로 단어장에 올린다** (아래 autoPushTiroWords).
  *
- * 제약 (2026-09 문서 확인)
- *   - 인증: `Bearer {id}.{secret}` — 발급받은 API 키를 그대로 쓴다.
- *   - presigned URL 유효기간 1시간. 그 안에 다 올려야 한다.
- *   - 파일 길이·크기 상한은 문서에 없다. 사용자가 아는 한도는 300분이고,
- *     앱은 그 한참 아래(기본 30분)로 쪼개 올리므로 걸릴 일이 없다.
- *   - 처리 시간 안내: 20~60분 파일에 3~6분. 폴링 간격을 그에 맞춘다.
- *   - STT 는 아직 API 과금이 없다고 문서가 밝히고 있다 (바뀔 수 있다).
+ * 파일을 올려 전사하던 길(Voice File Job)은 0.1.8x 에서 지웠다. 그 API 는
+ * 워크스페이스마다 티로가 켜 줘야 열리는데 이 계정에는 안 켜져 있어서, 올리기
+ * 코드를 남겨 두면 화면만 '전사되는 척'하고 매번 403 으로 끝났다.
  *
- * 단어장
- *   전사 요청에는 맥락·주제를 넣는 자리가 없다. 대신 **계정에 단어를 등록해 두면**
+ * 인증: `Bearer {id}.{secret}` — 발급받은 API 키를 그대로 쓴다.
+ *
+ * 단어장이 왜 중요한가
+ *   전사 요청에 맥락·주제를 넣는 자리는 없다. 대신 **계정에 단어를 등록해 두면**
  *   전사할 때 티로가 알아서 참조한다 (`Uses word memories from the key's user,
- *   workspace, and organization scopes`). 그래서 `syncTiroWordMemory` 로 병동 사전을
- *   한 번 올려 두면 그 뒤 모든 전사에 적용된다. 요청마다 보낼 필요가 없다.
+ *   workspace, and organization scopes`). 그래서 사전을 올려 두는 것이 곧 다음
+ *   녹음의 정확도다. 요청마다 보낼 필요는 없다 — 한 번 올리면 계속 쓰인다.
  */
 export const TIRO_API = "https://api.tiro.ooo";
 /** 벌크 한 번에 보낼 단어 수. 티로 상한은 1000이고, 사전은 345개라 한 번에 끝난다. */
@@ -657,35 +651,29 @@ const TIRO_BULK = 500;
 /**
  * 티로 오류를 사람 말로.
  *
- * 403 을 전부 "열쇠가 틀렸다"고 적었던 것이 사고였다. 실제 계정으로 확인해 보니
- * 열쇠는 멀쩡한데 **워크스페이스에 '파일 전사'가 안 켜져 있어서** 403000 이 왔다
- * ("Voice File Job is not enabled for this workspace"). 화면에는 열쇠를 다시
- * 넣으라고 나오니, 맞는 열쇠를 몇 번이고 다시 넣게 만들었다. 이유마다 다르게 적는다.
+ * 403 을 전부 "열쇠가 틀렸다"고 적었던 것이 사고였다. 열쇠는 멀쩡한데 권한이
+ * 없어서 막힌 것을, 화면은 열쇠를 다시 넣으라고 적었다. 맞는 열쇠를 몇 번이고
+ * 다시 넣게 만들었다. 그래서 401(열쇠)과 403(권한)을 갈라 적는다.
  */
 export async function tiroError(res: Response, doing: string): Promise<string> {
   const detail = await res.text().catch(() => "");
   // 원문 JSON 은 사용자에게 보여줄 말이 아니다. 진단은 디버그 기록으로 남긴다.
   void logDebug(`티로 ${doing} 실패 ${res.status}: ${detail.slice(0, 300)}`);
 
-  let code = 0;
   let message = "";
   try {
-    const body = JSON.parse(detail) as { error?: { code?: number; message?: string } };
-    code = body.error?.code ?? 0;
-    message = body.error?.message ?? "";
+    message = (JSON.parse(detail) as { error?: { message?: string } }).error?.message ?? "";
   } catch {
     // JSON 이 아니면 상태 코드만 보고 판단한다.
   }
 
   if (res.status === 401) return "티로 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.";
   if (res.status === 403) {
-    if (code === 403013) {
-      return "이 열쇠에 파일 전사 권한이 없어요. 티로에서 권한을 켜고 열쇠를 새로 만들어 주세요.";
-    }
-    if (code === 403000 || /not enabled|disabled/i.test(message)) {
-      return "티로 계정에 파일 전사가 안 켜져 있어요. 티로에 켜 달라고 요청해 주세요.";
-    }
-    return "티로가 이 요청을 막았어요. 티로 계정 설정을 확인해 주세요.";
+    // 앱이 티로에 하는 일은 노트 읽기와 단어장 올리기뿐이다. 그게 막히면
+    // 열쇠에 그 권한이 없는 것이다. (파일 전사 403000·403013 은 올리기 경로를
+    // 지우면서 함께 없앴다.)
+    if (message) void logDebug(`티로 403 사유: ${message.slice(0, 120)}`);
+    return "이 열쇠에 권한이 없어요. 티로에서 권한을 켜고 열쇠를 새로 만들어 주세요.";
   }
   if (res.status === 429) return "티로가 바빠요. 잠시 뒤 다시 해 주세요.";
   if (detail.includes("workspaceGuid")) {
@@ -787,16 +775,19 @@ async function pushTiroWordsBulk(
 }
 
 /**
- * 전사 직전에 **새로 생긴 말만** 올린다.
+ * 티로 단어장에 **새로 생긴 말만** 올린다 (노트 가져오기 화면이 부른다).
  *
- * 사용자가 버튼을 눌러야 하는 기능은 결국 안 누르게 된다. 그래서 티로로 전사할 때마다
- * 사전을 훑어 아직 안 올린 것이 있으면 그것만 보낸다. 새 말이 없으면 요청이 0건이라
- * 평소에는 아무 비용이 없다.
+ * 사용자가 버튼을 눌러야 하는 기능은 결국 안 누르게 된다. 그래서 티로 노트를 보러
+ * 갈 때마다 사전을 훑어 아직 안 올린 것이 있으면 그것만 보낸다. 새 말이 없으면
+ * 요청이 0건이라 평소에는 아무 비용이 없다.
+ *
+ * 올려 두면 **다음에 티로 앱으로 녹음할 때** 티로가 그 말을 알아듣는다. 앱이
+ * 티로 전사에 손댈 수 있는 자리는 이제 여기뿐이다.
  *
  * 사용자 교정 이력(CorrectionMemory)은 여기 안 넣는다. 그건 사용자가 화면에서 직접
  * 타이핑한 것이라 환자 이름이 섞일 수 있다. 사전은 사람이 한 번 거른 목록이다.
  */
-async function autoPushTiroWords(apiKey: string): Promise<void> {
+export async function autoPushTiroWords(apiKey: string): Promise<void> {
   const lexicon = await loadLexicon();
   const { words } = tiroWordsOf(lexicon);
   const pushed = new Set(await getSetting<string[]>(TIRO_PUSHED, []));
@@ -814,7 +805,7 @@ async function autoPushTiroWords(apiKey: string): Promise<void> {
     // 단어장은 전사의 곁다리다. 여기서 죽으면 전사 자체를 못 하게 되므로 삼킨다.
     // 올린 데까지는 남겨서 다음 전사 때 처음부터 다시 보내지 않는다.
     await setSetting(TIRO_PUSHED, [...pushed]);
-    await logDebug(`티로 사전 자동 올리기 실패(전사는 계속): ${e instanceof Error ? e.message : e}`);
+    await logDebug(`티로 사전 자동 올리기 실패(가져오기는 계속): ${e instanceof Error ? e.message : e}`);
   }
 }
 
@@ -825,13 +816,12 @@ async function autoPushTiroWords(apiKey: string): Promise<void> {
  * 않고 계정만 물어보므로 몇 초면 끝나고, 무엇이 문제인지 그 자리에서 말한다.
  */
 /**
- * 열쇠가 맞는지, 그리고 **정말 전사가 되는지** 확인한다.
+ * 열쇠가 맞는지, 그리고 **노트를 읽어 올 수 있는지** 확인한다.
  *
- * 예전에는 워크스페이스만 물어보고 "연결됐어요"라고 적었다. 그런데 티로는
- * 워크스페이스마다 '파일 전사'를 따로 켜 준다 — 안 켜져 있으면 워크스페이스는
- * 멀쩡히 보이는데 전사만 403 으로 막힌다. 그래서 여기서 **빈 작업을 하나
- * 만들어 본다.** 파일을 안 올리면 그 작업은 아무 일도 하지 않고 한 시간 뒤
- * 올리기 주소가 만료된다. 3시간짜리를 올린 뒤에 막히는 것보다 낫다.
+ * 앱은 티로에 파일을 올리지 않는다. 티로 앱으로 녹음한 노트의 글자를 읽어
+ * 오는 것이 앱이 티로에 쓰는 전부다. 그래서 확인도 그것으로 한다 — 노트
+ * 목록을 한 개만 받아 본다. (예전에는 빈 전사 작업을 만들어 봤는데, 그건
+ * 이제 앱이 쓰지 않는 길이라 되든 말든 상관이 없다.)
  */
 export async function checkTiroConnection(): Promise<{ ok: boolean; message: string }> {
   const key = await getTiroKey();
@@ -854,274 +844,11 @@ export async function checkTiroConnection(): Promise<{ ok: boolean; message: str
       };
     }
 
-    // 2) 그 워크스페이스에서 파일 전사가 되는지 — 빈 작업으로 물어본다.
-    const probe = await fetch(`${TIRO_API}/v1/external/voice-file/jobs`, {
-      method: "POST",
-      headers: { ...headers, "content-type": "application/json" },
-      body: JSON.stringify({ transcriptLocaleHints: ["ko_KR"], workspaceGuid: guid }),
-    });
+    // 2) 노트를 읽어 올 수 있는지 — 한 개만 받아 본다.
+    const probe = await fetch(`${TIRO_API}/v1/external/notes?size=1`, { headers });
     if (!probe.ok) return { ok: false, message: await tiroError(probe, "연결 확인") };
-    return { ok: true, message: "연결됐어요. 이제 녹음을 바꿔 보세요." };
+    return { ok: true, message: "연결됐어요. 노트를 가져올 수 있어요." };
   } catch {
     return { ok: false, message: "티로에 닿지 못했어요. 인터넷 연결을 확인해 주세요." };
   }
-}
-
-export async function syncTiroWordMemory(
-  lexicon: Lexicon,
-  onProgress?: (done: number, total: number) => void,
-): Promise<{ added: number; already: number; skipped: number; failed: number }> {
-  const key = await getTiroKey();
-  if (!key) throw new Error("티로 열쇠가 없어요. 설정에서 먼저 넣어 주세요.");
-
-  const { words, skipped } = tiroWordsOf(lexicon);
-  const pushed = new Set(await getSetting<string[]>(TIRO_PUSHED, []));
-
-  let added = 0;
-  let already = 0;
-  try {
-    for (let i = 0; i < words.length; i += TIRO_BULK) {
-      const part = words.slice(i, i + TIRO_BULK);
-      const r = await pushTiroWordsBulk(key, part);
-      added += r.added;
-      already += r.already;
-      for (const w of part) pushed.add(w.entry);
-      onProgress?.(Math.min(i + TIRO_BULK, words.length), words.length);
-    }
-    return { added, already, skipped, failed: 0 };
-  } finally {
-    // 중간에 막혀도 올린 데까지는 기억한다. 다시 누르면 남은 것부터 간다.
-    await setSetting(TIRO_PUSHED, [...pushed]);
-  }
-}
-
-/**
- * 티로에 한 번에 보낼 수 있는 길이.
- *
- * 티로 문서상 한 파일에 300분까지다. 8~12시간짜리 통짜 녹음은 그대로는 못
- * 보내고, 보낼 수 있어도 한 덩어리로 몇 시간을 기다려야 한다. 3시간씩 나눠
- * 차례로 보내면 조각마다 결과가 쌓이고, 하나가 실패해도 앞의 것은 남는다.
- */
-const TIRO_PART_MINUTES = 180;
-/**
- * 티로가 한 파일에 받는 한계 — 4시간, 500MB (티로 튜토리얼의 준비물 항목).
- * 못 나누는 형식(mp3 등)이 이보다 크면 올려도 거절당한다. 미리 말해 준다.
- */
-const TIRO_MAX_MINUTES = 240;
-const TIRO_MAX_BYTES = 500 * 1024 * 1024;
-
-export function createTiroProvider(apiKey: string): AsrProvider {
-  const auth = { authorization: `Bearer ${apiKey}` };
-
-  /**
-   * 파일 하나를 티로에 맡기고 결과를 받는다.
-   * onStep 의 퍼센트는 **이 파일 안에서의** 0~100 이다.
-   */
-  async function runJob(
-    fileUri: string,
-    minutes: number,
-    onStep: (pct: number, note?: string) => void,
-  ): Promise<AsrResult> {
-    const FileSystem = await import("expo-file-system/legacy");
-
-    // 1) 작업을 만든다. 올릴 주소를 받아온다.
-    onStep(2, "티로에 자리 만드는 중");
-    const workspaceGuid = await tiroWorkspaceGuid(apiKey);
-    const created = await fetch(`${TIRO_API}/v1/external/voice-file/jobs`, {
-      method: "POST",
-      headers: { ...auth, "content-type": "application/json" },
-      // 언어를 안 주면 자동 감지다. 병동 대화는 한국어뿐이라 못박는 편이 낫다.
-      // workspaceGuid 는 워크스페이스에 안 매인 열쇠에 필수다(없으면 400).
-      body: JSON.stringify({
-        transcriptLocaleHints: ["ko_KR"],
-        ...(workspaceGuid ? { workspaceGuid } : {}),
-      }),
-    });
-    if (!created.ok) throw new Error(await tiroError(created, "작업 만들기"));
-    const { id, uploadUri } = (await created.json()) as { id: string; uploadUri: string };
-    if (!id || !uploadUri) throw new Error("티로가 올릴 주소를 주지 않았어요. 다시 해 주세요.");
-
-    // 2) presigned URL 에 파일 본문을 올린다. 여기가 진행률의 대부분이다.
-    const task = FileSystem.createUploadTask(
-      uploadUri,
-      fileUri,
-      {
-        httpMethod: "PUT",
-        uploadType: FileSystem.FileSystemUploadType.BINARY_CONTENT,
-        headers: { "content-type": /\.wav$/i.test(fileUri) ? "audio/wav" : "audio/mp4" },
-      },
-      (p) => {
-        if (p.totalBytesExpectedToSend > 0) {
-          const ratio = p.totalBytesSent / p.totalBytesExpectedToSend;
-          onStep(Math.round(2 + ratio * 38), "파일 올리는 중");
-        }
-      },
-    );
-    const uploaded = await task.uploadAsync();
-    if (!uploaded || uploaded.status < 200 || uploaded.status >= 300) {
-      throw new Error("파일을 올리지 못했어요. Wi-Fi 를 확인해 주세요.");
-    }
-
-    // 3) 다 올렸다고 알린다. 이때부터 전사가 시작된다.
-    onStep(42, "티로가 듣기 시작했어요");
-    const done = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}/upload-complete`, {
-      method: "PUT",
-      headers: auth,
-    });
-    if (!done.ok) throw new Error(await tiroError(done, "올리기 마무리"));
-
-    // 4) 끝날 때까지 물어본다. 티로 안내가 20~60분 파일에 3~6분이니 대략
-    //    길이의 10분의 1이다. 5초 간격이면 넉넉하다.
-    //
-    // 진행률에 대하여: 티로는 몇 %인지 알려주지 않는다. 그래서 막대는
-    // **경과 시간**으로 민다 — 예상 시간에 걸쳐 45→90% 로 가고 거기서 멈춘다.
-    // 예전에는 5초마다 1%씩 올려서 4분이면 95%에 붙어 놓고 한참을 더
-    // 기다렸다. 대신 몇 분째인지와 지금 무슨 단계인지를 글로 적는다.
-    const expectMs = Math.max(3, minutes / 10) * 60_000;
-    const startedAt = Date.now();
-    // 기다리는 한도는 파일 길이만큼 — 짧아도 한 시간은 준다.
-    const deadline = startedAt + Math.max(60, minutes) * 60_000;
-    const waitNote = (status: string, min: number) => {
-      const 걸린 = min > 0 ? ` · ${min}분째` : "";
-      if (status === "UPLOADED") return `티로가 차례를 기다리는 중${걸린}`;
-      if (status === "PROCESSING") return `티로가 받아적는 중${걸린}`;
-      return `티로가 준비하는 중${걸린}`;
-    };
-    for (;;) {
-      await new Promise((r) => setTimeout(r, 5_000));
-      const res = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}`, { headers: auth });
-      if (!res.ok) throw new Error(await tiroError(res, "진행 상태 확인"));
-      const job = (await res.json()) as { status: string; errorMessage?: string | null };
-      if (job.status === "FAILED") {
-        throw new Error(`티로가 바꾸지 못했어요: ${job.errorMessage ?? "이유를 알 수 없어요"}`);
-      }
-      if (job.status === "COMPLETED") break;
-      const elapsed = Date.now() - startedAt;
-      const pct = Math.min(90, 45 + Math.round((elapsed / expectMs) * 45));
-      onStep(pct, waitNote(job.status, Math.floor(elapsed / 60_000)));
-      if (Date.now() >= deadline) {
-        throw new Error("티로가 오래 걸려 그만뒀어요. 잠시 뒤 다시 해 주세요.");
-      }
-    }
-
-    onStep(97, "결과 가져오는 중");
-    const out = await fetch(`${TIRO_API}/v1/external/voice-file/jobs/${id}/transcript`, { headers: auth });
-    if (!out.ok) throw new Error(await tiroError(out, "결과 가져오기"));
-    const body = (await out.json()) as {
-      text?: string;
-      segments?: { startTimeMillis?: number; endTimeMillis?: number; text?: string; speakerLabel?: string }[];
-    };
-
-    const segments = (body.segments ?? [])
-      .map((s) => ({
-        startSec: (s.startTimeMillis ?? 0) / 1000,
-        endSec: (s.endTimeMillis ?? 0) / 1000,
-        text: (s.text ?? "").trim(),
-        speakerId: s.speakerLabel,
-      }))
-      .filter((s) => s.text);
-
-    // 세그먼트가 없으면 전체 텍스트라도 한 덩어리로 살린다 — 버리는 것보다 낫다.
-    if (segments.length === 0 && body.text?.trim()) {
-      segments.push({ startSec: 0, endSec: 0, text: body.text.trim(), speakerId: undefined });
-    }
-    onStep(100, "다 됐어요");
-    return { segments, durationSec: segments.at(-1)?.endSec ?? 0 };
-  }
-
-  return {
-    id: "tiro",
-    // 세그먼트에 speakerLabel 이 온다. 단어 단위 시각은 안 준다.
-    capabilities: { diarization: true, wordTimestamps: false },
-    async transcribe(fileUri, _options, onProgress) {
-      const FileSystem = await import("expo-file-system/legacy");
-      const info = await FileSystem.getInfoAsync(fileUri);
-      const size = info.exists && "size" in info ? (info.size ?? 0) : 0;
-      if (size <= 0) throw new Error("녹음 파일을 읽지 못했어요. 파일이 남아 있는지 확인해 주세요.");
-
-      // 0) 사전에 새로 생긴 말이 있으면 먼저 올린다. 없으면 요청 0건이다.
-      onProgress?.(1, "병동 사전 맞추는 중");
-      await autoPushTiroWords(apiKey);
-
-      // 1) 긴 녹음은 3시간씩 나눈다. 다시 인코딩하지 않아 몇 초면 끝난다.
-      const totalSec = await audioDurationSec(fileUri);
-      const longFile = totalSec === 0 || totalSec > TIRO_PART_MINUTES * 60;
-      const partsDir = `${FileSystem.cacheDirectory}tiro-parts-${Date.now()}/`;
-      let parts: AudioPart[] = [];
-      if (longFile) {
-        if (totalSec > 0) onProgress?.(2, "긴 녹음 나누는 중");
-        try {
-          parts = await splitAudio(fileUri, partsDir, TIRO_PART_MINUTES * 60);
-        } catch (e) {
-          // 못 나눠도 길이가 한계 안이면 통짜로 보내면 된다. 아래에서 걸러진다.
-          void logDebug(`티로 파일 나누기 실패: ${e instanceof Error ? e.message : String(e)}`);
-          parts = [];
-        }
-      }
-
-      // 나눌 수 없는 형식(mp3 등)인데 티로 한계를 넘으면 미리 말해 준다.
-      if (parts.length === 0 && totalSec > TIRO_MAX_MINUTES * 60) {
-        const 시간 = Math.round(totalSec / 3600);
-        throw new Error(
-          `녹음이 ${시간}시간이라 티로가 한 번에 못 받아요. 파일을 나눠서 다시 가져와 주세요.`,
-        );
-      }
-      if (parts.length === 0 && size > TIRO_MAX_BYTES) {
-        const 메가 = Math.round(size / (1024 * 1024));
-        throw new Error(
-          `파일이 ${메가}MB 라 티로가 한 번에 못 받아요. 파일을 나눠서 다시 가져와 주세요.`,
-        );
-      }
-
-      // 2) 조각이 없으면(=안 나눠도 되면) 통짜 한 번으로 끝난다.
-      if (parts.length === 0) {
-        const minutes = totalSec > 0 ? totalSec / 60 : TIRO_PART_MINUTES;
-        return await runJob(fileUri, minutes, (pct, note) => onProgress?.(pct, note));
-      }
-
-      // 3) 조각을 차례로 보낸다. 시각은 원본 기준으로 되돌려 붙인다.
-      const merged: AsrResult["segments"] = [];
-      let lastEnd = 0;
-      let doneParts = 0;
-      let stopped: string | null = null;
-      try {
-        for (let i = 0; i < parts.length; i++) {
-          const part = parts[i];
-          const base = (i / parts.length) * 100;
-          const span = 100 / parts.length;
-          const label = `${i + 1}/${parts.length}조각`;
-          try {
-            const got = await runJob(part.uri, part.durationSec / 60, (pct, note) =>
-              onProgress?.(Math.round(base + (pct * span) / 100), note ? `${label} · ${note}` : label),
-            );
-            for (const seg of got.segments) {
-              merged.push({
-                ...seg,
-                startSec: seg.startSec + part.startSec,
-                endSec: seg.endSec + part.startSec,
-              });
-            }
-            lastEnd = Math.max(lastEnd, part.startSec + (got.durationSec || part.durationSec));
-            doneParts++;
-          } catch (e) {
-            // 앞 조각이 남아 있으면 거기까지는 살린다. 첫 조각부터 실패면 그대로 알린다.
-            if (merged.length === 0) throw e;
-            const why = e instanceof Error ? e.message : "알 수 없는 문제";
-            stopped = `${parts.length}조각 중 ${doneParts}조각까지 받았어요. ${why}`;
-            break;
-          }
-        }
-      } finally {
-        // 조각 파일은 캐시라 놔둬도 지워지지만, 3시간짜리는 크다. 바로 치운다.
-        await FileSystem.deleteAsync(partsDir, { idempotent: true }).catch(() => {});
-      }
-
-      onProgress?.(100, "다 됐어요");
-      return {
-        segments: merged,
-        durationSec: lastEnd,
-        ...(stopped ? { partial: stopped } : {}),
-      };
-    },
-  };
 }

@@ -34,14 +34,9 @@ const PARTS = [
  */
 const METHOD_CHOICES = [
   {
-    key: "tiro",
-    title: "티로 (한국어 전용, 추천)",
-    body: "열쇠 하나만 넣으면 돼요. 한국어를 가장 잘 받아적었어요. 열쇠 받는 길은 설정에서 알려드려요.",
-  },
-  {
     key: "colab",
     title: "구글 콜랩 (무료 GPU, 휘스퍼)",
-    body: "컴퓨터 없이 무료로 돌아가요. 준비는 3분쯤 걸려요. 잇는 법은 설정에서 알려드려요.",
+    body: "컴퓨터 없이 무료로 돌아가요. 준비는 3분쯤 걸려요. 잇는 법은 콜랩 화면이 알려드려요.",
   },
   {
     key: "pc",
@@ -49,14 +44,9 @@ const METHOD_CHOICES = [
     body: "같은 Wi-Fi 의 내 컴퓨터가 바꿔요. 녹음이 집 밖으로 나가지 않아요.",
   },
   {
-    key: "gemini",
-    title: "Gemini (구글 AI)",
-    body: "열쇠 하나면 콜랩도 컴퓨터도 필요 없어요. 열쇠 받는 길은 설정에서 알려드려요.",
-  },
-  {
     key: "later",
     title: "나중에 정하기",
-    body: "지금 건너뛰어도 나중에 설정에서 정하면 돼요.",
+    body: "지금 건너뛰어도 나중에 정하면 돼요. 티로로 녹음했다면 안 골라도 돼요.",
   },
 ] as const;
 
@@ -332,8 +322,9 @@ export default function Onboarding() {
   어디서 글자로 바꿀까요
 </Text>
             <Small>
-              글자로 바꾸는 일은 폰이 아니라 아래 넷 중 한 곳이 해요. 녹음한 소리가 고른
-              곳으로 전송돼요. 나중에 설정에서 바꿀 수 있어요.
+              이 앱으로 녹음했을 때 글자로 바꿀 곳이에요. 녹음한 소리가 고른 곳으로
+              전송돼요. 티로 앱으로 녹음했다면 티로가 이미 바꿔 둔 글자를 가져오니까
+              여기서 안 골라도 돼요.
             </Small>
             {METHOD_CHOICES.map((m) => {
               const on = model === m.key;
@@ -350,13 +341,8 @@ export default function Onboarding() {
               label="다음"
               tone="primary"
               onPress={() => {
-                if (
-                  model === "tiro" ||
-                  model === "colab" ||
-                  model === "pc" ||
-                  model === "gemini"
-                ) {
-                  // 설정 → 전사 화면이 이 모드로 열린다. 주소는 거기서 잇는다.
+                if (model === "colab" || model === "pc") {
+                  // 주소는 콜랩 화면의 '앱에 연결' 버튼이 넣어 준다.
                   // 통째로 덮어쓰면 이미 고른 모델·화자 분리·주소가 날아간다.
                   void save(async () => {
                     const prev = await getSetting<Record<string, unknown>>(

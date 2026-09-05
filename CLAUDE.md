@@ -25,7 +25,7 @@ git merge-base --is-ancestor $LATEST HEAD && echo "최신 판($LATEST) 포함 �
 | `packages/core/` | 플랫폼 독립 도메인 로직 (한글 음운, 사전, 전사 교정·검토, 태움, 학습, 듀티) | `npm test` (vitest 330+), `npm run typecheck` |
 | `apps/mobile/` | Expo 57 / RN 0.86 앱. 화면·저장·녹음·네이티브 모듈. 전사는 콜랩·PC 서버로 보낸다 (온디바이스 whisper.rn 은 0.1.5x 에서 뺐다) | `cd apps/mobile && npx tsc --noEmit` |
 | `apps/mobile/src/services/pipeline.ts`, `llm.ts`, `asr.ts` | 심층 분석 파이프라인(추출→검증→조사→보고서), LLM 경로, 전사 서버 연결 | 위와 같음 |
-| `apps/mobile/src/services/tiro-notes.ts` | 티로 노트 가져오기. 티로가 계정에 '파일 전사'를 안 켜 주면 업로드 길이 403 으로 막혀서, 티로 앱이 이미 전사한 노트를 읽어 온다 | 위와 같음 |
+| `apps/mobile/src/services/tiro-notes.ts` | 티로 노트 가져오기. **앱이 티로에 쓰는 유일한 길이다** — 파일 올리기(Voice File Job)는 티로가 이 계정에 안 열어 줘서 0.1.8x 에서 지웠다. 티로 앱이 이미 전사한 노트를 읽어 오고, 그 김에 병동 사전을 티로 단어장에 올린다 | 위와 같음 |
 | `apps/mobile/modules/nsr-audio-decode/` | 로컬 Expo 네이티브 모듈 (m4a→wav, 포그라운드 서비스) | APK CI |
 | `server/` | VPS 서버 (파이썬). 폰이 올린 **가려진** 근무 자료를 보관하고 클로드·GPT 에 MCP 커넥터로 연다. 설계는 `docs/08` | `cd server && python -m pytest` |
 | `tools/` | 저장소 운영 스크립트 (판 점검, 전사본 검토, 스킬 업로드, 릴리스 노트) | 실행해 본다 |

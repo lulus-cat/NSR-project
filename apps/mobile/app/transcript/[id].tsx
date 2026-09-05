@@ -812,7 +812,7 @@ export default function TranscriptView() {
           ) : (
             <>
               <Small>문장 위 이름표를 시작과 끝, 두 번 누르면 그 사이가 한 번에 정해져요.</Small>
-              <Small>티로는 목소리를 저절로 나눠요. 콜랩은 전사 설정에서 켜요.</Small>
+              <Small>가져온 티로 노트는 목소리가 나뉘어 와요.</Small>
             </>
           )}
           {rangeStart ? (
