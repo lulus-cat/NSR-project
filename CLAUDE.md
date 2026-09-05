@@ -27,8 +27,9 @@ git merge-base --is-ancestor $LATEST HEAD && echo "최신 판($LATEST) 포함 �
 | `apps/mobile/src/services/pipeline.ts`, `llm.ts`, `asr.ts` | 심층 분석 파이프라인(추출→검증→조사→보고서), LLM 경로, 전사 서버 연결 | 위와 같음 |
 | `apps/mobile/src/services/tiro-notes.ts` | 티로 노트 가져오기. 티로가 계정에 '파일 전사'를 안 켜 주면 업로드 길이 403 으로 막혀서, 티로 앱이 이미 전사한 노트를 읽어 온다 | 위와 같음 |
 | `apps/mobile/modules/nsr-audio-decode/` | 로컬 Expo 네이티브 모듈 (m4a→wav, 포그라운드 서비스) | APK CI |
+| `server/` | VPS 서버 (파이썬). 폰이 올린 **가려진** 근무 자료를 보관하고 클로드·GPT 에 MCP 커넥터로 연다. 설계는 `docs/08` | `cd server && python -m pytest` |
 | `tools/` | 저장소 운영 스크립트 (판 점검, 전사본 검토, 스킬 업로드, 릴리스 노트) | 실행해 본다 |
-| `docs/` | 설계 근거. 01 법·개인정보, 02 전사 파이프라인, 03 도구 조사, 07 전사 검토 워크플로, `colab/` 전사 서버 노트 | — |
+| `docs/` | 설계 근거. 01 법·개인정보, 02 전사 파이프라인, 03 도구 조사, 07 전사 검토 워크플로, 08 앱과 AI 의 경계, `colab/` 전사 서버 노트 | — |
 | `data/` | 녹음·전사본 작업 폴더. **환자 정보가 들어 있어 대부분 gitignore** (`data/README.md`) | — |
 | `.github/workflows/` | `build-apk.yml` (claude/** 푸시마다 APK → Releases prerelease), 모델 릴리스 | — |
 
