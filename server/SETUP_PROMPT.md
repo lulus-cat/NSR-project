@@ -38,15 +38,20 @@ VPS 에 접속한 클로드(클로드 코드 등)에게 그대로 붙여 넣는 
    설치해라 (우분투 24.04 는 기본이 3.12 다).
 2. **내려받기.** `nsr` 사용자를 만들고 그 홈에 저장소를 clone 한 뒤,
    `server/` 에서 venv 를 만들고 `requirements.txt` 를 설치해라.
-3. **토큰 두 개 만들기.** `NSR_MCP_TOKEN`(대화 AI 용)과 `NSR_DEVICE_TOKEN`(폰 용).
-   README 의 명령으로 만들고 `/home/nsr/nsr.env` 에 넣어라. 권한 600.
-   두 값은 서로 달라야 하고 32자 이상이어야 한다.
+3. **환경변수 파일.** `NSR_MCP_TOKEN`(대화 AI 용), `NSR_DEVICE_TOKEN`(폰 용),
+   그리고 **`NSR_PUBLIC_HOST`(내 도메인)**. README 의 명령으로 만들어
+   `/home/nsr/nsr.env` 에 넣어라. 권한 600. 두 토큰은 서로 달라야 하고 32자 이상이다.
+   `NSR_PUBLIC_HOST` 가 없으면 서버가 이유를 말하며 시작을 거부한다 — 그게 정상이다.
 4. **systemd 등록.** README 의 서비스 파일을 그대로 쓰고, `systemctl enable --now nsr`
    한 뒤 `systemctl status nsr` 로 돌고 있는지 봐라.
-5. **caddy 로 https.** README 의 Caddyfile 을 쓰고 도메인만 바꿔라. 인증서가 발급될
-   때까지 기다린 뒤 `curl https://내도메인/healthz` 가 `ok` 를 주는지 확인해라.
-6. **방화벽.** 443 과 SSH 만 열고 나머지는 닫아라. 밖에서 `curl http://내도메인:8787/healthz`
-   가 **안 되는 것**까지 확인해라 (되면 안 된다).
+5. **https.** 이 서버에 이미 nginx 가 돌고 있으면 그것을 쓰고, 없으면 caddy 를 써라.
+   README 의 5번에 두 경우가 다 있다. 세 가지를 반드시 지켜라 —
+   `Host` 를 바꾸지 말 것(서버가 `NSR_PUBLIC_HOST` 로 검사한다),
+   `/.well-known/acme-challenge/` 를 프록시보다 먼저 빼 줄 것(안 그러면 인증서 발급 실패),
+   `proxy_buffering off`(MCP 는 스트리밍이다).
+   끝나면 `curl https://내도메인/healthz` 가 `ok` 를 주는지 확인해라.
+6. **방화벽.** 80·443·SSH 만 열어라 (80 은 인증서 갱신에 필요하다). 8787 은 바깥에
+   열지 마라 — 밖에서 `curl http://내도메인:8787/healthz` 가 **안 되는 것**까지 확인해라.
 
 ## 마지막 점검 — 진짜 도는지 본다
 

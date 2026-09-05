@@ -32,6 +32,7 @@ import logging
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
@@ -53,6 +54,29 @@ INSTRUCTIONS = """\
 근거 없는 임상 판단을 쓰지 않으며, 확인이 필요한 것은 '확인필요'로 남깁니다.
 보고서는 put_shift_report 로 써 넣으면 폰이 가져갑니다.
 """
+
+
+def transport_security(config: Config) -> TransportSecuritySettings:
+    """
+    프록시 뒤에서 살아남는 설정.
+
+    `NSR_PUBLIC_HOST` 가 `*` 면 보호를 끈다 — 주소 안의 토큰이 유일한 문지기가
+    되므로 권하지 않는다. 도메인을 적어 두는 편이 낫다.
+    """
+    if config.public_host == "*":
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    if not config.public_host:
+        raise SystemExit(
+            "환경변수 NSR_PUBLIC_HOST 가 비어 있습니다. 바깥에서 부르는 도메인을 넣으십시오.\n"
+            "  NSR_PUBLIC_HOST=nsr.example.com\n"
+            "이 값이 없으면 커넥터가 421 Invalid Host header 로 막힙니다."
+        )
+    return TransportSecuritySettings(
+        enable_dns_rebinding_protection=True,
+        # 포트가 붙어 오는 경우도 있어 두 모양을 다 넣는다.
+        allowed_hosts=[config.public_host, f"{config.public_host}:*"],
+        allowed_origins=config.allowed_origins,
+    )
 
 
 def build_app(config: Config | None = None, store: Store | None = None) -> Starlette:
@@ -176,7 +200,15 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         return JSONResponse({"ok": True})
 
     # MCP 창구는 추측 불가능한 주소 밑에 둔다. 클로드·GPT 가 같은 주소로 붙는다.
-    mcp_app = mcp.streamable_http_app()
+    #
+    # transport_security 를 반드시 넘겨야 한다. 안 넘기면 SDK 가
+    # streamable_http_app(host="127.0.0.1") 이라는 **고정 기본값**을 보고
+    # "로컬 서버구나" 판단해 DNS 리바인딩 보호를 자동으로 켠다. 그러면 허용
+    # 목록이 127.0.0.1·localhost 뿐이라, nginx·caddy 가 넘긴 진짜 도메인
+    # Host 를 421 Invalid Host header 로 거부한다 (실제로 겪은 사고다).
+    # Origin 도 함께 검사하므로, 커넥터가 보내는 https://claude.ai 같은 값도
+    # 목록에 있어야 한다. 없으면 403 이다.
+    mcp_app = mcp.streamable_http_app(transport_security=transport_security(config))
     app = Starlette(
         routes=[
             Route("/healthz", healthz),
@@ -199,7 +231,8 @@ def main() -> None:
     config = Config()
     app = build_app(config)
     print(f"NSR 서버 시작 — http://{config.host}:{config.port}")
-    print(f"커넥터 주소: https://<도메인>/t/{config.mcp_token[:6]}…/mcp/")
+    print(f"바깥 도메인: {config.public_host or '(없음 — 시작하지 못합니다)'}")
+    print(f"커넥터 주소: https://{config.public_host}/t/{config.mcp_token[:6]}…/mcp")
     # 접근 로그를 끈다 — 주소에 토큰이 들어 있어 로그에 남으면 그게 유출이다.
     uvicorn.run(app, host=config.host, port=config.port, access_log=False)
 

@@ -136,3 +136,75 @@ def test_파일_권한은_주인만(tmp_path):
     path = str(tmp_path / "t.db")
     Store(path)
     assert oct(os.stat(path).st_mode)[-3:] == "600"
+
+
+# ── 프록시 뒤에서 살아남기 ─────────────────────────────────
+#
+# SDK 는 streamable_http_app(host="127.0.0.1") 이라는 고정 기본값을 보고 DNS
+# 리바인딩 보호를 자동으로 켠다. 그러면 허용 목록이 로컬 주소뿐이라 nginx·caddy 가
+# 넘긴 진짜 도메인 Host 가 421 로 막힌다. 실제로 겪은 사고라 시험으로 못박는다.
+
+
+def _config(public_host: str = "nsr.example.com", origins: str = ""):
+    import importlib
+
+    os.environ["NSR_MCP_TOKEN"] = "a" * 40
+    os.environ["NSR_DEVICE_TOKEN"] = "b" * 40
+    os.environ["NSR_PUBLIC_HOST"] = public_host
+    os.environ["NSR_ALLOWED_ORIGINS"] = origins
+    config_module = importlib.import_module("nsr_server.config")
+    return config_module.Config()
+
+
+def test_도메인을_허용_목록에_넣는다():
+    from nsr_server.app import transport_security
+
+    s = transport_security(_config())
+    assert s.enable_dns_rebinding_protection is True
+    assert "nsr.example.com" in s.allowed_hosts
+    assert "nsr.example.com:*" in s.allowed_hosts
+
+
+def test_커넥터_오리진이_기본으로_들어간다():
+    from nsr_server.app import transport_security
+
+    s = transport_security(_config())
+    assert "https://claude.ai" in s.allowed_origins
+    assert "https://chatgpt.com" in s.allowed_origins
+
+
+def test_오리진을_직접_적으면_그것만_쓴다():
+    from nsr_server.app import transport_security
+
+    s = transport_security(_config(origins="https://claude.ai, https://내회사.example"))
+    assert s.allowed_origins == ["https://claude.ai", "https://내회사.example"]
+
+
+def test_별표는_보호를_끈다():
+    from nsr_server.app import transport_security
+
+    assert transport_security(_config("*")).enable_dns_rebinding_protection is False
+
+
+def test_도메인을_안_적으면_이유를_말하고_멈춘다():
+    import pytest
+
+    from nsr_server.app import transport_security
+
+    with pytest.raises(SystemExit) as e:
+        transport_security(_config(""))
+    assert "NSR_PUBLIC_HOST" in str(e.value)
+    assert "421" in str(e.value)
+
+
+def test_토큰이_짧으면_거부한다():
+    import pytest
+
+    os.environ["NSR_MCP_TOKEN"] = "짧다"
+    os.environ["NSR_DEVICE_TOKEN"] = "b" * 40
+    import importlib
+
+    config_module = importlib.import_module("nsr_server.config")
+    with pytest.raises(SystemExit) as e:
+        config_module.Config()
+    assert "32자" in str(e.value)

@@ -43,10 +43,16 @@ python3 -c "import secrets;print('NSR_MCP_TOKEN=' + secrets.token_urlsafe(32))"
 python3 -c "import secrets;print('NSR_DEVICE_TOKEN=' + secrets.token_urlsafe(32))"
 ```
 
-두 줄을 `/home/nsr/nsr.env` 에 적고 주인만 읽게 잠근다.
+두 줄을 `/home/nsr/nsr.env` 에 적고 주인만 읽게 잠근다. **도메인도 함께 적는다** —
+이게 없으면 커넥터가 421 로 막힌다(아래 5번 설명).
 
 ```bash
-printf 'NSR_MCP_TOKEN=...\nNSR_DEVICE_TOKEN=...\nNSR_DB=/home/nsr/nsr.db\n' > /home/nsr/nsr.env
+cat > /home/nsr/nsr.env <<'EOF'
+NSR_MCP_TOKEN=...
+NSR_DEVICE_TOKEN=...
+NSR_DB=/home/nsr/nsr.db
+NSR_PUBLIC_HOST=nsr.example.com
+EOF
 chmod 600 /home/nsr/nsr.env
 ```
 
@@ -81,9 +87,24 @@ sudo systemctl enable --now nsr
 sudo systemctl status nsr
 ```
 
-## 5. 바깥에서 들어오는 문 (caddy)
+## 5. 바깥에서 들어오는 문 (caddy 또는 nginx)
 
-`/etc/caddy/Caddyfile` — 도메인만 바꾸면 인증서는 caddy 가 알아서 받는다.
+### 왜 도메인을 서버에도 알려 줘야 하나
+
+MCP SDK 는 `streamable_http_app(host="127.0.0.1")` 이라는 **고정 기본값**을 보고
+"로컬 서버구나" 판단해 DNS 리바인딩 보호를 자동으로 켠다. 그러면 허용 목록이
+`127.0.0.1`·`localhost` 뿐이라, 프록시가 넘긴 진짜 도메인 `Host` 를
+**421 Invalid Host header** 로 거부한다. `Origin` 도 함께 검사해서, 커넥터가 보내는
+`https://claude.ai` 가 목록에 없으면 **403** 이 난다.
+
+그래서 `NSR_PUBLIC_HOST` 를 넣는다. 서버가 그 도메인과 커넥터 오리진을 허용 목록에
+넣어 준다. 다른 커넥터를 쓰다 403 이 나면 `journalctl -u nsr` 에
+`Invalid Origin header: ...` 가 찍히니, 그 값을 `NSR_ALLOWED_ORIGINS` 에 쉼표로 더한다.
+
+> 프록시에서 `Host` 를 억지로 바꿔 우회하지 않는다. `Origin` 까지 걸리고, 헤더가
+> 두 개 들어가면 `400 Invalid HTTP request` 가 난다.
+
+### caddy 를 쓸 때
 
 ```
 nsr.example.com {
@@ -95,16 +116,47 @@ nsr.example.com {
 }
 ```
 
+### nginx 를 쓸 때
+
+이미 nginx 가 돌고 있으면 그걸 쓰면 된다. **`Host` 를 그대로 넘기고**, MCP 는
+스트리밍이라 버퍼링을 끈다. 인증서 발급 경로는 프록시보다 먼저 빼 준다.
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name nsr.example.com;
+
+    # 인증서(certbot) 발급·갱신용. 이 자리가 프록시로 넘어가면 404 가 나서
+    # 발급이 실패한다. 프록시 규칙보다 위에 둔다.
+    location ^~ /.well-known/acme-challenge/ {
+        root /var/www/html;
+    }
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;              # 바꾸지 않는다
+        proxy_set_header X-Forwarded-For $remote_addr;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        # MCP 는 스트리밍이다. 버퍼링을 켜 두면 응답이 끊긴다.
+        proxy_buffering off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+    }
+
+    # 주소에 토큰이 들어 있다. 기록하지 않는다.
+    access_log off;
+    error_log /dev/null crit;
+}
+```
+
 ```bash
-sudo systemctl reload caddy
+sudo nginx -t && sudo systemctl reload nginx
 curl https://nsr.example.com/healthz   # ok 가 나오면 됐다
 ```
 
-방화벽은 **443 만** 연다. SSH 는 열쇠 로그인만 두고 비밀번호 로그인은 끈다.
-
-```bash
-sudo ufw allow 443/tcp && sudo ufw allow OpenSSH && sudo ufw enable
-```
+WordOps 같은 관리 도구를 쓰면 `wo site update` 가 이 설정을 다시 만들면서 지운다.
+고치기 전에 백업해 두고, 지워졌으면 되돌린다.
 
 ## 6. 대화 AI 에 붙이기
 
@@ -163,3 +215,13 @@ POST /pulled    { shiftIds[], entries[] }  받았다고 알리기
 ```bash
 cd server && ./venv/bin/python -m pytest -q
 ```
+
+## 안 될 때
+
+| 증상 | 까닭 | 고치는 법 |
+| --- | --- | --- |
+| `421 Invalid Host header` | 서버가 도메인을 모른다 | `nsr.env` 에 `NSR_PUBLIC_HOST` 를 넣고 재시작 |
+| `403` (커넥터에서만) | 그 앱의 Origin 이 목록에 없다 | `journalctl -u nsr` 에서 값을 보고 `NSR_ALLOWED_ORIGINS` 에 더한다 |
+| `400 Invalid HTTP request` | 프록시가 `Host` 를 두 번 넣었다 | `proxy_set_header Host $host;` 하나만 남긴다 |
+| 인증서 발급 실패 | `/.well-known/acme-challenge/` 가 프록시로 넘어간다 | 그 위치를 프록시 규칙보다 먼저 빼 준다 |
+| 응답이 중간에 끊긴다 | 프록시 버퍼링 | `proxy_buffering off` |

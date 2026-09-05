@@ -1,3 +1,6 @@
 # NSR MCP 서버. 파이썬 3.11 이상.
 mcp>=2.1,<3
 uvicorn>=0.30
+
+# 시험용 (README 의 pytest 안내가 이걸 쓴다)
+pytest>=8
