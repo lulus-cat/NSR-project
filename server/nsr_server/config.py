@@ -7,6 +7,8 @@
   NSR_HOST/NSR_PORT 붙일 주소 (기본 127.0.0.1:8787 — 바깥은 nginx·caddy 가 받는다)
   NSR_PUBLIC_HOST   바깥에서 부르는 도메인 (예: nsr.example.com). **없으면 붙지 않는다.**
   NSR_ALLOWED_ORIGINS  커넥터의 Origin 목록. 쉼표로 나눈다. 비우면 기본값을 쓴다.
+  NSR_TIRO_KEY      티로 API 열쇠. 있으면 서버가 티로에서 직접 노트를 가져온다.
+  NSR_REPO          저장소 경로 (기본 ../ — 가리기 스크립트를 여기서 찾는다)
 
 두 토큰을 나눠 둔 이유: 하나가 새면 그 하나만 갈면 된다. 폰 토큰이 새도 남이
 전사본을 읽지는 못하고, MCP 토큰이 새도 남이 자료를 올리지는 못한다.
@@ -55,6 +57,10 @@ class Config:
         # MCP SDK 가 "127.0.0.1 에 붙었으니 로컬 서버겠지" 하고 DNS 리바인딩
         # 보호를 자동으로 켜서, 프록시가 넘긴 진짜 도메인 Host 를 거부하기 때문이다.
         # 그래서 바깥 도메인을 여기서 알려 준다. `*` 를 넣으면 보호를 끈다.
+        self.tiro_key = os.environ.get("NSR_TIRO_KEY", "").strip()
+        self.repo_root = os.path.abspath(
+            os.environ.get("NSR_REPO", os.path.join(os.path.dirname(__file__), "..", ".."))
+        )
         self.public_host = os.environ.get("NSR_PUBLIC_HOST", "").strip()
         origins = os.environ.get("NSR_ALLOWED_ORIGINS", "").strip()
         self.allowed_origins = [o.strip() for o in origins.split(",") if o.strip()] or list(

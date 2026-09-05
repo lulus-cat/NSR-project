@@ -123,3 +123,34 @@ describe("내보내기 전 점검", () => {
     expect(audio?.message).toContain("목소리");
   });
 });
+
+describe("병실 번호 — '호실' 말고 '호' 만 붙는 말투", () => {
+  // 병동에서는 "302호실"보다 "302호"라고 부른다. 실제 티로 노트에서
+  // "302호 확인" 이 안 가려진 채로 나갔다.
+  it("'302호' 를 가린다", () => {
+    const r = deidentify("302호 확인했어요.", { disable: [] });
+    expect(r.text).not.toContain("302");
+    expect(r.redactions[0].kind).toBe("location");
+  });
+
+  it("조사가 붙어도 가린다 — '302호예요'", () => {
+    // (?![가-힣]) 로 막았더니 '예요'까지 걸려서 안 가려졌다. 실제 말투가 이쪽이다.
+    for (const line of ["302호예요", "302호에 계세요", "302호로 옮겼어요"]) {
+      expect(deidentify(line, { disable: [] }).text).not.toContain("302");
+    }
+  });
+
+  it("'302호실' 도 그대로 가린다", () => {
+    expect(deidentify("302호실 확인", { disable: [] }).text).not.toContain("302");
+  });
+
+  it("호수가 아닌 '호' 는 안 건드린다", () => {
+    for (const line of ["2호선 타고 왔어요", "1호기 점검", "3호봉이에요"]) {
+      expect(deidentify(line, { disable: [] }).text).toBe(line);
+    }
+  });
+
+  it("기본값(location 끔)에서는 그대로 둔다", () => {
+    expect(deidentify("302호 확인").text).toBe("302호 확인");
+  });
+});

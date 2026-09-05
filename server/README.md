@@ -213,6 +213,10 @@ sudo grep NSR_MCP_TOKEN /home/nsr/nsr.env   # 로그인 화면에 넣을 값
 | `add_term` | 병동 사전에 새 말 넣기 → 폰이 가져가 전사 교정에 쓴다 |
 | `get_taeum_summary` | 태움 점수·등급. **숫자만** |
 | `get_shift_report` / `put_shift_report` | 보고서 읽기·쓰기 |
+| `list_tiro_notes` | 티로에 있는 녹음 노트 — 제목·날짜·길이만 |
+| `import_from_tiro` | 노트를 가져와 **가린 뒤** 저장. 원문은 서버에 안 남는다 |
+
+뒤의 둘은 `NSR_TIRO_KEY` 가 있을 때만 나타난다.
 
 ## 폰이 쓰는 주소
 
@@ -226,6 +230,32 @@ POST /pulled    { shiftIds[], entries[] }  받았다고 알리기
 이메일이 남아 있으면 422 로 돌려보낸다(몇 건인지만 알려 주고 값은 돌려주지 않는다).
 **가려 주지 않고 돌려보내는 이유**: 서버가 대신 가려 주기 시작하면 폰의 1차 관문이
 느슨해진다. 가리는 자리는 폰이다.
+
+## 티로에서 바로 가져오기 (선택)
+
+대화 AI 가 티로 MCP 를 함께 붙여 두면 노트를 **안 가려진 원문 그대로** 읽는다.
+그래서 이 길을 둔다 — AI 는 "가져와"라고만 하고, 받아서 가리는 일은 서버가 한다.
+
+가리는 규칙은 서버에서 다시 짜지 않는다. `packages/core` 의 `deidentify` 를
+`tools/mask-tiro-note.mjs` 로 부른다 — 구현이 두 벌이 되면 반드시 어긋난다.
+그래서 서버에 **node 와 빌드된 core** 가 필요하다.
+
+```bash
+sudo apt install -y nodejs npm
+sudo -iu nsr bash -c 'cd ~/NSR-project && npm ci && npm run build'
+echo 'NSR_TIRO_KEY=티로열쇠' | sudo tee -a /home/nsr/nsr.env
+sudo systemctl restart nsr
+```
+
+되는지 확인:
+
+```bash
+sudo -iu nsr bash -c 'cd ~/NSR-project && echo "{\"paragraphs\":[{\"transcript\":{\"content\":\"김영희님 010-1234-5678 302호\"}}]}" | node tools/mask-tiro-note.mjs'
+# → 이름·전화·병실이 [이름] [전화번호] [위치] 로 바뀌어 나오면 된다
+```
+
+**한계**: 폰에는 사용자가 등록한 이름 목록이 있어 호칭 없이 부르는 이름까지
+가리지만, 서버에는 그 목록이 없다. 그래서 이 길은 폰 경로보다 약하다.
 
 ## 시험
 

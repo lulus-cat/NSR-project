@@ -46,6 +46,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from .config import Config
 from .oauth import NsrOAuthProvider
+from .tiro import TiroError, fetch_paragraphs, list_notes, mask
 from .screen import screen_bundle
 from .store import Store
 
@@ -162,6 +163,65 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             return "보고서 내용이 비어 있습니다."
         store.put_report(shift_id, markdown)
         return f"{shift_id} 보고서를 저장했습니다. 폰이 다음에 가져갑니다."
+
+    # ── 티로에서 바로 가져오기 ────────────────────────────
+    #
+    # 대화 AI 가 티로 MCP 를 함께 붙여 두면 노트를 스스로 읽을 수 있다. 그건
+    # **안 가려진 원문**이다. 그래서 이 길을 둔다 — AI 는 "가져와"라고만 하고,
+    # 받아서 가리는 일은 서버가 한다. AI 가 보는 것은 가려진 사본뿐이다.
+
+    if config.tiro_key:
+
+        @mcp.tool()
+        def list_tiro_notes(limit: int = 20) -> str:
+            """티로에 있는 녹음 노트 목록. 제목·날짜·길이만 준다 — 글자는 안 준다."""
+            try:
+                return store.dump_json(list_notes(config.tiro_key, max(1, min(limit, 50))))
+            except TiroError as e:
+                return str(e)
+
+        @mcp.tool()
+        def import_from_tiro(note_guid: str, date: str, duty: str = "D") -> str:
+            """
+            티로 노트 하나를 가져와 **개인정보를 가린 뒤** 이 서버에 넣는다.
+
+            date 는 2026-09-03 처럼, duty 는 D·E·N 처럼 적는다. 넣고 나면
+            get_shift_sentences 로 읽을 수 있다. 원문은 이 서버에 남지 않는다.
+            """
+            try:
+                paragraphs = fetch_paragraphs(config.tiro_key, note_guid)
+                if not paragraphs:
+                    return "이 노트에는 아직 전사본이 없습니다. 티로에서 다 되었는지 보십시오."
+                out = mask(paragraphs, config.repo_root)
+            except TiroError as e:
+                return str(e)
+
+            segments = out.get("segments", [])
+            if not segments:
+                locked = out.get("locked", 0)
+                return (
+                    "티로 무료 한도로 잠긴 노트라 가져올 것이 없습니다."
+                    if locked
+                    else "이 노트에서 가져올 말이 없습니다."
+                )
+            shift_id = f"{date}:{duty}"
+            n = store.put_shift(
+                {
+                    "shiftId": shift_id,
+                    "date": date,
+                    "code": duty,
+                    "minutes": round((segments[-1].get("endSec") or 0) / 60),
+                    "sentences": [
+                        {"t": s.get("startSec", 0), "speaker": s.get("speakerId"), "text": s["text"]}
+                        for s in segments
+                    ],
+                }
+            )
+            log.info("티로 노트 가져오기 — 문장 %d개", n)  # 본문은 안 남긴다
+            note = f"{shift_id} 에 {n}문장을 넣었습니다. 가린 것 {out.get('redacted', 0)}건."
+            if out.get("locked"):
+                note += f" 잠긴 문단 {out['locked']}개는 뺐습니다."
+            return note
 
     # ── 폰이 쓰는 주소 ────────────────────────────────────
 

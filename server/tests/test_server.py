@@ -323,3 +323,57 @@ def test_토큰을_거두면_못_쓴다(tmp_path):
     access = asyncio.run(provider.load_access_token(token.access_token))
     asyncio.run(provider.revoke_token(access))
     assert asyncio.run(provider.verify_token(token.access_token)) is None
+
+
+# ── 티로에서 바로 가져오기 ─────────────────────────────────
+#
+# 가리기는 파이썬으로 다시 짜지 않는다. core 의 것을 노드로 부른다 —
+# 구현이 두 벌이 되면 반드시 어긋난다. 그 호출이 실제로 도는지만 본다.
+
+
+def test_가리기는_core_를_부른다():
+    import os
+    import pathlib
+
+    from nsr_server.tiro import mask
+
+    repo = str(pathlib.Path(__file__).resolve().parents[2])
+    if not os.path.exists(os.path.join(repo, "packages", "core", "dist")):
+        import pytest
+
+        pytest.skip("core 가 빌드되지 않았다 (서버에서는 npm run build 를 먼저 돌린다)")
+
+    out = mask(
+        [
+            {
+                "timeFrom": "2026-09-04T09:00:00Z",
+                "timeTo": "2026-09-04T09:00:10Z",
+                "transcript": {"content": "김영희님 010-1234-5678 이고 302호예요."},
+            },
+            {"timeFrom": "2026-09-04T09:01:00Z", "locked": True, "transcript": {"content": "▒▒▒"}},
+        ],
+        repo,
+    )
+    text = out["segments"][0]["text"]
+    assert "김영희" not in text and "010-1234-5678" not in text and "302호" not in text
+    assert out["redacted"] >= 3
+    assert out["locked"] == 1  # 잠긴 문단은 버린다
+
+
+def test_node_가_없으면_이유를_말한다(monkeypatch):
+    import subprocess
+
+    from nsr_server.tiro import TiroError, mask
+
+    def boom(*a, **k):
+        raise FileNotFoundError()
+
+    monkeypatch.setattr(subprocess, "run", boom)
+    import pathlib
+
+    repo = str(pathlib.Path(__file__).resolve().parents[2])
+    try:
+        mask([{"transcript": {"content": "안녕"}}], repo)
+        raise AssertionError("멈췄어야 한다")
+    except TiroError as e:
+        assert "node" in str(e)
