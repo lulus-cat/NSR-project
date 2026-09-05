@@ -28,7 +28,6 @@ import {
   Card,
   DashedDivider,
   Enter,
-  GaugeBar,
   HeaderScreen,
   Small,
 } from "../../src/components/ui";
@@ -44,11 +43,6 @@ import {
 } from "../../src/db";
 import { buildSchedule, startManual, stopManual } from "../../src/services/scheduler";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
-import {
-  runnerState,
-  subscribeRunner,
-  type RunnerState,
-} from "../../src/services/transcribe-runner";
 
 function formatClock(epochMs: number): string {
   const d = new Date(epochMs);
@@ -390,17 +384,6 @@ export default function Home() {
     void load();
   }, [load]);
 
-  // 전사 러너 — 돌고 있으면 기록 폴더에 막대로 보이고, 끝나면 목록을 다시 읽는다.
-  const [runner, setRunner] = useState<RunnerState | null>(null);
-  useEffect(() => {
-    const now = runnerState();
-    setRunner(now.running ? now : null);
-    return subscribeRunner((s) => {
-      setRunner(s.running ? s : null);
-      if (!s.running && s.completedAt) void load();
-    });
-  }, [load]);
-
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([app.refresh(), load()]);
@@ -541,10 +524,10 @@ export default function Home() {
           ) : null}
           <BriefRow
             icon="document-text-outline"
-            label="안 바꾼 녹음"
+            label="티로에 안 보낸 녹음"
             value={pendingCount > 0 ? `${pendingCount}건` : "없음"}
             valueColor={pendingCount > 0 ? t.warn : undefined}
-            // 미전사 기록이 있는 근무로 바로 간다 — 거기 '전사하기' 버튼이 있다.
+            // 안 보낸 기록이 있는 근무로 바로 간다 — 거기 보내기 버튼이 있다.
             // 기록이 없으면 눌리지 않는다: 예전엔 듀티표로 보내서, 전사하러
             // 들어온 사람이 영문 모를 화면에 떨어졌다.
             onPress={
@@ -553,24 +536,7 @@ export default function Home() {
                 : undefined
             }
           />
-          {runner ? (
-            <View style={{ gap: space.xs, paddingBottom: space.sm }}>
-              <BriefRow
-                icon="sync-outline"
-                label={`글자로 바꾸는 중 (${runner.fileIndex}/${runner.fileCount})`}
-                value={`${runner.percent}%`}
-                valueColor={t.accent}
-                onPress={
-                  runner.shiftId
-                    ? () => router.push(`/shift/${encodeURIComponent(runner.shiftId!)}`)
-                    : undefined
-                }
-              />
-              <GaugeBar ratio={runner.percent / 100} color={t.accent} />
-              {runner.note ? <Small>{runner.note}</Small> : null}
-            </View>
-          ) : null}
-          {/* 건수 뒤에 실제 녹음 파일이 보인다 — 무엇이 전사를 기다리는지 세지 않아도 안다. */}
+          {/* 건수 뒤에 실제 녹음 파일이 보인다 — 무엇이 티로를 기다리는지 세지 않아도 안다. */}
           {pendingRows.slice(0, 3).map((r) => {
             const d = new Date(r.started_at);
             const mins = Math.round(r.duration_sec / 60);
@@ -579,7 +545,7 @@ export default function Home() {
                 key={r.id}
                 icon="mic-outline"
                 label={r.label ?? `${d.getMonth() + 1}월 ${d.getDate()}일 ${formatClock(r.started_at)} 녹음`}
-                value={mins > 0 ? `${mins}분 · 바꾸기` : "바꾸기"}
+                value={mins > 0 ? `${mins}분 · 보내기` : "보내기"}
                 valueColor={t.accent}
                 onPress={
                   r.shift_id

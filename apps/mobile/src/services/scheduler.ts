@@ -58,8 +58,6 @@ export const SETTINGS_KEYS = {
   policy: "recording.policy",
   onboarded: "app.onboarded",
   appLock: "security.appLock",
-  cloudTranscription: "asr.cloud",
-  llmPostEdit: "llm.postEdit",
   discardWithoutSelf: "privacy.discardSegmentsWithoutSelf",
   iosContinuousSession: "recording.iosContinuousSession",
   lastTickAt: "recording.lastTickAt",

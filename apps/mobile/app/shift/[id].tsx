@@ -1,9 +1,10 @@
 /**
- * 근무 기록 — 녹음을 글자로 바꾸는 화면. 이 화면의 일은 셋뿐이다.
+ * 근무 기록 — 녹음을 티로로 넘기는 화면. 이 화면의 일은 셋뿐이다.
  *
- *   1. 녹음 바꾸기 — 이 근무에 밀린 녹음을 글자로.
+ *   1. 티로로 보내기 — 이 근무의 녹음을 티로 앱에 넘긴다. 앱은 전사를 하지
+ *      않는다(0.1.8x). 티로가 받아적은 글자는 홈의 '가져오기'로 데려온다.
  *   2. 날짜 고르기 — 어느 날 녹음이 밀렸는지 한눈에. 안 그러면 어디까지
- *      바꿨는지 잊는다. '전체 보기'를 켜면 모든 날의 밀린 녹음이 한 목록에 선다.
+ *      보냈는지 잊는다. '전체 보기'를 켜면 모든 날의 밀린 녹음이 한 목록에 선다.
  *   3. 음성 파일 — 날짜·파일 이름·시각. 들어보고, 잘못 올린 것은 지운다.
  *
  * 전사 **결과**(문장 목록·재생·수정)와 심층 분석은 `/transcript/[id]` 에 있다.
@@ -18,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import { DEFAULT_TEMPLATES, type ShiftCode } from "@nsr/core";
-import { Badge, Button, Card, Divider, GaugeBar, Heading, Small } from "../../src/components/ui";
+import { Badge, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   countSegments,
@@ -31,15 +32,10 @@ import {
   listRecordings,
   pendingTranscriptions,
   segmentCountsByRecording,
+  setRecordingState,
   type ConfirmationRow,
   type RecordingRow,
 } from "../../src/db";
-import {
-  runnerState,
-  startTranscription,
-  subscribeRunner,
-  type RunnerState,
-} from "../../src/services/transcribe-runner";
 import {
   redactForExport,
   shareText,
@@ -97,9 +93,9 @@ function groupPending(rows: RecordingRow[]): PendingGroup[] {
 function stateBadge(state: string): { text: string; tone: "ok" | "muted" | "warn" } {
   switch (state) {
     case "recorded":
-      return { text: "안 바꿈", tone: "warn" };
-    case "transcribing":
-      return { text: "바꾸는 중", tone: "muted" };
+      return { text: "안 보냄", tone: "warn" };
+    case "sent":
+      return { text: "티로에 보냄", tone: "muted" };
     case "transcribed":
       return { text: "다 바꿈", tone: "ok" };
     case "discarded":
@@ -122,7 +118,6 @@ export default function ShiftDetail() {
   /** 기록별 문장 수 — 파일마다 몇 문장인지, 따로 둔 파일에 결과가 있는지. */
   const [counts, setCounts] = useState<Map<string, number>>(new Map());
   /** 이 근무를 돌리는 중인 러너 상태. 다른 근무 것이거나 안 돌면 null. */
-  const [runner, setRunner] = useState<RunnerState | null>(null);
   const [reportMd, setReportMd] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sendNote, setSendNote] = useState<string | null>(null);
@@ -208,41 +203,38 @@ export default function ShiftDetail() {
     );
   }, [date, dutyLabel, pendingShifts, shiftId]);
 
-  const [runnerBusy, setRunnerBusy] = useState(false);
-  // 파일이 바뀔 때마다 목록을 다시 읽는다 — 예전엔 다 끝나야 읽어서, 두 번째
-  // 파일부터는 '전사 중'인데도 첫 파일만 전사 중, 나머지는 미전사로 보였다.
-  const lastFileRef = useRef<string | null>(null);
-  useEffect(() => {
-    const apply = (s: RunnerState) => {
-      setRunnerBusy(s.running);
-      if (s.shiftId !== shiftId) {
-        setRunner(null);
+  // 티로 앱으로 보내기 — 앱은 전사를 하지 않는다. 소리를 티로 앱에 넘기고,
+  // 티로가 받아적은 뒤 '티로 노트에서 가져오기'로 글자만 데려온다.
+  const sendToTiro = useCallback(
+    async (rec: RecordingRow) => {
+      if (!rec.file_uri) {
+        setError("파일이 없어요. 다른 녹음을 골라 주세요.");
         return;
       }
-      setRunner(s.running ? s : null);
-      if (s.running) {
-        setBusy(`바꾸는 중 ${s.percent}%`);
-        if (s.fileId !== lastFileRef.current) {
-          lastFileRef.current = s.fileId;
-          void listRecordings(shiftId).then(setRecordings);
+      setError(null);
+      setBusy("보내는 중");
+      try {
+        const Sharing = await import("expo-sharing");
+        if (!(await Sharing.isAvailableAsync())) {
+          setError("이 폰에서는 보내기를 쓸 수 없어요. 파일 앱에서 티로로 열어 주세요.");
+          return;
         }
-      } else {
+        await Sharing.shareAsync(rec.file_uri, {
+          mimeType: /\.wav$/i.test(rec.file_uri) ? "audio/wav" : "audio/mp4",
+          dialogTitle: "티로 앱으로 보내기",
+        });
+        // 보낸 것으로 적어 둔다. '안 보냄' 목록에서 빠지고, 티로가 다 받아적으면
+        // 홈의 '티로 노트에서 글자 가져오기'로 데려온다.
+        await setRecordingState(rec.id, "sent");
+        await load();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "보내지 못했어요. 다시 눌러 주세요.");
+      } finally {
         setBusy(null);
-        lastFileRef.current = null;
-        if (s.error) setError(s.error);
-        if (s.completedAt) void load();
       }
-    };
-    apply(runnerState());
-    return subscribeRunner(apply);
-  }, [shiftId, load]);
-
-  const runTranscription = useCallback(() => {
-    setError(null);
-    if (!startTranscription(shiftId, pending)) {
-      setError("다른 근무를 바꾸는 중이에요. 끝난 뒤에 다시 눌러 주세요.");
-    }
-  }, [shiftId, pending]);
+    },
+    [load],
+  );
 
   // ── 미리 듣기 — 전사 전에 어떤 녹음인지 귀로 확인한다 ──
   const previewRef = useRef<AudioPlayer | null>(null);
@@ -519,36 +511,40 @@ export default function ShiftDetail() {
               {r.file_uri ? "" : " · 파일 없음"}
             </Text>
           </View>
-          <Badge
-            text={
-              r.state === "transcribing" && runner?.fileId === r.id
-                ? `바꾸는 중 ${runner.filePercent}%`
-                : badge.text
-            }
-            tone={badge.tone}
-          />
-          {/* 지우기 — 변환 중인 파일만 막는다. 도는 중에 빼면 러너가 헛돈다. */}
+          <Badge text={badge.text} tone={badge.tone} />
+          {/* 티로 앱으로 보내기 — 소리를 넘기는 자리 */}
+          {r.file_uri ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="티로 앱으로 보내기"
+              disabled={busy === "보내는 중"}
+              onPress={() => void sendToTiro(r)}
+              style={({ pressed }) => ({
+                width: TOUCH_MIN,
+                height: TOUCH_MIN,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: busy === "보내는 중" ? 0.3 : pressed ? 0.5 : 1,
+              })}
+            >
+              <Ionicons name="share-outline" size={18} color={t.accent} />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityRole="button"
             accessibilityLabel="이 녹음 지우기"
-            disabled={r.state === "transcribing"}
             onPress={() => removeRecording(r)}
             style={({ pressed }) => ({
               width: TOUCH_MIN,
               height: TOUCH_MIN,
               alignItems: "center",
               justifyContent: "center",
-              opacity: r.state === "transcribing" ? 0.3 : pressed ? 0.5 : 1,
+              opacity: pressed ? 0.5 : 1,
             })}
           >
             <Ionicons name="trash-outline" size={18} color={t.danger} />
           </Pressable>
         </View>
-        {r.state === "transcribing" && runner?.fileId === r.id ? (
-          <View style={{ marginTop: space.xs }}>
-            <GaugeBar ratio={runner.filePercent / 100} color={t.accent} />
-          </View>
-        ) : null}
       </View>
     );
   };
@@ -570,47 +566,24 @@ export default function ShiftDetail() {
           녹음 {recordings.length}개 · 총 {Math.round(durationSec / 60)}분 · 문장{" "}
           {sentenceCount}개
         </Small>
-        {pending.length > 0 ? <Small>아직 안 바꾼 녹음이 {pending.length}건 있어요.</Small> : null}
         {pending.length > 0 ? (
-          <Button
-            label={
-              busy?.startsWith("바꾸는 중")
-                ? "바꾸는 중"
-                : runnerBusy
-                  ? "기다려 주세요"
-                  : "녹음 바꾸기"
-            }
-            tone="primary"
-            busy={busy?.startsWith("바꾸는 중") ?? false}
-            disabled={runnerBusy}
-            onPress={() => void runTranscription()}
-          />
+          <>
+            <Small>티로에 안 보낸 녹음이 {pending.length}건 있어요.</Small>
+            <Small>보내기(↗)를 누르면 티로 앱이 열려요. 티로가 다 받아적으면</Small>
+            <Small>홈에서 글자만 가져와요. 안 보내졌으면 다시 눌러도 돼요.</Small>
+          </>
         ) : null}
-        {runner ? (
-          <View style={{ gap: space.xs }}>
-            <GaugeBar ratio={runner.percent / 100} color={t.accent} height={8} />
-            <View style={{ flexDirection: "row", justifyContent: "space-between", gap: space.sm }}>
-              <Text style={[type.small, { color: t.textMuted, flexShrink: 1 }]}>
-                {runner.note ?? `${runner.fileIndex}번째 파일을 글자로 바꾸는 중`}
-              </Text>
-              <Text style={[type.small, TABULAR, { color: t.text, fontWeight: "700" }]}>
-                {runner.percent}%
-              </Text>
-            </View>
-          </View>
-        ) : busy ? (
-          <Small muted={false}>{busy}…</Small>
-        ) : null}
+        {busy ? <Small muted={false}>{busy}…</Small> : null}
         {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
       </Card>
 
       {/* ── 날짜 고르기 — 어느 날 녹음이 밀렸는지 잊지 않게 ── */}
       <Card tone={allPending.length > 0 ? "warn" : "default"}>
-        <Heading>안 바꾼 녹음</Heading>
+        <Heading>티로에 안 보낸 녹음</Heading>
         <Small>
           {allPending.length > 0
-            ? `안 바꾼 녹음이 ${allPending.length}건, ${pendingShifts.length}일치 남았어요.`
-            : "안 바꾼 녹음이 없어요."}
+            ? `안 보낸 녹음이 ${allPending.length}건, ${pendingShifts.length}일치 남았어요.`
+            : "안 보낸 녹음이 없어요."}
         </Small>
         {allPending.length > 0 ? <Small>날짜를 누르면 그날 근무로 가요.</Small> : null}
         <ScrollView
@@ -670,8 +643,8 @@ export default function ShiftDetail() {
       {/* ── 음성 파일 — 날짜·파일 이름·시각. 들어보고, 잘못 올린 것은 지운다 ── */}
       {showAll ? (
         <Card>
-          <Heading>안 바꾼 녹음 전체</Heading>
-          <Small>모든 날의 안 바꾼 녹음이에요.</Small>
+          <Heading>안 보낸 녹음 전체</Heading>
+          <Small>모든 날의 안 보낸 녹음이에요.</Small>
           <Small>날짜를 눌러 그 근무로 가서 바꿔요.</Small>
           {pendingShifts.map((g) => (
             <View key={g.shiftId} style={{ gap: space.xs }}>

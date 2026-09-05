@@ -23,13 +23,13 @@ git merge-base --is-ancestor $LATEST HEAD && echo "최신 판($LATEST) 포함 �
 | 경로 | 무엇 | 검증 |
 | --- | --- | --- |
 | `packages/core/` | 플랫폼 독립 도메인 로직 (한글 음운, 사전, 전사 교정·검토, 태움, 학습, 듀티) | `npm test` (vitest 330+), `npm run typecheck` |
-| `apps/mobile/` | Expo 57 / RN 0.86 앱. 화면·저장·녹음·네이티브 모듈. 전사는 콜랩·PC 서버로 보낸다 (온디바이스 whisper.rn 은 0.1.5x 에서 뺐다) | `cd apps/mobile && npx tsc --noEmit` |
-| `apps/mobile/src/services/pipeline.ts`, `llm.ts`, `asr.ts` | 심층 분석 파이프라인(추출→검증→조사→보고서), LLM 경로, 전사 서버 연결 | 위와 같음 |
+| `apps/mobile/` | Expo 57 / RN 0.86 앱. 화면·저장·녹음·네이티브 모듈. **앱은 전사를 하지 않는다** — 녹음을 티로 앱으로 보내고 글자만 가져온다 (콜랩·PC 서버·온디바이스 whisper 경로는 0.1.8x 에서 지웠다) | `cd apps/mobile && npx tsc --noEmit` |
+| `apps/mobile/src/services/asr.ts` | 가져온 전사본을 문장으로 나누고 병동 사전으로 교정해 저장한다. 티로 열쇠·오류 문구·단어장 올리기도 여기 (심층 분석 `pipeline.ts`·`llm.ts` 는 0.1.8x 에서 지웠다 — 분석은 VPS 의 MCP 로 옮겼다) | 위와 같음 |
 | `apps/mobile/src/services/tiro-notes.ts` | 티로 노트 가져오기. **앱이 티로에 쓰는 유일한 길이다** — 파일 올리기(Voice File Job)는 티로가 이 계정에 안 열어 줘서 0.1.8x 에서 지웠다. 티로 앱이 이미 전사한 노트를 읽어 오고, 그 김에 병동 사전을 티로 단어장에 올린다 | 위와 같음 |
 | `apps/mobile/modules/nsr-audio-decode/` | 로컬 Expo 네이티브 모듈 (m4a→wav, 포그라운드 서비스) | APK CI |
 | `server/` | VPS 서버 (파이썬). 폰이 올린 **가려진** 근무 자료를 보관하고 클로드·GPT 에 MCP 커넥터로 연다. 설계는 `docs/08` | `cd server && python -m pytest` |
 | `tools/` | 저장소 운영 스크립트 (판 점검, 전사본 검토, 스킬 업로드, 릴리스 노트) | 실행해 본다 |
-| `docs/` | 설계 근거. 01 법·개인정보, 02 전사 파이프라인, 03 도구 조사, 07 전사 검토 워크플로, 08 앱과 AI 의 경계, `colab/` 전사 서버 노트 | — |
+| `docs/` | 설계 근거. 01 법·개인정보, 02 전사 파이프라인, 03 도구 조사, 07 전사 검토 워크플로, 08 앱과 AI 의 경계 | — |
 | `data/` | 녹음·전사본 작업 폴더. **환자 정보가 들어 있어 대부분 gitignore** (`data/README.md`) | — |
 | `.github/workflows/` | `build-apk.yml` (claude/** 푸시마다 APK → Releases prerelease), 모델 릴리스 | — |
 

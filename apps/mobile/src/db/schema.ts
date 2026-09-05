@@ -40,7 +40,8 @@ CREATE TABLE IF NOT EXISTS recordings (
   duration_sec  REAL NOT NULL DEFAULT 0,
   file_uri      TEXT,
   size_bytes    INTEGER NOT NULL DEFAULT 0,
-  -- recording: 녹음 중 / recorded: 완료 / transcribing / transcribed / discarded
+  -- recording: 녹음 중 / recorded: 완료(티로에 안 보냄) / sent: 티로에 보냄 /
+  -- transcribed: 전사본 있음 / discarded: 버림
   state         TEXT NOT NULL DEFAULT 'recording',
   -- 본인 음성이 없어 통비법상 보관할 수 없다고 판단해 버린 경우 사유를 남긴다.
   discard_reason TEXT,

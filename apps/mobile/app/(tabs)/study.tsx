@@ -323,7 +323,7 @@ export default function Study() {
           transcripts.length === 0 ? (
             <Card>
               <Body muted>
-                아직 글자로 바꾼 기록이 없어요. 근무 기록에서 녹음을 바꾸면 여기에 쌓여요.
+                아직 글자로 바꾼 기록이 없어요. 티로 노트를 가져오면 여기에 쌓여요.
               </Body>
             </Card>
           ) : (

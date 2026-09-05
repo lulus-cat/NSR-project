@@ -374,7 +374,7 @@ export default function ImportAudio() {
         onPress={() => void submit()}
       />
       <Small>가져온 파일은 폰 안에만 저장돼요.</Small>
-      <Small>글자로 바꾸기는 근무 기록 화면에서 해요.</Small>
+      <Small>티로로 보내기는 근무 기록 화면에서 해요.</Small>
     </ScrollView>
   );
 }

@@ -3,17 +3,19 @@
  *
  * 원리는 docs/02-transcription-pipeline.md에 정리되어 있다. 여기는 그 구현이다.
  *
- * 엔진 선택
- * --------
- * 전사는 **사용자가 지정한 서버**가 한다 — 콜랩 노트(무료 GPU)든 내 컴퓨터의
- * speaches 든, 같은 OpenAI 호환 API 로 붙는다. 온디바이스(whisper.cpp) 전사는
- * 접었다: 8시간 근무 기록을 폰이 삭이려면 몇 시간씩 걸리고 뜨거워지고,
- * 그 시간을 견딜 만큼 정확하지도 않았다.
+ * 이 앱은 이제 전사를 하지 않는다 (0.1.8x)
+ * ---------------------------------------
+ * 글자로 바꾸는 일은 **티로 하나**가 한다. 앱이 하는 일은 녹음, 티로 앱으로
+ * 보내기, 그리고 티로가 받아적은 글자를 가져와 교정·저장하는 것이다.
  *
- * 상용 ASR API 는 여전히 없다. 병동 대화에는 환자 정보가 그대로 들어 있고,
- * 임의의 제3자 서비스에 그걸 올리는 경로는 이 앱이 제공하지 않는다.
- * (클로바 스피치를 잠깐 열었다가 요금이 오디오 길이 기준이라 접었다 — 근무
- * 통짜 기록에는 하루 만 원이 넘는다. 무료 경로들이 있는 한 정당화가 안 된다.)
+ * 지운 길과 이유
+ *   - 온디바이스(whisper.cpp): 8시간 기록에 폰이 몇 시간, 뜨겁고 부정확했다.
+ *   - 콜랩·내 PC 서버(휘스퍼): 사용자가 매번 노트북을 켜고 주소를 이어야 했다.
+ *     3분 준비가 매 근무마다면 안 쓰게 된다. 실제로 안 썼다.
+ *   - 티로 파일 올리기(Voice File Job): 티로가 이 계정에 안 열어 준다(403).
+ *   - Gemini 직접 전사: 병동 음성이 구글로 가고 무료 티어는 학습에 쓰일 수 있다.
+ *
+ * 남은 것은 여기다: 문장 나누기·교정·저장(saveAsrSegments)과 티로 창구.
  */
 
 import {
@@ -30,13 +32,11 @@ import {
   scoreShift,
   type TaeumScore,
   type AsrOptions,
-  type AsrCapabilities,
   type Lexicon,
   type TranscriptSegment,
   type CardSourceSegment,
   type Edit,
   type TermAnnotation,
-  DEFAULT_COLAB_MODEL_ID,
 } from "@nsr/core";
 import {
   enabledWardPacks,
@@ -52,7 +52,6 @@ import {
   type RecordingRow,
 } from "../db";
 import { getSetting, setSetting } from "../db";
-import { SETTINGS_KEYS } from "./scheduler";
 import { logDebug } from "./debug";
 
 export interface AsrResult {
@@ -71,25 +70,6 @@ export interface AsrResult {
   partial?: string;
 }
 
-export interface AsrProvider {
-  readonly id: string;
-  /** 이 엔진이 실제로 할 수 있는 것. 요청(AsrOptions)과 구분해서 본다. */
-  readonly capabilities: AsrCapabilities;
-  /** onProgress 는 0~100. note 는 %가 안 움직이는 이유(모델 준비 중 등). */
-  transcribe(
-    fileUri: string,
-    options: AsrOptions,
-    onProgress?: (pct: number, note?: string) => void,
-  ): Promise<AsrResult>;
-}
-
-/**
- * 허깅페이스 토큰 — 화자 분리(pyannote)용.
- *
- * pyannote 모델은 무료·공개지만 허깅페이스가 문을 잠가 두어(게이트), 받으려면
- * 사용자 본인의 토큰이 필요하다. 토큰은 기기 보안 저장소에만 두고, 전사
- * 요청에 실려 **사용자가 띄운 콜랩 서버로만** 간다. 설정 DB·로그에 안 남긴다.
- */
 // 티로는 전사만 한다 — 대화 LLM 공급자가 아니므로 키도 여기 따로 둔다.
 const TIRO_KEY = "nsr.tiro.key";
 /** 찾아 둔 워크스페이스 guid. 열쇠가 바뀌면 지운다. */
@@ -114,255 +94,7 @@ export async function setTiroKey(key: string | null): Promise<void> {
   }
 }
 
-const HF_TOKEN_KEY = "nsr.hf.token";
-
-export async function getHfToken(): Promise<string | null> {
-  const SecureStore = await import("expo-secure-store");
-  return SecureStore.getItemAsync(HF_TOKEN_KEY);
-}
-
-export async function setHfToken(token: string | null): Promise<void> {
-  const SecureStore = await import("expo-secure-store");
-  if (token && token.trim()) {
-    await SecureStore.setItemAsync(HF_TOKEN_KEY, token.trim(), {
-      keychainAccessible: SecureStore.WHEN_UNLOCKED_THIS_DEVICE_ONLY,
-    });
-  } else {
-    await SecureStore.deleteItemAsync(HF_TOKEN_KEY);
-  }
-}
-
-/**
- * 사용자가 지정한 서버로 전사한다 (faster-whisper 등).
- *
- * 전송 전에 **오디오 자체는 비식별화할 수 없다.** 음성에는 이름과 진단이 그대로 담긴다.
- * 그래서 이 경로를 켜는 것은 사용자의 명시적 선택이어야 하고,
- * 켤 때 의료법 제19조를 다시 고지한다.
- */
-export function createSelfHostedProvider(
-  endpoint: string,
-  apiKey?: string,
-  model?: string,
-  extras?: { diarize?: boolean; hfToken?: string | null },
-): AsrProvider {
-  // OpenAI 오디오 전사 표준(/v1/audio/transcriptions, verbose_json)으로 말한다.
-  // 노트북에서 speaches(구 faster-whisper-server)·LocalAI 를 켜면 바로 붙는다.
-  // 주소만 넣으면 경로를 붙여 주고, 전체 경로를 넣으면 그대로 쓴다.
-  const url = /\/audio\/transcriptions\/?$/.test(endpoint)
-    ? endpoint
-    : `${endpoint.replace(/\/+$/, "")}/v1/audio/transcriptions`;
-  return {
-    id: `self-hosted:${endpoint}`,
-    // OpenAI 전사 형식에는 화자 필드가 없다. 있다고 말하지 않는다.
-    capabilities: { diarization: false, wordTimestamps: true },
-    async transcribe(fileUri, options, onProgress) {
-      // 파일 업로드는 fetch+FormData 가 아니라 네이티브 멀티파트로 한다.
-      // SDK 57 부터 전역 fetch 가 새 구현(expo winter)인데, RN 구식
-      // {uri,name,type} 파일 파트를 "Unsupported FormDataPart implementation"
-      // 으로 거부한다 — 콜랩 첫 실사용에서 그대로 터진 오류다.
-      // uploadAsync 는 디스크에서 스트리밍하므로 긴 조각을 메모리에
-      // 통째로 올리지 않는 부수 이득도 있다.
-      const FileSystem = await import("expo-file-system/legacy");
-      const parameters: Record<string, string> = {
-        language: options.language,
-        temperature: String(options.temperature),
-        response_format: "verbose_json",
-      };
-      if (model) parameters.model = model;
-      if (options.initialPrompt) parameters.prompt = options.initialPrompt;
-      // 화자 분리 — 콜랩 노트만 이해한다. 다른 서버는 모르는 필드를 무시한다.
-      // 토큰은 보통 콜랩 '보안 비밀'(HF_TOKEN)에 있으므로 켜짐 신호만 보낸다.
-      // 기기에 남아 있는 옛 토큰이 있으면 예비로 함께 싣는다.
-      if (extras?.diarize) {
-        parameters.diarize = "1";
-        if (extras.hfToken) parameters.hf_token = extras.hfToken;
-      }
-
-      const response = await FileSystem.uploadAsync(url, fileUri, {
-        httpMethod: "POST",
-        uploadType: FileSystem.FileSystemUploadType.MULTIPART,
-        fieldName: "file",
-        mimeType: "audio/m4a",
-        parameters,
-        headers: apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined,
-      });
-      // 5xx 는 "폰도 터널도 멀쩡한데 그 너머가 죽어 있음"이다. 원시 상태
-      // 코드 대신 다음 행동을 말해 준다. 502/503/504 는 터널 뒤 서버가 죽은
-      // 것, 530(등 Cloudflare 계열)은 터널 자체가 사라진 것 — 콜랩 세션이
-      // 회수되면 cloudflared 도 죽어서 Cloudflare 가장자리가 530 을 준다.
-      // 지난번 "재연결하니 취소됐다" 사고의 정체가 이 530 이었다.
-      const gatewayDown = (status: number): string | null => {
-        if (status === 502 || status === 503 || status === 504) {
-          return "서버가 답하지 않아요. 콜랩에서 '모두 실행'을 누르고 주소를 다시 넣어 주세요.";
-        }
-        if (status >= 500) {
-          return "연결이 끊겼어요. 콜랩에서 '모두 실행'을 누르고 주소를 다시 넣어 주세요.";
-        }
-        return null;
-      };
-      if (response.status < 200 || response.status >= 300) {
-        throw new Error(
-          gatewayDown(response.status) ??
-            `글자로 바꾸지 못했어요 (${response.status}). 연결을 확인하고 다시 해 주세요.`,
-        );
-      }
-      type ServerResult = {
-        text?: string;
-        duration?: number;
-        segments?: { start: number; end: number; text: string; speaker?: string }[];
-      };
-      let json = JSON.parse(response.body) as ServerResult & { job_id?: string };
-
-      // 접수증(job_id)을 주는 서버(콜랩 노트)는 결과를 몇 초마다 물어서 받는다.
-      // 다 될 때까지 한 요청으로 기다리는 방식은 업로드 클라이언트(읽기 60초
-      // 고정)와 Cloudflare 터널(응답 약 100초 상한)이 먼저 끊는다 — 실기기
-      // 타임아웃으로 재현된 사실. 접수증이 없는 서버(speaches 등 동기 응답)는
-      // 지금까지처럼 결과를 바로 쓴다.
-      let partialNote: string | undefined;
-      if (json.job_id) {
-        const jobUrl = `${url}/${json.job_id}`;
-        const authHeaders = apiKey ? { Authorization: `Bearer ${apiKey}` } : undefined;
-        const deadline = Date.now() + 60 * 60 * 1000; // 한 시간이면 무엇이든 끝난다.
-
-        // 세그먼트를 되는 족족 받아 둔다(?since 증분). 결과가 서버 메모리에만
-        // 있으면 세션이 회수되는 순간 100% 전사도 통째로 사라진다 — 실사용
-        // 사고다. 받아 둔 것이 있으면 서버가 죽어도 그만큼은 건진다.
-        const collected: NonNullable<ServerResult["segments"]> = [];
-        let sinceIndex = 0;
-        let lastProgress = 0;
-
-        // 일시 오류 한 방에 포기하지 않는다. Cloudflare 터널은 몇십 초씩
-        // 출렁이고, 그동안 작업은 서버에 살아 있다. 폰 네트워크 단절이든
-        // 5xx 든 한 바구니로 재고, 3분을 넘기면 그때 죽은 것으로 판단한다.
-        let outageSince: number | null = null;
-        let lastFailure = "연결이 끊겼어요. 인터넷을 확인해 주세요.";
-
-        // 죽음이 확정됐을 때: 받아 둔 것이 있으면 부분 회수, 없으면 그냥 실패.
-        const giveUp = (reason: string): void => {
-          if (collected.length === 0) throw new Error(reason);
-          partialNote =
-            `연결이 끊겨서 ${Math.round(lastProgress * 100)}% 까지만 건졌어요. ` +
-            "남은 녹음은 그대로 있어요. 다시 이은 뒤에 한 번 더 눌러 주세요. " +
-            `(도망간 이유: ${reason})`;
-          json = {
-            segments: collected,
-            duration: collected[collected.length - 1].end,
-          };
-        };
-
-        poll_loop: for (;;) {
-          if (Date.now() > deadline) {
-            giveUp("한 시간 넘게 끝나지 않았어요. 연결을 확인하고 다시 해 주세요.");
-            break;
-          }
-          await new Promise((resolve) => setTimeout(resolve, 3000));
-          let poll: Response | null = null;
-          try {
-            poll = await fetch(`${jobUrl}?since=${sinceIndex}`, { headers: authHeaders });
-          } catch {
-            lastFailure = "연결하지 못했어요. Wi-Fi 와 콜랩이 켜져 있는지 확인해 주세요.";
-          }
-          if (poll && poll.status >= 500) {
-            lastFailure = gatewayDown(poll.status) ?? `서버가 답하지 못했어요 (${poll.status}).`;
-            poll = null;
-          }
-          if (!poll) {
-            outageSince = outageSince ?? Date.now();
-            if (Date.now() - outageSince < 3 * 60 * 1000) continue;
-            giveUp(lastFailure);
-            break;
-          }
-          outageSince = null;
-          if (poll.status === 404) {
-            // 작업 목록은 콜랩 세션 메모리에 있다. 404 는 세션이 재시작됐다는 뜻.
-            giveUp(
-              "콜랩이 다시 켜지면서 하던 일이 사라졌어요. " +
-                "콜랩을 '모두 실행'으로 켜고 새 주소를 넣은 뒤 다시 해 주세요.",
-            );
-            break;
-          }
-          if (!poll.ok) {
-            throw new Error(
-              `서버 답을 읽지 못했어요 (${poll.status}). 다시 해 주세요.`,
-            );
-          }
-          const status = (await poll.json()) as {
-            status?: string;
-            progress?: number;
-            stage?: string;
-            error?: string;
-            /** 서버가 실제로 실은 모델 — 고른 것과 다른지 여기서 드러난다. */
-            model?: string;
-            result?: ServerResult;
-            segments?: { start: number; end: number; text: string }[];
-            next?: number;
-          };
-          switch (status.status) {
-            case "error":
-              throw new Error(`글자로 바꾸지 못했어요: ${status.error ?? "원인을 알 수 없어요"}`);
-            case "done":
-              if (status.result) {
-                json = status.result;
-                break poll_loop;
-              }
-              break;
-            default:
-              break;
-          }
-          if (Array.isArray(status.segments) && status.segments.length > 0) {
-            collected.push(...status.segments);
-          }
-          sinceIndex = status.next ?? collected.length;
-          if (typeof status.progress === "number") {
-            lastProgress = Math.max(0, Math.min(1, status.progress));
-            onProgress?.(
-              Math.round(lastProgress * 100),
-              // %가 안 움직이는 구간의 이유를 말해 준다 — 모델 준비와 화자 분리.
-              status.stage === "model"
-                ? `${status.model ?? "모델"} 준비하는 중`
-                : status.stage === "transcribe"
-                  ? "받아적는 중"
-                  : status.stage === "align"
-                    ? "단어마다 시각 맞추는 중"
-                    : status.stage === "diarize"
-                      ? "목소리 나누는 중"
-                      : undefined,
-            );
-          }
-        }
-      }
-      const segments = (json.segments ?? []).map((s) => ({
-        startSec: s.start,
-        endSec: s.end,
-        text: s.text.trim(),
-        speakerId: s.speaker,
-      }));
-      // 서버가 세그먼트 없이 본문만 주면(짧은 파일에서 흔하다) 한 덩어리로 받는다.
-      if (segments.length === 0 && json.text?.trim()) {
-        segments.push({
-          startSec: 0,
-          endSec: json.duration ?? 0,
-          text: json.text.trim(),
-          speakerId: undefined,
-        });
-      }
-      return { segments, durationSec: json.duration ?? 0, partial: partialNote };
-    },
-  };
-}
-
-/**
- * 구글 Gemini 직접 전사 — 서버도 노트도 없이 API 키 하나로.
- *
- * 휘스퍼 경로(콜랩·PC)와는 완전히 다른 물건이다: 전용 전사 모델이 아니라
- * 멀티모달 LLM 에 음성을 통째로 주고 구조화된 전사(JSON)를 받아 낸다.
- * 화자 라벨까지 같이 붙여 주는 대신, **시각은 모델의 추정치**라 재생 위치가
- * 몇 초씩 어긋날 수 있다 — 화면에도 그렇게 적는다.
- *
- * 개인정보에 대해 정직하게: 기록 음성이 구글 Gemini 서버로 간다. 특히
- * **무료 티어는 입력이 구글의 모델 개선에 쓰일 수 있다** — 병동 음성이면
- * 유료(청구 연결) 계정을 권한다. 설정 화면이 이 말을 그대로 한다.
- */
+/** 병동 사전 — 사용자가 넣은 말 + 켜 둔 병동 팩. 교정과 티로 단어장이 쓴다. */
 export async function loadLexicon(): Promise<Lexicon> {
   const [userTerms, packs] = await Promise.all([listUserTerms(), enabledWardPacks()]);
   return buildLexicon({ userTerms, packs });
@@ -379,15 +111,10 @@ export async function buildAsrOptions(lexicon: Lexicon): Promise<AsrOptions> {
 }
 
 /**
- * 기록 파일 하나를 전사하고 교정해 저장한다.
- * 근무 단위 산출물(카드·보고서·지표)은 `finalizeShift`에서 만든다.
- */
-/**
  * ASR 이 준 덩어리를 문장으로 펴고, 교정하고, 저장한다.
  *
- * 전사 엔진이 무엇이든(서버 휘스퍼·제미나이·티로) 여기서부터는 같다. 티로 노트
- * 가져오기처럼 **파일 없이 전사본만 들어오는 길**도 이 함수를 탄다 — 교정 규칙과
- * 문장 나누기가 한 곳에만 있어야 결과가 갈리지 않는다.
+ * 지금 들어오는 길은 하나뿐이다 — 티로 노트 가져오기(`tiro-notes.ts`). 파일 없이
+ * 전사본만 들어온다. 교정 규칙과 문장 나누기를 한 곳에 두려고 함수는 남겨 둔다.
  */
 export async function saveAsrSegments(input: {
   recordingId: string;
@@ -446,51 +173,6 @@ export async function saveAsrSegments(input: {
   input.onProgress?.(100, `폰에 저장하는 중 (${segments.length}문장)`);
   await saveSegments(input.recordingId, input.shiftId, segments, perSegment);
   return segments.length;
-}
-
-/**
- * 기록 파일 하나를 전사하고 교정해 저장한다.
- * 근무 단위 산출물(카드·보고서·지표)은 `finalizeShift`에서 만든다.
- */
-export async function processRecording(
-  recording: RecordingRow,
-  provider: AsrProvider,
-  onProgress?: (pct: number, note?: string) => void,
-): Promise<number> {
-  if (!recording.file_uri) return 0;
-
-  await setRecordingState(recording.id, "transcribing");
-  try {
-    const lexicon = await loadLexicon();
-    const options = await buildAsrOptions(lexicon);
-    const asr = await provider.transcribe(recording.file_uri, options, onProgress);
-    // 오인식 목록은 **휘스퍼가** 어떻게 틀리는지의 기록이다. 제미나이·티로 전사본에
-    // 들이대면 맞지도 않고 엉뚱한 말을 바꾼다 (@nsr/core CorrectionOptions.asrEngine).
-    // 휘스퍼로 도는 것은 서버 경로(콜랩·내 PC)뿐이라, 그것만 "whisper" 로 본다.
-    const asrEngine = provider.id.startsWith("self-hosted:")
-      ? ("whisper" as const)
-      : ("other" as const);
-
-    const count = await saveAsrSegments({
-      recordingId: recording.id,
-      shiftId: recording.shift_id,
-      segments: asr.segments,
-      asrEngine,
-      onProgress,
-    });
-
-    if (asr.partial) {
-      // 부분 회수: 받은 데까지는 방금 저장했다. 던지면 아래 catch 가 상태를
-      // 'recorded' 로 되돌려서, 부분 전사본은 화면에 보이고 기록은
-      // '전사할 기록'에 남는다 — 다시 전사하면 같은 자리에 덮어써진다.
-      throw new Error(asr.partial);
-    }
-    await setRecordingState(recording.id, "transcribed");
-    return count;
-  } catch (error) {
-    await setRecordingState(recording.id, "recorded");
-    throw error;
-  }
 }
 
 /**
@@ -577,53 +259,6 @@ export async function finalizeShift(input: {
   await setSetting("lexicon.usageCounts", usage);
 
   return { cardsAdded, taeumScore: taeum.score };
-}
-
-/**
- * 현재 설정에 맞는 provider를 만든다.
- *
- * 전사 경로는 서버(콜랩 또는 내 컴퓨터)뿐이다. 주소가 없으면 전사를 시작할
- * 수 없고, 어디서 연결하는지까지 오류 문장이 말해 준다.
- *
- * 티로는 여기 없다. 티로에 파일을 올리는 길(Voice File Job)은 워크스페이스마다
- * 티로가 켜 줘야 열리는데, 이 계정에는 안 켜져 있다. 그래서 앱이 티로에 하는
- * 일은 두 가지뿐이다 — **녹음**과 **티로가 이미 받아적어 둔 글자 가져오기**
- * (`tiro-notes.ts`). 올리기 경로는 0.1.8x 에서 지웠다.
- */
-/** 저장된 설정의 전사 방식. 콜랩 연결 화면(connect.tsx)이 넣어 주는 값이다. */
-function inferAsrMode(cloud: { mode?: string; endpoint?: string }): string {
-  if (cloud.mode) return cloud.mode;
-  if (cloud.endpoint && !cloud.endpoint.includes("trycloudflare.com")) return "pc";
-  return "colab";
-}
-
-export async function resolveProvider(): Promise<AsrProvider> {
-  const cloud = await getSetting<{
-    enabled: boolean;
-    endpoint: string;
-    apiKey?: string;
-    model?: string;
-    mode?: string;
-    geminiModel?: string;
-    diarize?: boolean;
-  }>(SETTINGS_KEYS.cloudTranscription, { enabled: false, endpoint: "" });
-
-  if (!cloud.endpoint) {
-    throw new Error(
-      "글자로 바꿀 곳이 없어요. 콜랩을 잇거나 티로 노트에서 가져와 주세요.",
-    );
-  }
-  const hfToken = cloud.diarize ? await getHfToken() : null;
-  // 콜랩은 '서버 기본값' 선택지가 없다 — 화면에 기본 모델이 선택된 것으로 보이는
-  // 만큼, 아무것도 안 보내지 말고 그 id 를 실어 보낸다. 예전에는 안 보내서
-  // 서버 기본값이 쓰였고, 화면이 말하는 모델과 실제 모델이 달랐다.
-  const model =
-    cloud.model?.trim() ||
-    (inferAsrMode(cloud) === "colab" ? DEFAULT_COLAB_MODEL_ID : undefined);
-  return createSelfHostedProvider(cloud.endpoint, cloud.apiKey, model, {
-    diarize: cloud.diarize,
-    hfToken,
-  });
 }
 
 /* ── Tiro ────────────────────────────────────────────────────────────────

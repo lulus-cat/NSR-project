@@ -142,8 +142,10 @@ export async function deleteDutyEntry(date: string): Promise<void> {
 
 export type RecordingState =
   | "recording"
+  /** 녹음이 끝났고 아직 티로에 안 보냈다. */
   | "recorded"
-  | "transcribing"
+  /** 티로 앱으로 보냈다. 글자는 '티로 노트에서 가져오기'로 온다. */
+  | "sent"
   | "transcribed"
   | "discarded";
 

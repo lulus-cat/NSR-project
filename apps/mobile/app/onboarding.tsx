@@ -6,8 +6,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { Body, Button, Card, Heading, Small } from "../src/components/ui";
 import { useApp } from "../src/state/AppContext";
 import { TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
-import { getSetting, setSetting } from "../src/db";
-import { SETTINGS_KEYS } from "../src/services/scheduler";
+import { setSetting } from "../src/db";
 import { searchWorkplace, setWorkplacePlace, type PlaceHit } from "../src/services/geofence";
 import { requestRecordingPermissionsAsync } from "expo-audio";
 import * as Location from "expo-location";
@@ -27,28 +26,6 @@ const PARTS = [
   { key: "ltc", label: "요양병원" },
   { key: "etc", label: "기타" },
 ];
-
-/**
- * 전사 방식 — 설정 → 전사 화면과 같은 갈래다. 온보딩과 설정이 다른 말을
- * 하면 사용자는 둘 다 못 믿는다. 여기서 고른 모드가 그 화면의 기본값이 된다.
- */
-const METHOD_CHOICES = [
-  {
-    key: "colab",
-    title: "구글 콜랩 (무료 GPU, 휘스퍼)",
-    body: "컴퓨터 없이 무료로 돌아가요. 준비는 3분쯤 걸려요. 잇는 법은 콜랩 화면이 알려드려요.",
-  },
-  {
-    key: "pc",
-    title: "내 컴퓨터 (PC·노트북)",
-    body: "같은 Wi-Fi 의 내 컴퓨터가 바꿔요. 녹음이 집 밖으로 나가지 않아요.",
-  },
-  {
-    key: "later",
-    title: "나중에 정하기",
-    body: "지금 건너뛰어도 나중에 정하면 돼요. 티로로 녹음했다면 안 골라도 돼요.",
-  },
-] as const;
 
 const ITEMS: { key: string; title: string; body: string }[] = [
   {
@@ -95,7 +72,7 @@ const ITEMS: { key: string; title: string; body: string }[] = [
   },
 ];
 
-const STEPS = ["근무지", "파트", "전사 방식", "필수 확인"];
+const STEPS = ["근무지", "파트", "전사", "필수 확인"];
 
 /**
  * 고르던 값을 화면 밖에 남긴다.
@@ -105,10 +82,9 @@ const STEPS = ["근무지", "파트", "전사 방식", "필수 확인"];
  * 채워 놓고 처음으로 튕기는 것이 그동안 "다음이 안 눌린다"로 보였다. 모듈에
  * 남겨 두면 다시 마운트돼도 이어서 진행된다.
  */
-const draft: { step: number; part: string | null; model: string | null } = {
+const draft: { step: number; part: string | null } = {
   step: 0,
   part: null,
-  model: null,
 };
 
 export default function Onboarding() {
@@ -128,16 +104,13 @@ export default function Onboarding() {
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
   // 2단계 — 파트
   const [part, setPart] = useState<string | null>(draft.part);
-  // 3단계 — 모델
-  const [model, setModel] = useState<string | null>(draft.model);
   // 저장이 실패해도 화면은 넘어간다. 대신 무슨 일이 있었는지는 알린다.
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
 
   useEffect(() => {
     draft.step = step;
     draft.part = part;
-    draft.model = model;
-  }, [step, part, model]);
+  }, [step, part]);
 
   // 마지막 단계 — 고지
   const [checked, setChecked] = useState<Record<string, boolean>>({});
@@ -315,51 +288,27 @@ export default function Onboarding() {
           </>
         ) : null}
 
-        {/* ── 3. 전사 방식 ── */}
+        {/* ── 3. 전사 — 고를 것이 없다. 티로 하나다. ── */}
         {step === 2 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>
-  어디서 글자로 바꿀까요
+  글자는 티로가 만들어요
 </Text>
-            <Small>
-              이 앱으로 녹음했을 때 글자로 바꿀 곳이에요. 녹음한 소리가 고른 곳으로
-              전송돼요. 티로 앱으로 녹음했다면 티로가 이미 바꿔 둔 글자를 가져오니까
-              여기서 안 골라도 돼요.
-            </Small>
-            {METHOD_CHOICES.map((m) => {
-              const on = model === m.key;
-              return (
-                <Pressable key={m.key} accessibilityRole="button" onPress={() => setModel(m.key)}>
-                  <Card tone={on ? "accent" : "default"}>
-                    <Heading>{m.title}</Heading>
-                    <Small>{m.body}</Small>
-                  </Card>
-                </Pressable>
-              );
-            })}
-            <Button
-              label="다음"
-              tone="primary"
-              onPress={() => {
-                if (model === "colab" || model === "pc") {
-                  // 주소는 콜랩 화면의 '앱에 연결' 버튼이 넣어 준다.
-                  // 통째로 덮어쓰면 이미 고른 모델·화자 분리·주소가 날아간다.
-                  void save(async () => {
-                    const prev = await getSetting<Record<string, unknown>>(
-                      SETTINGS_KEYS.cloudTranscription,
-                      {},
-                    );
-                    await setSetting(SETTINGS_KEYS.cloudTranscription, {
-                      ...prev,
-                      enabled: false,
-                      endpoint: "",
-                      mode: model,
-                    });
-                  });
-                }
-                next();
-              }}
-            />
+            <Small>이 앱은 소리를 글자로 바꾸지 않아요. 티로가 바꿔요.</Small>
+            <Card>
+              <Heading>1. 녹음해요</Heading>
+              <Small>이 앱으로 녹음하거나, 티로 앱으로 녹음해요.</Small>
+            </Card>
+            <Card>
+              <Heading>2. 티로로 보내요</Heading>
+              <Small>이 앱으로 녹음했으면 근무 기록에서 보내기를 눌러요.</Small>
+            </Card>
+            <Card>
+              <Heading>3. 글자를 가져와요</Heading>
+              <Small>티로가 다 받아적으면 홈에서 가져오기를 눌러요.</Small>
+            </Card>
+            <Small>티로 열쇠는 설정에 넣어요. 나중에 넣어도 돼요.</Small>
+            <Button label="다음" tone="primary" onPress={() => next()} />
             {saveMsg ? <Small muted={false}>{saveMsg}</Small> : null}
           </>
         ) : null}

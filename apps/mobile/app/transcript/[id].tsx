@@ -664,7 +664,7 @@ export default function TranscriptView() {
   const runDelete = useCallback(() => {
     Alert.alert(
       "무엇을 지울까요",
-      "글자만 지우면 음성 파일은 남아요. 그 녹음은 다시 안 바꾼 상태가 돼요.\n" +
+      "글자만 지우면 음성 파일은 남아요. 그 녹음은 다시 안 보낸 상태가 돼요.\n" +
         "음성까지 지우면 글자와 소리가 모두 사라져요. 되살릴 수 없어요.",
       [
         { text: "그만두기", style: "cancel" },
