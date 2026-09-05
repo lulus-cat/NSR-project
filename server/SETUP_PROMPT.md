@@ -23,8 +23,8 @@ VPS 에 접속한 클로드(클로드 코드 등)에게 그대로 붙여 넣는 
 1. **토큰을 대화에 출력하지 마라.** 파일에만 쓰고, 다 되면 "어느 파일을 열어 보라"고만
    말해라. 나는 비개발자다 — 어떤 명령을 치면 되는지 한 줄로 알려 줘라.
 2. **접근 로그를 남기지 마라.** 커넥터 주소 안에 토큰이 들어 있어서, 로그에 주소가
-   남으면 그게 유출이다. caddy 로그는 discard 로 둔다.
-3. **443 과 SSH 만 열어라.** 8787 을 바깥으로 열지 마라 (caddy 가 안에서 붙는다).
+   남으면 그게 유출이다 (nginx 는 `access_log off`, caddy 는 `log { output discard }`).
+3. **80·443 과 SSH 만 열어라.** 8787 을 바깥으로 열지 마라 (프록시가 안에서 붙는다).
 4. 서버는 `nsr` 라는 전용 사용자로 돌려라. root 로 돌리지 마라.
 5. 파일에 담기는 것은 **환자 정보가 지워진 사본**이지만, 그래도 남에게 보이면 안 되는
    자료다. DB 파일 권한은 600 을 유지해라.
@@ -85,7 +85,7 @@ curl -s -X POST https://내도메인/ingest -H "authorization: Bearer $D" \
 sudo -u nsr sqlite3 /home/nsr/nsr.db "DELETE FROM sentences WHERE shift_id='test'; DELETE FROM shifts WHERE shift_id='test';"
 ```
 
-`server/` 폴더에서 `./venv/bin/python -m pytest -q` 도 돌려라. 14개가 통과해야 한다.
+`server/` 폴더에서 `./venv/bin/python -m pytest -q` 도 돌려라. 20개가 통과해야 한다.
 
 ## 다 되면 나에게 알려 줄 것
 
