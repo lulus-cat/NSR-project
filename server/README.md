@@ -210,7 +210,7 @@ sudo grep NSR_MCP_TOKEN /home/nsr/nsr.env   # 로그인 화면에 넣을 값
 | `list_shifts` | 근무 목록 (날짜·듀티·길이·문장 수·보고서 유무) |
 | `get_shift_sentences` | 근무 한 편의 문장을 페이지로. **가려진 사본이다** |
 | `search_terms` | 병동 사전 찾기 |
-| `add_term` | 병동 사전에 새 말 넣기 → 폰이 가져가 전사 교정에 쓴다 |
+| `add_term` | 병동 사전에 새 말 넣기 → 폰이 가져가 전사 교정에 쓰고, 티로 단어장에도 올라간다 |
 | `get_taeum_summary` | 태움 점수·등급. **숫자만** |
 | `get_shift_report` / `put_shift_report` | 보고서 읽기·쓰기 |
 | `list_tiro_notes` | 티로에 있는 녹음 노트 — 제목·날짜·길이만 |

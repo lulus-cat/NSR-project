@@ -26,7 +26,10 @@ import json
 import os
 import subprocess
 from typing import Any
+from urllib.error import HTTPError
 from urllib.request import Request, urlopen
+
+from .screen import screen_text
 
 TIRO_API = "https://api.tiro.ooo"
 
@@ -107,3 +110,50 @@ def mask(paragraphs: list[dict[str, Any]], repo_root: str) -> dict[str, Any]:
         last = (done.stderr or "").strip().splitlines()[-1:] or ["이유 없음"]
         raise TiroError(f"가리기에 실패했습니다: {last[0][:120]}")
     return json.loads(done.stdout)
+
+
+# ── 티로 단어장 ────────────────────────────────────────
+#
+# 올려 둔 말은 **다음 전사부터** 티로가 알아듣는다. 그래서 AI 가 근무 기록에서
+# 배운 병동 용어를 여기에 되돌려 넣으면 전사가 갈수록 정확해진다.
+
+
+def word_reject(entry: str) -> str | None:
+    """티로 단어장에 올리면 안 되는 말인가. 안 되면 이유를, 되면 None 을 준다."""
+    entry = entry.strip()
+    if not entry:
+        return "빈 말"
+    # 단어장은 사람을 담는 곳이 아니다. 가려진 자리표시자([이름])가 들어 있거나
+    # 숫자 모양의 개인정보가 보이면 올리지 않는다.
+    if "[" in entry or "]" in entry:
+        return "가려진 자리가 들어 있는 말"
+    if screen_text(entry):
+        return "개인정보로 보이는 말"
+    # 티로 제약: 1~63자, 공백 불가. "팁 컬처"처럼 띄어 쓰는 말은 못 올린다.
+    if len(entry) > 63:
+        return "63자가 넘는 말"
+    if any(c.isspace() for c in entry):
+        return "띄어쓰기가 있는 말"
+    return None
+
+
+def push_word(api_key: str, entry: str, sub_entry: str | None = None) -> None:
+    """낱말 하나를 티로 단어장에 올린다. 이미 있으면(409) 성공으로 친다."""
+    word: dict[str, str] = {"entry": entry.strip()}
+    if sub_entry and not word_reject(sub_entry):
+        word["subEntry"] = sub_entry.strip()
+    req = Request(
+        f"{TIRO_API}/v1/external/users/me/word-memories/bulk",
+        data=json.dumps({"entries": [word]}).encode("utf-8"),
+        headers={"authorization": f"Bearer {api_key}", "content-type": "application/json"},
+        method="POST",
+    )
+    try:
+        with urlopen(req, timeout=30) as res:  # noqa: S310 - 주소가 고정이다
+            res.read()
+    except HTTPError as e:
+        if e.code == 409:  # 이미 있는 말 — 실패가 아니다
+            return
+        raise TiroError(f"티로 단어장에 올리지 못했습니다 (HTTP {e.code})") from e
+    except Exception as e:  # 응답 본문은 로그에 남기지 않는다
+        raise TiroError(f"티로 단어장에 올리지 못했습니다: {type(e).__name__}") from e

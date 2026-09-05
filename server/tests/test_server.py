@@ -377,3 +377,57 @@ def test_node_가_없으면_이유를_말한다(monkeypatch):
         raise AssertionError("멈췄어야 한다")
     except TiroError as e:
         assert "node" in str(e)
+
+
+# ── 티로 단어장 ────────────────────────────────────────
+
+
+def test_병동_용어는_단어장에_올린다():
+    from nsr_server.tiro import word_reject
+
+    assert word_reject("노티") is None
+    assert word_reject("풀코드") is None
+
+
+def test_사람을_가리키는_말은_안_올린다():
+    from nsr_server.tiro import word_reject
+
+    assert word_reject("[이름]") is not None  # 가려진 자리
+    assert word_reject("010-1234-5678") is not None  # 전화번호
+    assert word_reject("12345678") is not None  # 등록번호 모양
+
+
+def test_티로가_못_받는_모양은_거른다():
+    from nsr_server.tiro import word_reject
+
+    assert word_reject("팁 컬처") is not None  # 띄어쓰기
+    assert word_reject("가" * 64) is not None  # 63자 초과
+    assert word_reject("   ") is not None
+
+
+def test_이미_있는_말은_실패가_아니다(monkeypatch):
+    from urllib.error import HTTPError
+
+    from nsr_server import tiro
+
+    def already(*a, **k):
+        raise HTTPError("url", 409, "conflict", {}, None)
+
+    monkeypatch.setattr(tiro, "urlopen", already)
+    tiro.push_word("열쇠", "노티")  # 던지지 않는다
+
+
+def test_단어장_오류에_본문을_안_옮긴다(monkeypatch):
+    from urllib.error import HTTPError
+
+    from nsr_server import tiro
+
+    def denied(*a, **k):
+        raise HTTPError("url", 403, "no", {}, None)
+
+    monkeypatch.setattr(tiro, "urlopen", denied)
+    try:
+        tiro.push_word("열쇠", "노티")
+        raise AssertionError("멈췄어야 한다")
+    except tiro.TiroError as e:
+        assert "403" in str(e) and "열쇠" not in str(e)

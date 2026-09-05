@@ -46,7 +46,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 
 from .config import Config
 from .oauth import NsrOAuthProvider
-from .tiro import TiroError, fetch_paragraphs, list_notes, mask
+from .tiro import TiroError, fetch_paragraphs, list_notes, mask, push_word, word_reject
 from .screen import screen_bundle
 from .store import Store
 
@@ -129,18 +129,39 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         """병동 사전에서 말을 찾는다. 뜻과 메모를 함께 준다."""
         return store.dump_json(store.search_terms(query, max(1, min(limit, 100))))
 
+    def to_tiro_words(entry: str) -> str:
+        """
+        배운 말을 티로 단어장에도 올린다. 다음 전사부터 티로가 그 말을 알아듣는다.
+
+        사전 저장은 이미 끝난 뒤라 여기서 실패해도 되돌리지 않는다 — 못 올렸다고
+        말만 하고 넘어간다. 폰이 올리는 길(autoPushTiroWords)과 겹쳐도 상관없다.
+        이미 있는 말은 티로가 조용히 건너뛴다.
+        """
+        if not config.tiro_key:
+            return ""
+        why = word_reject(entry)
+        if why:
+            return f" 티로 단어장에는 안 올렸습니다 ({why})."
+        try:
+            push_word(config.tiro_key, entry)
+        except TiroError as e:
+            return f" 다만 {e}"
+        return " 티로 단어장에도 올렸습니다."
+
     @mcp.tool()
     def add_term(entry: str, meaning: str, note: str = "") -> str:
         """
-        병동 사전에 새 말을 넣는다. 폰이 가져가서 전사 교정에 쓴다.
+        병동 사전에 새 말을 넣는다. 폰이 가져가서 전사 교정에 쓰고, 티로 단어장에도
+        올라가 다음 전사부터 그 말을 알아듣는다.
 
         환자 이름·병실처럼 사람을 가리키는 말은 넣지 않는다. 넣는 것은 병동에서
         쓰는 용어와 줄임말이다 ("노티", "바이탈", "폴리").
         """
-        if not entry.strip() or not meaning.strip():
+        entry, meaning = entry.strip(), meaning.strip()
+        if not entry or not meaning:
             return "말과 뜻을 둘 다 적어야 넣을 수 있습니다."
         store.put_term(entry, meaning, note or None)
-        return f"'{entry.strip()}' 을(를) 사전에 넣었습니다. 폰이 다음에 가져갑니다."
+        return f"'{entry}' 을(를) 사전에 넣었습니다. 폰이 다음에 가져갑니다." + to_tiro_words(entry)
 
     @mcp.tool()
     def get_taeum_summary(limit: int = 12) -> str:
