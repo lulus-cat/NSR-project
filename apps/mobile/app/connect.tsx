@@ -115,7 +115,7 @@ export default function ConnectFromColab() {
           </>
         )}
         <Button label="홈으로" tone="primary" onPress={() => router.replace("/(tabs)")} />
-        <Button label="전사 설정 열기" onPress={() => router.replace("/models")} />
+        <Button label="설정 열기" onPress={() => router.replace("/settings")} />
         <Small>
           콜랩을 새로 켜면 주소가 바뀌어요. 그때도 콜랩의 연결 버튼 한 번이면 돼요.
         </Small>

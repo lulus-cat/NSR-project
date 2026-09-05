@@ -41,8 +41,6 @@ import {
   type PlaceHit,
   type Workplace,
 } from "../../src/services/geofence";
-import { MODEL_CHOICES, getApiKey, getCustomServer, getModelFor, getProvider, setApiKey, setCustomServer, setModelFor, setProvider, testConnection, type LlmProvider } from "../../src/services/llm";
-import { AI_PATHS, getAiPath, setAiPath, type AiPath } from "../../src/services/pipeline";
 import {
   MASKABLE_KINDS,
   loadPrivacySettings,
@@ -200,14 +198,6 @@ export default function Settings() {
   const [geoSetup, setGeoSetup] = useState(false);
   const [hospitalQuery, setHospitalQuery] = useState("");
   const [hospitalHits, setHospitalHits] = useState<PlaceHit[]>([]);
-  const [llmEnabled, setLlmEnabled] = useState(false);
-  const [apiKeyInput, setApiKeyInput] = useState("");
-  const [hasKey, setHasKey] = useState(false);
-  const [llmProvider, setLlmProvider] = useState<LlmProvider>("anthropic");
-  const [llmModel, setLlmModel] = useState("");
-  const [serverUrl, setServerUrl] = useState("");
-  const [serverModel, setServerModel] = useState("");
-  const [connectionMsg, setConnectionMsg] = useState<string | null>(null);
   const [storageMb, setStorageMb] = useState(0);
   const [privacy, setPrivacy] = useState<PrivacySettings>({
     enabled: true,
@@ -215,23 +205,6 @@ export default function Settings() {
     extraTerms: [],
   });
   const [newTerm, setNewTerm] = useState("");
-  const [modelSummary, setModelSummary] = useState("확인 중");
-  // 필수 기능(AI) — 두 경로 중 하나를 반드시 고른다.
-  const [aiPath, setAiPathState] = useState<AiPath | null>(null);
-  const [hasGeminiKey, setHasGeminiKey] = useState(false);
-  const [hasPathKey, setHasPathKey] = useState(false);
-  const [geminiKeyInput, setGeminiKeyInput] = useState("");
-  const [pathKeyInput, setPathKeyInput] = useState("");
-  useEffect(() => {
-    void (async () => {
-      const path = await getAiPath();
-      setAiPathState(path);
-      setHasGeminiKey((await getApiKey("gemini")) !== null);
-      if (path) {
-        setHasPathKey((await getApiKey(path === "claude" ? "anthropic" : "openai")) !== null);
-      }
-    })();
-  }, [aiPath]);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [autoUpdate, setAutoUpdate] = useState(true);
   const [checking, setChecking] = useState(false);
@@ -244,45 +217,13 @@ export default function Settings() {
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
     setWorkplace(await getWorkplace());
     setGeoOn(await geofenceEnabled());
-    setLlmEnabled(await getSetting<boolean>(SETTINGS_KEYS.llmPostEdit, false));
-    const provider = await getProvider();
-    const custom = await getCustomServer();
-    if (custom) {
-      setServerUrl(custom.baseUrl);
-      setServerModel(custom.model);
-    }
-    setLlmProvider(provider);
-    setLlmModel(await getModelFor(provider));
-    setHasKey((await getApiKey(provider)) !== null);
     setStorageMb(Math.round(((await totalStorageBytes()) / (1024 * 1024)) * 10) / 10);
     setPrivacy(await loadPrivacySettings());
     setAutoUpdate(await autoCheckEnabled());
     setDebugEntries(await readDebugLog());
 
-    // 전사는 서버가 한다 — 어디에 연결됐고 어떤 모델인지를 한 줄로.
-    const asr = await getSetting<{
-      endpoint?: string;
-      model?: string;
-      mode?: string;
-      geminiModel?: string;
-    }>(SETTINGS_KEYS.cloudTranscription, {});
-    // 모드마다 '연결됨'의 뜻이 다르다 — 티로·Gemini 는 열쇠, 서버 경로는 주소다.
-    // (예전엔 주소만 봐서, 티로 열쇠를 넣어도 '연결 안 됨'이라고 적혀 있었다.)
-    const asrMode = asr.mode ?? (asr.endpoint ? "pc" : "tiro");
-    if (asrMode === "tiro") {
-      const { getTiroKey } = await import("../../src/services/asr");
-      setModelSummary((await getTiroKey()) ? "티로 · 한국어" : "티로 · 열쇠 없음");
-    } else if (asrMode === "gemini") {
-      const hasKey = await getApiKey("gemini");
-      setModelSummary(
-        hasKey ? `Gemini · ${asr.geminiModel || "gemini-3.8-flash"}` : "Gemini · 열쇠 없음",
-      );
-    } else if (!asr.endpoint) setModelSummary("연결 안 됨");
-    else {
-      const where = asrMode === "pc" ? "내 컴퓨터" : "콜랩";
-      const model = asr.model ? (getServerModel(asr.model)?.name ?? asr.model) : "서버 기본 모델";
-      setModelSummary(`${where} · ${model}`);
-    }
+    const { getTiroKey } = await import("../../src/services/asr");
+    setHasTiroKey((await getTiroKey()) !== null);
   }, []);
 
   useEffect(() => {
@@ -290,6 +231,31 @@ export default function Settings() {
   }, [load]);
 
   const router = useRouter();
+  // 전사 — 티로 열쇠 하나. 화면(models.tsx)을 없애고 여기로 들였다.
+  const [tiroKeyInput, setTiroKeyInput] = useState("");
+  const [hasTiroKey, setHasTiroKey] = useState(false);
+  const [tiroBusy, setTiroBusy] = useState(false);
+  const [tiroNote, setTiroNote] = useState<string | null>(null);
+
+  const saveTiro = useCallback(async () => {
+    const key = tiroKeyInput.trim();
+    if (!key) {
+      setTiroNote("열쇠를 먼저 위 칸에 붙여넣어 주세요.");
+      return;
+    }
+    setTiroBusy(true);
+    try {
+      const { setTiroKey, checkTiroConnection } = await import("../../src/services/asr");
+      await setTiroKey(key);
+      setHasTiroKey(true);
+      setTiroKeyInput("");
+      setTiroNote((await checkTiroConnection()).message);
+    } catch (e) {
+      setTiroNote(e instanceof Error ? e.message : "저장하지 못했어요. 다시 눌러 주세요.");
+    } finally {
+      setTiroBusy(false);
+    }
+  }, [tiroKeyInput]);
   // 분석 서버 (VPS). 주소는 비밀이 아니고, 기기 토큰은 보안 저장소에만 둔다.
   const [srvUrl, setSrvUrl] = useState("");
   const [srvToken, setSrvToken] = useState("");
@@ -381,7 +347,9 @@ export default function Settings() {
             deleteAllRecordings();
             resetDbHandle();
             await SQLite.deleteDatabaseAsync("nsr.db");
-            await setApiKey(null);
+            const { setTiroKey } = await import("../../src/services/asr");
+            await setTiroKey(null);
+            await setDeviceToken(null);
             await app.refresh();
             await load();
           },
@@ -516,7 +484,7 @@ export default function Settings() {
                     setUpdatePct(0);
                     const r = await downloadAndInstall(update.release, setUpdatePct);
                     setUpdatePct(null);
-                    if (!r.ok) setConnectionMsg(r.error ?? "내려받지 못했어요. 인터넷 연결을 확인해 주세요.");
+                    if (!r.ok) setSrvNote(r.error ?? "내려받지 못했어요. 인터넷 연결을 확인해 주세요.");
                   }}
                 />
               </View>
@@ -1107,152 +1075,30 @@ export default function Settings() {
 </Small>
       </Card>
 
-      {/* 전사 */}
+      {/* 전사 — 티로 하나뿐이라 화면 없이 열쇠 한 칸이면 된다 */}
       <Card>
         <GroupHead icon="text-outline" color="#B3762F" title="전사" />
-        <Small>
-          글자로 바꾸는 일은 폰이 아니라 고른 곳이 해요. 녹음한 소리가 그곳으로 전송돼요.
-          지금 어디로 보내는지 아래 한 줄로 늘 보여요.
-        </Small>
-        <Divider />
-        <Row
-          label="전사 서버·모델"
-          value={`${modelSummary} ›`}
-          onPress={() => router.push("/models")}
+        <Small>티로가 소리를 글자로 바꿔요. 한국어를 가장 잘 받아적었어요.</Small>
+        <TextInput
+          value={tiroKeyInput}
+          onChangeText={setTiroKeyInput}
+          placeholder={hasTiroKey ? "티로 열쇠 — 넣어 뒀어요" : "티로 열쇠 붙여넣기"}
+          placeholderTextColor={t.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          style={{
+            minHeight: TOUCH_MIN,
+            paddingHorizontal: space.md,
+            borderRadius: radius.md,
+            backgroundColor: t.surfaceAlt,
+            color: t.text,
+            fontSize: 15,
+          }}
         />
-        <Small>
-
-  큰 모델보다 한국어 전용 모델이 훨씬 정확해요.
-</Small>
-      </Card>
-
-      {/* 필수 기능 — AI 경로. 이 앱의 분석·보고서·대화는 AI 없이는 안 돈다. */}
-      <Card tone={aiPath ? "default" : "warn"}>
-        <GroupHead icon="sparkles-outline" color="#C0553F" title="필수 기능 (AI)" />
-        <Small>분석·보고서·단어장·대화가 모두 AI 로 돌아요.</Small>
-        <Small>아래 조합 하나를 고르고 열쇠를 넣어야 써요.</Small>
-        <Small>전사본은 개인정보를 가린 뒤에만 전송돼요.</Small>
-        <Small>열쇠가 없으면 다른 모델로 대신 돌리지 않아요.</Small>
-        {AI_PATHS.map((p) => {
-          const on = aiPath === p.path;
-          return (
-            <Pressable
-              key={p.path}
-              accessibilityRole="radio"
-              accessibilityState={{ selected: on }}
-              onPress={async () => {
-                setAiPathState(p.path);
-                await setAiPath(p.path);
-                setConnectionMsg(null);
-              }}
-              style={{
-                borderRadius: radius.lg,
-                borderWidth: 2,
-                borderColor: on ? t.accent : "transparent",
-                backgroundColor: on ? t.accentSoft : t.surfaceAlt,
-                padding: space.md,
-                gap: 4,
-              }}
-            >
-              <View style={{ flexDirection: "row", alignItems: "center", gap: space.sm }}>
-                <Text style={[type.body, { color: t.text, fontWeight: "700" }]}>{p.title}</Text>
-                {on ? <Badge text="사용 중" tone="ok" /> : null}
-              </View>
-              <Text style={[type.small, { color: t.text, fontWeight: "600" }]}>{p.models}</Text>
-              <Small>{p.why}</Small>
-            </Pressable>
-          );
-        })}
-
-        {aiPath ? (
-          <>
-            <Divider />
-            <Small muted={false}>
-              1. Gemini 열쇠 {hasGeminiKey ? "— 넣어 뒀어요" : "(aistudio.google.com/apikey)"}
-            </Small>
-            <TextInput
-              value={geminiKeyInput}
-              onChangeText={setGeminiKeyInput}
-              placeholder={hasGeminiKey ? "넣어 둔 열쇠가 있어요" : "AIza… 로 시작하는 열쇠"}
-              placeholderTextColor={t.textMuted}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={{
-                color: t.text,
-                backgroundColor: t.surfaceAlt,
-                borderRadius: radius.md,
-                padding: space.md,
-                fontSize: 14,
-              }}
-            />
-            <Button
-              label="Gemini 키 저장"
-              tone={hasGeminiKey ? "default" : "primary"}
-              onPress={async () => {
-                if (!geminiKeyInput.trim()) return;
-                await setApiKey(geminiKeyInput.trim(), "gemini");
-                setGeminiKeyInput("");
-                setHasGeminiKey(true);
-              }}
-            />
-            <Small muted={false}>
-              2. {aiPath === "claude" ? "Claude 키" : "OpenAI 키"}{" "}
-              {hasPathKey
-                ? "— 넣어 뒀어요"
-                : aiPath === "claude"
-                  ? "(console.anthropic.com)"
-                  : "(platform.openai.com)"}
-            </Small>
-            <TextInput
-              value={pathKeyInput}
-              onChangeText={setPathKeyInput}
-              placeholder={hasPathKey ? "넣어 둔 열쇠가 있어요" : "열쇠 붙여넣기"}
-              placeholderTextColor={t.textMuted}
-              secureTextEntry
-              autoCapitalize="none"
-              autoCorrect={false}
-              style={{
-                color: t.text,
-                backgroundColor: t.surfaceAlt,
-                borderRadius: radius.md,
-                padding: space.md,
-                fontSize: 14,
-              }}
-            />
-            <Button
-              label={aiPath === "claude" ? "Claude 키 저장" : "OpenAI 키 저장"}
-              tone={hasPathKey ? "default" : "primary"}
-              onPress={async () => {
-                if (!pathKeyInput.trim()) return;
-                await setApiKey(pathKeyInput.trim(), aiPath === "claude" ? "anthropic" : "openai");
-                setPathKeyInput("");
-                setHasPathKey(true);
-                setConnectionMsg(null);
-              }}
-            />
-            <Small>열쇠는 이 폰 안에만 남아요.</Small>
-            <Button
-              label="연결 테스트"
-              onPress={async () => {
-                const result = await testConnection();
-                setConnectionMsg(result.message);
-              }}
-            />
-            {connectionMsg ? <Small muted={false}>{connectionMsg}</Small> : null}
-            <Divider />
-            <Toggle
-              label="전사 직후 문맥 교정·근무 요약 자동 실행"
-              value={llmEnabled}
-              onChange={async (v) => {
-                setLlmEnabled(v);
-                await setSetting(SETTINGS_KEYS.llmPostEdit, v);
-              }}
-            />
-          </>
-        ) : (
-          <Small muted={false}>위에서 조합을 먼저 골라요. 고르면 열쇠 칸이 열려요.</Small>
-        )}
+        <Button label="열쇠 저장" tone="primary" busy={tiroBusy} onPress={() => void saveTiro()} />
+        {tiroNote ? <Small muted={false}>{tiroNote}</Small> : null}
+        <Small>티로 앱으로 녹음하고 홈에서 글자만 가져와요.</Small>
       </Card>
 
       {/* 디버그 */}
@@ -1289,7 +1135,7 @@ export default function Settings() {
               onPress={async () => {
                 const url = await buildIssueUrl();
                 const ok = await Linking.openURL(url).then(() => true).catch(() => false);
-                if (!ok) setConnectionMsg("인터넷 창을 열지 못했어요. 다시 눌러 주세요.");
+                if (!ok) setSrvNote("인터넷 창을 열지 못했어요. 다시 눌러 주세요.");
               }}
             />
           </View>

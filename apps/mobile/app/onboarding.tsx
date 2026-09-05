@@ -8,8 +8,6 @@ import { useApp } from "../src/state/AppContext";
 import { TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
-import { getApiKey, setApiKey } from "../src/services/llm";
-import { AI_PATHS, getAiPath, setAiPath, type AiPath } from "../src/services/pipeline";
 import { searchWorkplace, setWorkplacePlace, type PlaceHit } from "../src/services/geofence";
 import { requestRecordingPermissionsAsync } from "expo-audio";
 import * as Location from "expo-location";
@@ -107,7 +105,7 @@ const ITEMS: { key: string; title: string; body: string }[] = [
   },
 ];
 
-const STEPS = ["근무지", "파트", "전사 방식", "AI 설정", "필수 확인"];
+const STEPS = ["근무지", "파트", "전사 방식", "필수 확인"];
 
 /**
  * 고르던 값을 화면 밖에 남긴다.
@@ -128,7 +126,6 @@ export default function Onboarding() {
   const app = useApp();
   const [step, setStep] = useState(draft.step);
   // AI 필수 설정 — 조합과 키 두 개가 저장돼야 다음으로 갈 수 있다.
-  const [aiPath, setAiPathChoice] = useState<AiPath | null>(null);
   const [hasGeminiKey, setHasGeminiKey] = useState(false);
   const [hasPathKey, setHasPathKey] = useState(false);
   const [geminiKeyInput, setGeminiKeyInput] = useState("");
@@ -152,17 +149,7 @@ export default function Onboarding() {
     draft.model = model;
   }, [step, part, model]);
 
-  /** 이미 저장해 둔 조합·키가 있으면 그대로 읽어 온다. 다시 넣게 하지 않는다. */
-  useEffect(() => {
-    void (async () => {
-      setHasGeminiKey((await getApiKey("gemini")) !== null);
-      const saved = await getAiPath();
-      if (!saved) return;
-      setAiPathChoice(saved);
-      setHasPathKey((await getApiKey(saved === "claude" ? "anthropic" : "openai")) !== null);
-    })();
-  }, []);
-  // 4단계 — 고지
+  // 마지막 단계 — 고지
   const [checked, setChecked] = useState<Record<string, boolean>>({});
   const [micGranted, setMicGranted] = useState(false);
   const [locGranted, setLocGranted] = useState(false);
@@ -391,134 +378,7 @@ export default function Onboarding() {
           </>
         ) : null}
 
-        {/* ── 4. AI 필수 설정 — 두 조합 중 하나 + 키 두 개. 건너뛸 수 없다 ── */}
         {step === 3 ? (
-          <>
-            <Text style={[type.title, { color: t.text }]}>AI 조합을 골라요</Text>
-            <Small>
-              분석·보고서·단어장·대화가 모두 AI 로 돌아요. 이 설정이 없으면 앱이 돌지
-              않아서 건너뛸 수 없어요. 전사본은 개인정보를 가린 뒤에만 전송돼요.
-            </Small>
-            {AI_PATHS.map((p) => {
-              const on = aiPath === p.path;
-              return (
-                <Pressable
-                  key={p.path}
-                  accessibilityRole="radio"
-                  accessibilityState={{ selected: on }}
-                  onPress={() => {
-                    setAiPathChoice(p.path);
-                    void save(async () => {
-                      await setAiPath(p.path);
-                      setHasPathKey(
-                        (await getApiKey(p.path === "claude" ? "anthropic" : "openai")) !== null,
-                      );
-                    });
-                  }}
-                >
-                  <Card tone={on ? "accent" : "default"}>
-                    <Heading>{p.title}</Heading>
-                    <Small muted={false}>{p.models}</Small>
-                    <Small>{p.why}</Small>
-                  </Card>
-                </Pressable>
-              );
-            })}
-            {aiPath ? (
-              <Card>
-                <Small muted={false}>
-                  1. Gemini 키{hasGeminiKey ? " — 저장됨 ✓" : " (aistudio.google.com/apikey 에서 발급)"}
-                </Small>
-                <TextInput
-                  value={geminiKeyInput}
-                  onChangeText={setGeminiKeyInput}
-                  placeholder={hasGeminiKey ? "넣어 둔 열쇠가 있어요" : "AIza… 로 시작하는 열쇠"}
-                  placeholderTextColor={t.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{
-                    color: t.text,
-                    backgroundColor: t.surfaceAlt,
-                    borderRadius: radius.md,
-                    padding: space.md,
-                    fontSize: 14,
-                  }}
-                />
-                <Button
-                  label="Gemini 키 저장"
-                  tone={hasGeminiKey ? "default" : "primary"}
-                  onPress={() => {
-                    if (!geminiKeyInput.trim()) return;
-                    void save(async () => {
-                      await setApiKey(geminiKeyInput.trim(), "gemini");
-                      setGeminiKeyInput("");
-                      setHasGeminiKey(true);
-                    });
-                  }}
-                />
-                <Small muted={false}>
-                  2. {aiPath === "claude" ? "Claude 키" : "OpenAI 키"}
-                  {hasPathKey
-                    ? " — 저장됨 ✓"
-                    : aiPath === "claude"
-                      ? " (console.anthropic.com 에서 발급)"
-                      : " (platform.openai.com 에서 발급)"}
-                </Small>
-                <TextInput
-                  value={pathKeyInput}
-                  onChangeText={setPathKeyInput}
-                  placeholder={hasPathKey ? "넣어 둔 열쇠가 있어요" : "열쇠 붙여넣기"}
-                  placeholderTextColor={t.textMuted}
-                  secureTextEntry
-                  autoCapitalize="none"
-                  autoCorrect={false}
-                  style={{
-                    color: t.text,
-                    backgroundColor: t.surfaceAlt,
-                    borderRadius: radius.md,
-                    padding: space.md,
-                    fontSize: 14,
-                  }}
-                />
-                <Button
-                  label={aiPath === "claude" ? "Claude 키 저장" : "OpenAI 키 저장"}
-                  tone={hasPathKey ? "default" : "primary"}
-                  onPress={() => {
-                    if (!pathKeyInput.trim()) return;
-                    void save(async () => {
-                      await setApiKey(
-                        pathKeyInput.trim(),
-                        aiPath === "claude" ? "anthropic" : "openai",
-                      );
-                      setPathKeyInput("");
-                      setHasPathKey(true);
-                    });
-                  }}
-                />
-                <Small>열쇠는 이 폰 안에만 남아요. 설정에서 언제든 바꿔요.</Small>
-              </Card>
-            ) : null}
-            <Button
-              label={
-                !aiPath
-                  ? "조합 먼저 고르기"
-                  : !hasGeminiKey
-                    ? "Gemini 열쇠 저장하기"
-                    : !hasPathKey
-                      ? (aiPath === "claude" ? "Claude" : "OpenAI") + " 열쇠 저장하기"
-                      : "다음"
-              }
-              tone="primary"
-              disabled={!aiPath || !hasGeminiKey || !hasPathKey}
-              onPress={next}
-            />
-            {saveMsg ? <Small muted={false}>{saveMsg}</Small> : null}
-          </>
-        ) : null}
-
-        {/* ── 4. 필수 확인 ── */}
-        {step === 4 ? (
           <>
             <Text style={[type.title, { color: t.text }]}>시작하기 전에</Text>
             <Small>

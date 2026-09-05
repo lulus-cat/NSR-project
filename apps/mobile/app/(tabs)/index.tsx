@@ -324,7 +324,6 @@ export default function Home() {
   >([]);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [needsServer, setNeedsServer] = useState(false);
-  const [needsAi, setNeedsAi] = useState(false);
   const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [weekStrip, setWeekStrip] = useState<
@@ -379,15 +378,9 @@ export default function Home() {
     if (mode === "tiro") {
       const { getTiroKey } = await import("../../src/services/asr");
       setNeedsServer(!(await getTiroKey()));
-    } else if (mode === "gemini") {
-      const { getApiKey } = await import("../../src/services/llm");
-      setNeedsServer(!(await getApiKey("gemini")));
     } else {
       setNeedsServer(!server.endpoint);
     }
-    // AI 필수 설정 — 기존 사용자(온보딩을 이미 지난)는 여기서 안내받는다.
-    const { pipelineReady } = await import("../../src/services/pipeline");
-    setNeedsAi(!(await pipelineReady()).ok);
     // 마지막 전사가 끝났는데 아직 결과를 안 열어봤으면 알려 준다.
     const last = await getSetting<{ shiftId?: string; sentences?: number; seen?: boolean }>(
       "transcribe.lastResult",
@@ -539,7 +532,7 @@ export default function Home() {
     {
       key: "records",
       label: "기록",
-      alert: pendingCount > 0 || needsServer || needsAi || newResult !== null,
+      alert: pendingCount > 0 || needsServer || newResult !== null,
       body: (
         <>
           {newResult ? (
@@ -614,19 +607,7 @@ export default function Home() {
               <DashedDivider />
               <BriefRow
                 icon="cloud-outline"
-                label="전사 방법을 정해 주세요"
-                value="정하기"
-                valueColor={t.warn}
-                onPress={() => router.push("/models")}
-              />
-            </>
-          ) : null}
-          {needsAi ? (
-            <>
-              <DashedDivider />
-              <BriefRow
-                icon="sparkles-outline"
-                label="AI 설정이 아직 없어요"
+                label="티로 열쇠를 넣어 주세요"
                 value="설정 열기"
                 valueColor={t.warn}
                 onPress={() => router.push("/settings")}
@@ -901,32 +882,6 @@ export default function Home() {
         </Enter>
       ) : null}
 
-      {/* 바로가기 칩 */}
-      <Enter index={4}>
-        <View style={{ flexDirection: "row", gap: space.sm }}>
-          {[
-            { label: "병동 사전", to: "/ward-dict" },
-            { label: "전사 설정", to: "/models" },
-          ].map((c) => (
-            <Pressable
-              key={c.label}
-              accessibilityRole="button"
-              onPress={() => router.push(c.to as never)}
-              style={({ pressed }) => ({
-                flex: 1,
-                minHeight: TOUCH_MIN,
-                backgroundColor: t.surface,
-                borderRadius: radius.full,
-                alignItems: "center",
-                justifyContent: "center",
-                transform: [{ scale: pressed ? 0.96 : 1 }],
-              })}
-            >
-              <Text style={[type.small, { color: t.text, fontWeight: "600" }]}>{c.label}</Text>
-            </Pressable>
-          ))}
-        </View>
-      </Enter>
     </HeaderScreen>
   );
 }

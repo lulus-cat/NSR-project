@@ -13,9 +13,7 @@ import { useTheme } from "../../src/theme";
 const ICONS: Record<string, [keyof typeof Ionicons.glyphMap, keyof typeof Ionicons.glyphMap]> = {
   index: ["home", "home-outline"],
   duty: ["calendar", "calendar-outline"],
-  care: ["chatbubble-ellipses", "chatbubble-ellipses-outline"],
   study: ["school", "school-outline"],
-  glossary: ["book", "book-outline"],
   settings: ["settings", "settings-outline"],
 };
 
@@ -48,9 +46,7 @@ export default function TabsLayout() {
     >
       <Tabs.Screen name="index" options={{ title: "홈" }} />
       <Tabs.Screen name="duty" options={{ title: "듀티" }} />
-      <Tabs.Screen name="care" options={{ title: "채팅" }} />
       <Tabs.Screen name="study" options={{ title: "학습" }} />
-      <Tabs.Screen name="glossary" options={{ title: "용어" }} />
       <Tabs.Screen name="settings" options={{ title: "설정" }} />
     </Tabs>
   );

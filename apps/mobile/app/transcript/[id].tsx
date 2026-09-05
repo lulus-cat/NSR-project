@@ -47,14 +47,6 @@ import {
   type RecordingRow,
 } from "../../src/db";
 import { loadLexicon } from "../../src/services/asr";
-import {
-  checkDeepAnalysis,
-  describeStage,
-  pipelineReady,
-  startDeepAnalysis,
-  type PipelineState,
-} from "../../src/services/pipeline";
-import { llmReady, polishTranscriptSegments } from "../../src/services/llm";
 import { redactForExport, shareText } from "../../src/services/export";
 import { exportBaseName, transcriptToText } from "../../src/services/export-bundle";
 
@@ -329,52 +321,6 @@ export default function TranscriptView() {
       }
     })();
   }, [load, shiftId]);
-
-  // ── 심층 분석 (3a→3b→4 파이프라인) ──
-  // 근무 기록 화면에 있던 것을 여기로 옮겼다. 전사가 끝나고 결과를 읽는 자리에서
-  // 분석을 거는 것이 순서에 맞다 — 분석도 안 했는데 '보고서 내보내기'가 먼저
-  // 보이던 어긋남도 여기서 풀린다.
-  const [deep, setDeep] = useState<PipelineState | null>(null);
-  const [deepGate, setDeepGate] = useState<{ ok: boolean; reason?: string } | null>(null);
-  const [deepBusy, setDeepBusy] = useState(false);
-
-  useEffect(() => {
-    void (async () => {
-      const [job, gate] = await Promise.all([getPipelineJob(shiftId), pipelineReady()]);
-      setDeep(describeStage(job));
-      setDeepGate(gate);
-    })();
-  }, [shiftId]);
-
-  // 배치가 도는 동안 화면이 열려 있으면 30초마다 한 걸음씩 민다.
-  useEffect(() => {
-    if (!deep || !["3a", "3b", "4"].includes(deep.stage)) return;
-    const timer = setInterval(() => {
-      void checkDeepAnalysis(shiftId).then(setDeep);
-    }, 30000);
-    return () => clearInterval(timer);
-  }, [deep, shiftId]);
-
-  const runDeep = useCallback(async () => {
-    setDeepBusy(true);
-    setError(null);
-    try {
-      setDeep(await startDeepAnalysis(shiftId));
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "분석을 시작하지 못했어요. 잠시 뒤 다시 눌러 주세요.");
-    } finally {
-      setDeepBusy(false);
-    }
-  }, [shiftId]);
-
-  const pokeDeep = useCallback(async () => {
-    setDeepBusy(true);
-    try {
-      setDeep(await checkDeepAnalysis(shiftId));
-    } finally {
-      setDeepBusy(false);
-    }
-  }, [shiftId]);
 
   const coverage = useMemo(() => speakerCoverage(segments), [segments]);
   const speakerOrder = useMemo(() => {
@@ -664,57 +610,6 @@ export default function TranscriptView() {
     setWordTarget({ segmentId, word, replacement: word });
   }, []);
 
-  // ── AI 다듬기 — Whisper 가 놓친 문맥 교정을 LLM 이 맡는다 ──
-  const runPolish = useCallback(async () => {
-    const ready = await llmReady();
-    if (!ready.ok) {
-      setError(ready.reason ?? "AI 설정이 아직이에요. 설정에서 열쇠를 먼저 넣어 주세요.");
-      return;
-    }
-    Alert.alert(
-      "AI에게 다듬기를 맡길까요",
-      "환자 정보를 가린 뒤에 AI에게 보내요.\n가려진 문장은 그대로 두고, 원문도 남겨요.",
-      [
-        { text: "그만두기", style: "cancel" },
-        {
-          text: "보내기",
-          onPress: () => {
-            void (async () => {
-              setError(null);
-              setBusy("AI가 다듬는 중");
-              try {
-                const lexicon = await loadLexicon();
-                // 확정된 내 교정 기록도 함께 보낸다 — 사전에 없는 이 병동만의
-                // 오인식은 여기에만 있어서, 안 보내면 AI 가 같은 말을 또 틀린다.
-                const memory = await loadCorrectionMemory();
-                const changed = await polishTranscriptSegments(
-                  segments.map((s) => ({ id: s.id, text: s.text })),
-                  lexicon,
-                  (done, total) => setBusy(`AI가 다듬는 중 ${done}/${total}`),
-                  memory,
-                );
-                for (const [id, text] of changed) {
-                  await updateSegmentText(id, text);
-                }
-                setSegments((prev) =>
-                  prev.map((s) => (changed.has(s.id) ? { ...s, text: changed.get(s.id)! } : s)),
-                );
-                setNotice(
-                  changed.size > 0
-                    ? `${changed.size}문장을 다듬었어요. 문장 아래 원문과 비교해 봐요.`
-                    : "다듬을 문장이 없었어요.",
-                );
-              } catch (e) {
-                setError(e instanceof Error ? e.message : "AI가 답하지 않았어요. 잠시 뒤 다시 해 주세요.");
-              } finally {
-                setBusy(null);
-              }
-            })();
-          },
-        },
-      ],
-    );
-  }, [segments]);
 
   // ── 삭제 — 전사만 지울지, 녹음까지 지울지 그 자리에서 고른다 ──
   /**
@@ -818,23 +713,6 @@ export default function TranscriptView() {
         {segments.length > 0 ? (
           <>
             <Button
-              label={busy?.startsWith("AI") ? "다듬는 중" : "AI로 다듬기"}
-              busy={busy?.startsWith("AI") ?? false}
-              disabled={busy !== null}
-              onPress={() => void runPolish()}
-            />
-            {dictInfo ? (
-              <>
-                <Small>
-                  같이 보내요: 내 단어 {dictInfo.terms}개 · 확정한 고침 {dictInfo.confirmed}건 ·
-                  병동 사전
-                </Small>
-                {dictInfo.confirmed === 0 ? (
-                  <Small>같은 단어를 두 번 고치면 확정 목록에 쌓여요.</Small>
-                ) : null}
-              </>
-            ) : null}
-            <Button
               label="전사본 보내기"
               busy={busy === "파일 만드는 중"}
               disabled={busy !== null}
@@ -863,60 +741,6 @@ export default function TranscriptView() {
         {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
         {notice ? <Small muted={false}>{notice}</Small> : null}
       </Card>
-
-      {/* ── 심층 분석 — Claude 추출·조사 + Gemini 보고서. 배치라 몇 분~몇 십 분 ── */}
-      {segments.length > 0 ? (
-        <Card>
-          <Heading>깊이 분석하기</Heading>
-          <Small>AI 셋이 나눠서 이 근무를 살펴봐요.</Small>
-          <Small>배울 점을 찾고, 사실을 확인하고, 보고서와 단어장을 만들어요.</Small>
-          <Small>몇 분에서 몇 십 분 걸려요. 화면을 꺼도 계속돼요.</Small>
-          {recId ? (
-            <Small muted={false}>
-              분석은 이 파일만이 아니라 그날 근무 전체 문장으로 해요.
-            </Small>
-          ) : null}
-          {deepGate && !deepGate.ok ? (
-            <Body muted>{deepGate.reason}</Body>
-          ) : deep && deep.stage !== "idle" ? (
-            <>
-              <Badge
-                text={
-                  deep.stage === "done"
-                    ? "분석 완료"
-                    : deep.stage === "error"
-                      ? "실패"
-                      : `분석 중 · ${deep.stage} 단계`
-                }
-                tone={deep.stage === "done" ? "ok" : deep.stage === "error" ? "danger" : "warn"}
-              />
-              <Small muted={false}>{deep.detail}</Small>
-              {deep.error ? (
-                <Text style={[type.small, { color: t.danger }]}>{deep.error}</Text>
-              ) : null}
-              {deep.stage === "done" ? (
-                <Small>보고서와 단어장은 근무 기록 화면에 있어요.</Small>
-              ) : null}
-              {["3a", "3b", "4"].includes(deep.stage) ? (
-                <Button label="진행 확인" busy={deepBusy} onPress={() => void pokeDeep()} />
-              ) : (
-                <Button
-                  label={deep.stage === "error" ? "다시 시작" : "다시 분석"}
-                  busy={deepBusy}
-                  onPress={() => void runDeep()}
-                />
-              )}
-            </>
-          ) : (
-            <Button
-              label="분석 시작"
-              tone="primary"
-              busy={deepBusy}
-              onPress={() => void runDeep()}
-            />
-          )}
-        </Card>
-      ) : null}
 
       {segments.length > 0 ? (
         <Card tone={coverage.readyForScoring ? "default" : "warn"}>
