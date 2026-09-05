@@ -219,3 +219,107 @@ def test_시작_문구에_토큰이_안_들어간다():
     start = body.index("def main()")
     assert "mcp_token" not in body[start:]
     assert "device_token" not in body[start:]
+
+
+# ── OAuth (커넥터 로그인) ──────────────────────────────────
+#
+# 클로드 커넥터는 주소만 넣으면 OAuth 등록부터 시도하고, 등록할 곳이 없으면
+# "로그인 서비스에 등록할 수 없습니다"로 멈춘다. 그래서 붙였다. 덤으로 주소가
+# 더 이상 열쇠가 아니게 됐다 — 열쇠는 로그인 화면에서 한 번 넣는다.
+
+import asyncio  # noqa: E402
+
+KEY = "K" * 40
+
+
+def _provider(tmp_path):
+    from nsr_server.oauth import NsrOAuthProvider
+
+    store = Store(str(tmp_path / "o.db"))
+    return NsrOAuthProvider(store, KEY, "nsr.example.com"), store
+
+
+def _pending(provider, store):
+    """authorize 를 거쳐 대기표 하나를 만든다."""
+    from mcp.server.auth.provider import AuthorizationParams
+    from mcp.shared.auth import OAuthClientInformationFull
+    from pydantic import AnyUrl
+
+    client = OAuthClientInformationFull(
+        client_id="c1", redirect_uris=[AnyUrl("https://claude.ai/cb")], token_endpoint_auth_method="none"
+    )
+    asyncio.run(provider.register_client(client))
+    url = asyncio.run(
+        provider.authorize(
+            client,
+            AuthorizationParams(
+                state="xyz",
+                scopes=[],
+                code_challenge="chal",
+                redirect_uri=AnyUrl("https://claude.ai/cb"),
+                redirect_uri_provided_explicitly=True,
+            ),
+        )
+    )
+    return client, url.split("p=")[1]
+
+
+def test_로그인_화면으로_보낸다(tmp_path):
+    provider, store = _provider(tmp_path)
+    _, pending = _pending(provider, store)
+    assert pending  # 곧바로 코드를 주지 않는다 — 사람이 열쇠를 대야 한다
+
+
+def test_열쇠가_맞아야_코드를_준다(tmp_path):
+    provider, store = _provider(tmp_path)
+    _, pending = _pending(provider, store)
+    assert provider.approve(pending, "틀린열쇠") is None
+    back = provider.approve(pending, KEY)
+    assert back.startswith("https://claude.ai/cb?code=")
+    assert "state=xyz" in back
+
+
+def test_한글_열쇠에도_안_죽는다(tmp_path):
+    """compare_digest 는 아스키 아닌 문자열에 TypeError 를 던진다 — 실제로 500 이 났다."""
+    provider, store = _provider(tmp_path)
+    _, pending = _pending(provider, store)
+    assert provider.approve(pending, "한글로 찍어보기") is None
+
+
+def test_열쇠를_틀려도_다시_해볼_수_있다(tmp_path):
+    provider, store = _provider(tmp_path)
+    _, pending = _pending(provider, store)
+    provider.approve(pending, "틀림")
+    assert provider.approve(pending, KEY) is not None  # 대기표가 살아 있다
+
+
+def test_코드는_한_번만_쓴다(tmp_path):
+    provider, store = _provider(tmp_path)
+    client, pending = _pending(provider, store)
+    code = provider.approve(pending, KEY).split("code=")[1].split("&")[0]
+    loaded = asyncio.run(provider.load_authorization_code(client, code))
+    assert loaded is not None
+    asyncio.run(provider.exchange_authorization_code(client, loaded))
+    assert asyncio.run(provider.load_authorization_code(client, code)) is None
+
+
+def test_받은_토큰으로만_들어온다(tmp_path):
+    provider, store = _provider(tmp_path)
+    client, pending = _pending(provider, store)
+    code = provider.approve(pending, KEY).split("code=")[1].split("&")[0]
+    loaded = asyncio.run(provider.load_authorization_code(client, code))
+    token = asyncio.run(provider.exchange_authorization_code(client, loaded))
+
+    assert asyncio.run(provider.verify_token(token.access_token)) is not None
+    assert asyncio.run(provider.verify_token("가짜토큰")) is None
+
+
+def test_토큰을_거두면_못_쓴다(tmp_path):
+    provider, store = _provider(tmp_path)
+    client, pending = _pending(provider, store)
+    code = provider.approve(pending, KEY).split("code=")[1].split("&")[0]
+    loaded = asyncio.run(provider.load_authorization_code(client, code))
+    token = asyncio.run(provider.exchange_authorization_code(client, loaded))
+    access = asyncio.run(provider.load_access_token(token.access_token))
+    asyncio.run(provider.revoke_token(access))
+    assert asyncio.run(provider.verify_token(token.access_token)) is None

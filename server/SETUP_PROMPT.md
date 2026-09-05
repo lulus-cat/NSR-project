@@ -60,11 +60,14 @@ VPS 에 접속한 클로드(클로드 코드 등)에게 그대로 붙여 넣는 
 **출력에 토큰이 섞여 나오지 않게** 조심해라.
 
 ```bash
-# 1) 대화 AI 처럼 인사하고 도구 목록 받기 — 도구 7개가 나와야 한다
-URL="https://내도메인/t/$T/mcp"
-curl -si -X POST "$URL" -H 'content-type: application/json' \
-  -H 'accept: application/json, text/event-stream' \
-  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"setup","version":"1"}}}' | tail -2
+# 1) 커넥터가 로그인 방법을 찾는지 — 둘 다 200 이어야 한다
+curl -s -o /dev/null -w 'AS metadata %{http_code}\n' https://내도메인/.well-known/oauth-authorization-server
+curl -s -o /dev/null -w 'RS metadata %{http_code}\n' https://내도메인/.well-known/oauth-protected-resource/mcp
+
+# 1-2) 인증 없이 MCP 를 두드리면 401 이어야 한다 (그래야 커넥터가 로그인으로 간다)
+curl -s -o /dev/null -w 'no-auth %{http_code}\n' -X POST https://내도메인/mcp \
+  -H 'content-type: application/json' -H 'accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' 
 
 # 2) 폰처럼 자료 올리기 — 가리기를 안 했으니 400 이 나와야 정상이다
 curl -s -o /dev/null -w '%{http_code}\n' -X POST https://내도메인/ingest \
@@ -85,13 +88,14 @@ curl -s -X POST https://내도메인/ingest -H "authorization: Bearer $D" \
 sudo -u nsr sqlite3 /home/nsr/nsr.db "DELETE FROM sentences WHERE shift_id='test'; DELETE FROM shifts WHERE shift_id='test';"
 ```
 
-`server/` 폴더에서 `./venv/bin/python -m pytest -q` 도 돌려라. 20개가 통과해야 한다.
+`server/` 폴더에서 `./venv/bin/python -m pytest -q` 도 돌려라. 28개가 통과해야 한다.
 
 ## 다 되면 나에게 알려 줄 것
 
 1. **커넥터 주소를 어떻게 얻는지** — 토큰은 화면에 쓰지 말고, 내가 직접 볼 명령
    한 줄만 알려 줘라 (예: "`sudo cat /home/nsr/nsr.env` 를 치면 두 값이 보여요").
-   그리고 주소의 모양만 알려 줘라: `https://내도메인/t/<MCP토큰>/mcp`
+   커넥터 주소는 `https://내도메인/mcp` 다 — 이건 비밀이 아니다. 열쇠는 연결할 때
+   뜨는 로그인 화면에 넣는다.
 2. **폰에 넣을 값** — 서버 주소와 기기 토큰을 어디서 보는지.
 3. **위 점검 1~4 의 결과**를 표로.
 4. 못 한 것이 있으면 무엇이 왜 안 됐는지.

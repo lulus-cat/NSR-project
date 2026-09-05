@@ -8,7 +8,7 @@
 | 손님 | 주소 | 인증 |
 | --- | --- | --- |
 | 폰 (앱) | `/ingest` `/pull` `/pulled` | 헤더의 기기 토큰 |
-| 대화 AI (클로드·GPT) | `/t/<MCP토큰>/mcp` | 주소 안의 토큰 |
+| 대화 AI (클로드·GPT) | `/mcp` | OAuth — 연결할 때 로그인 화면에서 열쇠 한 번 |
 
 **여기 오지 않는 것**: 원본 전사본(rawText), 오디오, 화자 실명, 태움 점수를 만든 문장.
 
@@ -42,6 +42,9 @@ python3 -m venv venv
 python3 -c "import secrets;print('NSR_MCP_TOKEN=' + secrets.token_urlsafe(32))"
 python3 -c "import secrets;print('NSR_DEVICE_TOKEN=' + secrets.token_urlsafe(32))"
 ```
+
+`NSR_MCP_TOKEN` 은 **커넥터를 연결할 때 로그인 화면에 넣는 비밀번호**다. 주소에는
+안 들어간다. `NSR_DEVICE_TOKEN` 은 폰이 자료를 올릴 때 쓴다.
 
 두 줄을 `/home/nsr/nsr.env` 에 적고 주인만 읽게 잠근다. **도메인도 함께 적는다** —
 이게 없으면 커넥터가 421 로 막힌다(아래 5번 설명).
@@ -160,20 +163,34 @@ WordOps 같은 관리 도구를 쓰면 `wo site update` 가 이 설정을 다시
 
 ## 6. 대화 AI 에 붙이기
 
-커넥터 주소는 이것이다. `<MCP토큰>` 자리에 3번에서 만든 값을 그대로 넣는다.
+커넥터 주소는 이것뿐이다. **비밀이 아니다** — 열쇠는 다음 단계에서 넣는다.
 
 ```
-https://nsr.example.com/t/<MCP토큰>/mcp
+https://nsr.example.com/mcp
 ```
 
 - **클로드** — 설정 → 커넥터 → 사용자 지정 커넥터 추가 → 위 주소.
 - **GPT** — 설정 → 커넥터(개발자 모드) → 새 커넥터 → 위 주소.
 
+주소를 넣으면 **로그인 화면**이 뜬다. 거기에 `nsr.env` 의 `NSR_MCP_TOKEN` 을
+붙여넣으면 연결이 끝난다. 그 뒤로는 다시 묻지 않는다(토큰 30일, 자동 갱신).
+
+```bash
+sudo grep NSR_MCP_TOKEN /home/nsr/nsr.env   # 로그인 화면에 넣을 값
+```
+
 붙으면 대화에서 `list_shifts` 같은 도구가 보인다. "9월 3일 근무 뭐 있었는지 봐 줘"
 처럼 말하면 AI 가 알아서 도구를 쓴다.
 
-> 주소가 곧 열쇠다. 남에게 보이는 화면에 띄우지 않는다. 샜다 싶으면 `nsr.env` 의
-> `NSR_MCP_TOKEN` 만 새로 만들고 `systemctl restart nsr` 한 뒤 커넥터 주소를 다시 넣는다.
+### 왜 OAuth 인가
+
+처음에는 추측 불가능한 토큰을 주소에 넣는 방식이었다(`/t/<토큰>/mcp`). 그런데
+클로드 커넥터는 주소를 넣으면 **먼저 OAuth 등록을 시도하고**, 등록할 곳이 없으면
+"로그인 서비스에 등록할 수 없습니다"로 멈춘다. 인증 없는 서버로 넘어가 주지 않았다.
+
+바꾸고 나니 더 안전하다. 주소가 열쇠가 아니라서 화면 공유·캡처로 새지 않는다.
+열쇠가 샜다 싶으면 `nsr.env` 의 값을 새로 만들고 `systemctl restart nsr` 한 뒤
+커넥터를 다시 연결한다(기존 토큰을 모두 끊으려면 DB 의 `oauth_tokens` 를 비운다).
 
 ## 7. 앱에 넣을 것
 
@@ -222,6 +239,8 @@ cd server && ./venv/bin/python -m pytest -q
 | --- | --- | --- |
 | `421 Invalid Host header` | 서버가 도메인을 모른다 | `nsr.env` 에 `NSR_PUBLIC_HOST` 를 넣고 재시작 |
 | `403` (커넥터에서만) | 그 앱의 Origin 이 목록에 없다 | `journalctl -u nsr` 에서 값을 보고 `NSR_ALLOWED_ORIGINS` 에 더한다 |
+| "로그인 서비스에 등록할 수 없습니다" | 옛 주소(`/t/…/mcp`)를 넣었다 | 주소를 `https://도메인/mcp` 로 바꾼다 |
+| 로그인 화면에서 계속 튕긴다 | 열쇠가 다르다 | `sudo grep NSR_MCP_TOKEN /home/nsr/nsr.env` 값을 그대로 붙여넣는다 |
 | `400 Invalid HTTP request` | 프록시가 `Host` 를 두 번 넣었다 | `proxy_set_header Host $host;` 하나만 남긴다 |
 | 인증서 발급 실패 | `/.well-known/acme-challenge/` 가 프록시로 넘어간다 | 그 위치를 프록시 규칙보다 먼저 빼 준다 |
 | 응답이 중간에 끊긴다 | 프록시 버퍼링 | `proxy_buffering off` |

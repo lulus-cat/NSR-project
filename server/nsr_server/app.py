@@ -7,18 +7,20 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
   POST /ingest                 폰 → 서버. 마스킹된 근무 꾸러미. 기기 토큰 필요
   GET  /pull                   서버 → 폰. 보고서·새 용어 가져가기. 기기 토큰 필요
   POST /pulled                 폰이 "받았다"고 알림. 기기 토큰 필요
-  *    /t/<MCP토큰>/mcp         대화 AI 커넥터 주소 (클로드·GPT 공통)
+  *    /mcp                     대화 AI 커넥터 주소 (클로드·GPT 공통)
+  GET  /oauth/login            커넥터를 연결할 때 열쇠를 넣는 화면
+  *    /.well-known/oauth-*     커넥터가 로그인 방법을 찾아보는 자리 (SDK 가 만든다)
+  *    /register /authorize /token   OAuth 절차 (SDK 가 만든다)
 
-왜 MCP 토큰이 주소 안에 있나
---------------------------
-클로드·GPT 의 커넥터는 **주소 하나**만 받는다. 헤더를 넣을 칸이 없다. 정식 방법은
-OAuth 지만 개인 서버 하나에 그걸 붙이는 값이 너무 크다. 그래서 추측 불가능한
-토큰을 주소에 넣는다 — 주소를 아는 사람만 들어온다.
+왜 OAuth 인가
+------------
+처음에는 추측 불가능한 토큰을 주소에 넣어 두는 것으로 갔다. 그런데 클로드 커넥터는
+주소를 넣으면 **먼저 OAuth 등록을 시도하고**, 등록할 곳이 없으면 "로그인 서비스에
+등록할 수 없습니다"로 멈춘다. 인증 없는 서버로 넘어가 주지 않았다.
 
-그 대가를 안다: 주소가 곧 열쇠라 어딘가에 붙여 넣으면 그게 유출이다. 그래서
-  - 토큰은 32자 이상, 손으로 못 외울 길이로 만든다
-  - 새면 환경변수만 갈아 끼우고 커넥터 주소를 다시 넣는다
-  - 접근 기록에 주소 전체를 남기지 않는다 (아래 로그 설정)
+바꾸고 나니 더 안전해졌다. **주소가 더 이상 열쇠가 아니다.** 주소는 남에게 보여도
+되고, 열쇠는 로그인 화면에서 한 번 넣는다. 화면 공유·캡처로 새는 길이 사라졌다.
+자세한 절차는 oauth.py 에 적혀 있다.
 
 기록에 대하여
 ------------
@@ -38,7 +40,12 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
 
+from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
+from pydantic import AnyHttpUrl
+from starlette.responses import HTMLResponse, RedirectResponse
+
 from .config import Config
+from .oauth import NsrOAuthProvider
 from .screen import screen_bundle
 from .store import Store
 
@@ -83,7 +90,21 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     config = config or Config()
     store = store or Store(config.db_path)
 
-    mcp = MCPServer(name="NSR 근무 기록", instructions=INSTRUCTIONS, version="0.1.0")
+    auth = NsrOAuthProvider(store, config.mcp_token, config.public_host)
+    base = f"https://{config.public_host}"
+    mcp = MCPServer(
+        name="NSR 근무 기록",
+        instructions=INSTRUCTIONS,
+        version="0.1.0",
+        auth_server_provider=auth,
+        auth=AuthSettings(
+            issuer_url=AnyHttpUrl(base),
+            resource_server_url=AnyHttpUrl(f"{base}/mcp"),
+            # 커넥터가 스스로 등록하게 둔다. 등록만으로는 아무것도 못 읽는다 —
+            # 다음 단계(로그인)에서 열쇠를 못 대면 거기서 끝난다.
+            client_registration_options=ClientRegistrationOptions(enabled=True),
+        ),
+    )
 
     # ── 대화 AI 가 쓰는 도구 ───────────────────────────────
 
@@ -199,23 +220,75 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         store.mark_pulled(list(body.get("shiftIds") or []), list(body.get("entries") or []))
         return JSONResponse({"ok": True})
 
-    # MCP 창구는 추측 불가능한 주소 밑에 둔다. 클로드·GPT 가 같은 주소로 붙는다.
+    # ── 로그인 화면 ───────────────────────────────────────
+    #
+    # 커넥터가 사람을 여기로 보낸다. 묻는 것은 하나다 — 서버 열쇠를 아는가.
+    # 한 사람이 쓰는 서버라 계정도 비밀번호도 따로 두지 않는다.
+
+    def login_page(pending: str, message: str = "") -> HTMLResponse:
+        note = f'<p class="bad">{message}</p>' if message else ""
+        return HTMLResponse(
+            f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>NSR 연결</title>
+<style>
+  body {{ font-family: system-ui, -apple-system, sans-serif; background:#F7F6F3; color:#23211E;
+         display:flex; min-height:100vh; margin:0; align-items:center; justify-content:center; }}
+  form {{ background:#fff; padding:28px; border-radius:16px; width:min(360px,90vw);
+          box-shadow:0 1px 3px rgba(0,0,0,.08); }}
+  h1 {{ font-size:18px; margin:0 0 6px; }}
+  p {{ font-size:14px; color:#6B6660; margin:0 0 18px; line-height:1.5; }}
+  .bad {{ color:#B3261E; }}
+  input {{ width:100%; padding:12px; font-size:15px; border:1px solid #DDD8D0;
+           border-radius:10px; box-sizing:border-box; }}
+  button {{ width:100%; margin-top:12px; padding:12px; font-size:15px; font-weight:600;
+            color:#fff; background:#2F6F4E; border:0; border-radius:10px; }}
+</style></head><body>
+<form method="post" action="/oauth/login">
+  <h1>NSR 에 연결해요</h1>
+  <p>서버 열쇠를 넣어 주세요. 서버의 nsr.env 파일에 있는 NSR_MCP_TOKEN 이에요.</p>
+  {note}
+  <input type="password" name="key" autofocus autocomplete="off" placeholder="열쇠 붙여넣기">
+  <input type="hidden" name="p" value="{pending}">
+  <button type="submit">연결하기</button>
+</form></body></html>"""
+        )
+
+    async def oauth_login_form(request: Request) -> HTMLResponse:
+        return login_page(request.query_params.get("p", ""))
+
+    async def oauth_login_submit(request: Request):
+        form = await request.form()
+        pending = str(form.get("p", ""))
+        back = auth.approve(pending, str(form.get("key", "")))
+        if not back:
+            # 왜 틀렸는지는 나누지 않는다 — 대기표가 없는 건지 열쇠가 틀린 건지
+            # 알려 주면 찍어 보는 사람에게 단서가 된다.
+            log.info("연결 로그인 실패")
+            return login_page(pending, "열쇠가 맞지 않아요. 다시 넣어 주세요.")
+        log.info("연결 로그인 성공")
+        return RedirectResponse(back, status_code=302)
+
+    # MCP 창구와 OAuth 주소는 SDK 가 만든다. well-known 은 도메인 뿌리에 있어야
+    # 커넥터가 찾으므로, 이 앱을 뿌리에 둔다.
     #
     # transport_security 를 반드시 넘겨야 한다. 안 넘기면 SDK 가
     # streamable_http_app(host="127.0.0.1") 이라는 **고정 기본값**을 보고
     # "로컬 서버구나" 판단해 DNS 리바인딩 보호를 자동으로 켠다. 그러면 허용
     # 목록이 127.0.0.1·localhost 뿐이라, nginx·caddy 가 넘긴 진짜 도메인
     # Host 를 421 Invalid Host header 로 거부한다 (실제로 겪은 사고다).
-    # Origin 도 함께 검사하므로, 커넥터가 보내는 https://claude.ai 같은 값도
-    # 목록에 있어야 한다. 없으면 403 이다.
     mcp_app = mcp.streamable_http_app(transport_security=transport_security(config))
+
     app = Starlette(
         routes=[
             Route("/healthz", healthz),
             Route("/ingest", ingest, methods=["POST"]),
             Route("/pull", pull, methods=["GET"]),
             Route("/pulled", pulled, methods=["POST"]),
-            Mount(f"/t/{config.mcp_token}", app=mcp_app),
+            Route("/oauth/login", oauth_login_form, methods=["GET"]),
+            Route("/oauth/login", oauth_login_submit, methods=["POST"]),
+            # 나머지는 전부 MCP 앱이 받는다 (mcp · well-known · register · authorize · token)
+            Mount("/", app=mcp_app),
         ],
         lifespan=lambda _: mcp.session_manager.run(),
     )

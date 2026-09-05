@@ -46,6 +46,37 @@ CREATE TABLE IF NOT EXISTS reports (
   pulled_at   INTEGER
 );
 
+-- ── OAuth (대화 AI 커넥터 로그인) ────────────────────────
+-- 커넥터가 등록하고, 사람이 열쇠로 로그인하고, 그 결과로 받은 토큰이 여기 산다.
+-- 재시작해도 다시 로그인하지 않게 파일에 둔다.
+CREATE TABLE IF NOT EXISTS oauth_clients (
+  client_id   TEXT PRIMARY KEY,
+  info        TEXT NOT NULL,
+  created_at  INTEGER NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_pending (
+  id          TEXT PRIMARY KEY,
+  payload     TEXT NOT NULL,
+  expires_at  REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_codes (
+  code        TEXT PRIMARY KEY,
+  payload     TEXT NOT NULL,
+  expires_at  REAL NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS oauth_tokens (
+  token       TEXT PRIMARY KEY,
+  kind        TEXT NOT NULL,
+  client_id   TEXT NOT NULL,
+  scopes      TEXT NOT NULL,
+  resource    TEXT,
+  expires_at  REAL,
+  created_at  INTEGER NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS terms (
   entry       TEXT PRIMARY KEY,
   meaning     TEXT NOT NULL,
@@ -238,6 +269,94 @@ class Store:
             "reports": one("SELECT COUNT(*) FROM reports"),
             "terms": one("SELECT COUNT(*) FROM terms"),
         }
+
+    # ── OAuth ─────────────────────────────────────────────
+
+    def put_oauth_client(self, client_id: str, info: dict[str, Any]) -> None:
+        with self.db:
+            self.db.execute(
+                """INSERT INTO oauth_clients (client_id, info, created_at) VALUES (?, ?, ?)
+                   ON CONFLICT(client_id) DO UPDATE SET info=excluded.info""",
+                (client_id, json.dumps(info), int(time.time())),
+            )
+
+    def get_oauth_client(self, client_id: str) -> dict[str, Any] | None:
+        row = self.db.execute(
+            "SELECT info FROM oauth_clients WHERE client_id = ?", (client_id,)
+        ).fetchone()
+        return json.loads(row["info"]) if row else None
+
+    def put_oauth_pending(self, pending_id: str, payload: dict[str, Any], expires_at: float) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM oauth_pending WHERE expires_at < ?", (time.time(),))
+            self.db.execute(
+                """INSERT INTO oauth_pending (id, payload, expires_at) VALUES (?, ?, ?)
+                   ON CONFLICT(id) DO UPDATE SET payload=excluded.payload, expires_at=excluded.expires_at""",
+                (pending_id, json.dumps(payload), expires_at),
+            )
+
+    def take_oauth_pending(self, pending_id: str) -> dict[str, Any] | None:
+        """꺼내면서 지운다. 같은 대기표를 두 번 쓰지 못한다."""
+        row = self.db.execute(
+            "SELECT payload, expires_at FROM oauth_pending WHERE id = ?", (pending_id,)
+        ).fetchone()
+        if not row:
+            return None
+        with self.db:
+            self.db.execute("DELETE FROM oauth_pending WHERE id = ?", (pending_id,))
+        if row["expires_at"] < time.time():
+            return None
+        return json.loads(row["payload"])
+
+    def put_oauth_code(self, code: str, payload: dict[str, Any]) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM oauth_codes WHERE expires_at < ?", (time.time(),))
+            self.db.execute(
+                "INSERT INTO oauth_codes (code, payload, expires_at) VALUES (?, ?, ?)",
+                (code, json.dumps(payload), payload["expires_at"]),
+            )
+
+    def get_oauth_code(self, code: str) -> dict[str, Any] | None:
+        row = self.db.execute("SELECT payload FROM oauth_codes WHERE code = ?", (code,)).fetchone()
+        return json.loads(row["payload"]) if row else None
+
+    def delete_oauth_code(self, code: str) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM oauth_codes WHERE code = ?", (code,))
+
+    def put_oauth_token(
+        self,
+        token: str,
+        kind: str,
+        client_id: str,
+        scopes: list[str],
+        expires_at: float | None,
+        resource: str | None,
+    ) -> None:
+        with self.db:
+            self.db.execute(
+                """INSERT INTO oauth_tokens (token, kind, client_id, scopes, resource, expires_at, created_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (token, kind, client_id, json.dumps(scopes), resource, expires_at, int(time.time())),
+            )
+
+    def get_oauth_token(self, token: str, kind: str) -> dict[str, Any] | None:
+        row = self.db.execute(
+            "SELECT * FROM oauth_tokens WHERE token = ? AND kind = ?", (token, kind)
+        ).fetchone()
+        if not row:
+            return None
+        return {
+            "token": row["token"],
+            "client_id": row["client_id"],
+            "scopes": json.loads(row["scopes"]),
+            "resource": row["resource"],
+            "expires_at": row["expires_at"],
+        }
+
+    def delete_oauth_token(self, token: str) -> None:
+        with self.db:
+            self.db.execute("DELETE FROM oauth_tokens WHERE token = ?", (token,))
 
     def dump_json(self, obj: Any) -> str:
         return json.dumps(obj, ensure_ascii=False, indent=2)
