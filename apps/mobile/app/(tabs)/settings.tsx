@@ -351,6 +351,8 @@ export default function Settings() {
   return (
     <SafeAreaView style={{ flex: 1, backgroundColor: t.bg }} edges={["top"]}>
     <ScrollView
+      // 키보드가 떠 있을 때 첫 탭이 버튼 대신 키보드 닫기에 먹히지 않게.
+      keyboardShouldPersistTaps="handled"
       contentContainerStyle={{
         padding: space.lg,
         paddingBottom: space.bottom,
@@ -385,10 +387,7 @@ export default function Settings() {
       <Card tone={update?.show ? "accent" : "default"}>
         <GroupHead icon="information-circle-outline" color="#4C7DDB" title="앱 버전" badge={<Badge text="알파" tone="warn" />} />
         <Small muted={false}>{version ? `현재 ${version}` : "개발 중 실행"}</Small>
-        <Small>
-          
-  스토어 앱이 아니라서 새 판을 여기서 알려드려요. 덮어 깔아도 기록은 남아요.
-</Small>
+        <Small>앱이 새 버전을 알려드려요.</Small>
 
         {update?.show && update.release ? (
           <>
@@ -439,7 +438,7 @@ export default function Settings() {
         <Divider />
         <Toggle
           label="새 버전 알림 받기"
-          description="배터리를 거의 쓰지 않고 가끔 새 판을 확인해요."
+          description="새 버전을 확인해요."
           value={autoUpdate}
           onChange={async (v) => {
             setAutoUpdate(v);
@@ -454,7 +453,6 @@ export default function Settings() {
         <GroupHead icon="mic-outline" color="#3E9B6F" title="자동 기록" />
         {/* 듀티표와 근무지 감지는 동시에 켜지 않는다 — 서로 켜고 끄는 시점이
             어긋나면 어느 쪽이 기록을 물고 있는지 알 수 없게 된다. */}
-        <Small muted={false}>자동 기록 방식 — 하나만 켭니다</Small>
         <View style={{ flexDirection: "row", gap: space.sm }}>
           {(
             [
@@ -509,7 +507,6 @@ export default function Settings() {
             );
           })}
         </View>
-        <Small>고른 방식의 자세한 설정이 아래에 나와요.</Small>
         <Small>{capability.explanation}</Small>
         {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
 

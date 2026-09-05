@@ -8,10 +8,20 @@ import { requireOptionalNativeModule } from "expo-modules-core";
  */
 const Native = requireOptionalNativeModule<{
   decodeToWav16k(srcPath: string, dstPath: string): Promise<string>;
+  audioDurationSec(srcPath: string): Promise<number>;
+  splitAudio(srcPath: string, dstDir: string, chunkSec: number): Promise<AudioPart[]>;
   workStart(title: string, body: string): void;
   workUpdate(title: string, body: string): void;
   workStop(): void;
 }>("NsrAudioDecode");
+
+/** 나눈 조각 하나. startSec 은 원본 안에서 이 조각이 시작하는 시각이다. */
+export interface AudioPart {
+  /** file:// 를 붙인 경로 — 그대로 업로드에 쓴다. */
+  uri: string;
+  startSec: number;
+  durationSec: number;
+}
 
 export function audioDecodeAvailable(): boolean {
   return Native != null;
@@ -58,4 +68,38 @@ export function workStop(): void {
   } catch {
     // 위와 같다.
   }
+}
+
+/** 파일 길이(초). 모르면 0 — 네이티브 모듈이 없거나 길이가 안 적힌 파일. */
+export async function audioDurationSec(srcUri: string): Promise<number> {
+  if (!Native?.audioDurationSec) return 0;
+  try {
+    return await Native.audioDurationSec(stripScheme(srcUri));
+  } catch {
+    return 0;
+  }
+}
+
+/**
+ * 긴 녹음을 chunkSec 초씩 나눈다. 다시 인코딩하지 않고 컨테이너만 새로 쓴다.
+ *
+ * 빈 배열은 **안 나눠도 된다**는 뜻이다 — 파일이 짧거나, 담을 수 없는 코덱(mp3 등)
+ * 이거나, 이 기기에 모듈이 없을 때. 부르는 쪽은 원본을 그대로 쓰면 된다.
+ */
+export async function splitAudio(
+  srcUri: string,
+  dstDir: string,
+  chunkSec: number,
+): Promise<AudioPart[]> {
+  if (!Native?.splitAudio) return [];
+  const parts = (await Native.splitAudio(
+    stripScheme(srcUri),
+    stripScheme(dstDir),
+    chunkSec,
+  )) as unknown as { path: string; startSec: number; durationSec: number }[];
+  return parts.map((p) => ({
+    uri: p.path.startsWith("file://") ? p.path : `file://${p.path}`,
+    startSec: p.startSec,
+    durationSec: p.durationSec,
+  }));
 }

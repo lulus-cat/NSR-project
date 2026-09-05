@@ -147,6 +147,8 @@ export default function WardDict() {
 
   return (
     <ScrollView
+      // 키보드가 떠 있을 때 첫 탭이 버튼 대신 키보드 닫기에 먹히지 않게.
+      keyboardShouldPersistTaps="handled"
       contentContainerStyle={{
         padding: space.lg,
         // 내비게이션 바가 마지막 카드를 가리지 않게 안전영역만큼 띄운다.

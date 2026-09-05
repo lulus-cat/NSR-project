@@ -463,7 +463,7 @@ export default function Home() {
           <DashedDivider />
           <BriefRow
             icon="time-outline"
-            label="오늘 인계 체류(추정)"
+            label="오늘 수당 외 근무시간(추정)"
             value={overtimeToday > 0 ? `+${overtimeToday}시간` : "없음"}
             valueColor={overtimeToday > 0 ? t.warn : undefined}
           />
@@ -480,21 +480,14 @@ export default function Home() {
     {
       key: "overtime",
       label: "오버타임",
-      alert: stats.offTheBooksHours + stats.overtimeHours > 0,
+      alert: stats.offTheBooksHours > 0,
       body: (
         <>
           <BriefRow
             icon="albums-outline"
-            label="이번 주 인계 체류 (추정)"
+            label="이번 주 수당 외 근무시간(추정)"
             value={`${stats.offTheBooksHours}시간`}
             valueColor={stats.offTheBooksHours > 0 ? t.warn : undefined}
-          />
-          <DashedDivider />
-          <BriefRow
-            icon="alert-circle-outline"
-            label="주 40시간 초과"
-            value={`${stats.overtimeHours}시간`}
-            valueColor={stats.overtimeHours > 0 ? t.warn : undefined}
           />
           <DashedDivider />
           <BriefRow
@@ -710,9 +703,9 @@ export default function Home() {
       rows={[
         { label: "이번 주 근무", value: `${stats.onSiteHours}시간` },
         {
-          label: "인계 체류 · 주 40시간 초과",
-          value: `${stats.offTheBooksHours} · ${stats.overtimeHours}시간`,
-          tone: stats.offTheBooksHours + stats.overtimeHours > 0 ? "alert" : "default",
+          label: "수당 외 근무시간",
+          value: `${stats.offTheBooksHours}시간`,
+          tone: stats.offTheBooksHours > 0 ? "alert" : "default",
         },
       ]}
       refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} />}

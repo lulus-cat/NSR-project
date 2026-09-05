@@ -402,9 +402,7 @@ export default function Duty() {
               </Text>
             </View>
             {monthEntries.length === 0 ? (
-              <Body muted>
-  이번 달 듀티가 없어요. 위 달력에서 찍어요.
-</Body>
+              <Body muted>이번 달 듀티가 없어요.</Body>
             ) : (
               <>
                 {/* 한 줄 누적 막대 — 이번 달이 어떤 색인지 한눈에 */}

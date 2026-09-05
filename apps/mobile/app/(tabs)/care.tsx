@@ -121,14 +121,6 @@ function Bubble({ msg }: { msg: Msg }) {
   );
 }
 
-const STARTERS = [
-  "오늘 태움 당했어요.",
-  "실수해서 자책 중이에요.",
-  "그냥 지쳤어요",
-  "오늘 근무 내용으로 퀴즈 내주세요.",
-  "최근 근무 보고서를 요약해 주세요.",
-];
-
 const QUIZ_PROMPT = "단어장과 최근 보고서로 퀴즈를 내주세요. 답하면 맞았는지 알려주세요.";
 
 export default function Care() {
@@ -388,40 +380,14 @@ export default function Care() {
                     공부 질문에는 선배처럼 답하고, 단어장으로 퀴즈도 내요. 대화는 이 화면에만
                     남아요.
                   </Body>
-                  <Small>
-                    메시지는 설정한 AI 공급자로 전송되며, 이름 같은 민감 정보는 자동으로 가리고
-                    보냅니다.
-                  </Small>
-                  <Small>많이 힘들면 지금 전화해요 — 1577-0199 · 109</Small>
+                  <Small>메시지는 설정한 AI 로 보내요.</Small>
+                  <Small>이름 같은 민감한 말은 가리고 보내요.</Small>
                 </Card>
               )}
             </Enter>
           ) : (
             msgs.map((m) => <Bubble key={m.at + m.role} msg={m} />)
           )}
-
-          {msgs.length === 0 && (ready?.ok ?? false) ? (
-            <Enter index={2}>
-              <View style={{ flexDirection: "row", flexWrap: "wrap", gap: space.sm }}>
-                {STARTERS.map((s) => (
-                  <Pressable
-                    key={s}
-                    accessibilityRole="button"
-                    onPress={() => void send(s)}
-                    style={({ pressed }) => ({
-                      backgroundColor: t.surface,
-                      borderRadius: radius.full,
-                      paddingHorizontal: space.lg,
-                      paddingVertical: space.md,
-                      transform: [{ scale: pressed ? 0.95 : 1 }],
-                    })}
-                  >
-                    <Text style={[type.small, { color: t.text, fontWeight: "600" }]}>{s}</Text>
-                  </Pressable>
-                ))}
-              </View>
-            </Enter>
-          ) : null}
 
           {busy ? (
             <View

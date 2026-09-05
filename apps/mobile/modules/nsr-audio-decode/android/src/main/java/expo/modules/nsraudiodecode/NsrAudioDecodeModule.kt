@@ -5,6 +5,7 @@ import android.media.AudioFormat
 import android.media.MediaCodec
 import android.media.MediaExtractor
 import android.media.MediaFormat
+import android.media.MediaMuxer
 import androidx.core.content.ContextCompat
 import expo.modules.kotlin.modules.Module
 import expo.modules.kotlin.modules.ModuleDefinition
@@ -30,6 +31,16 @@ class NsrAudioDecodeModule : Module() {
     // 30분 조각 기준 수 초~수십 초짜리 CPU 작업. 전사 직전에만 부른다.
     AsyncFunction("decodeToWav16k") { srcPath: String, dstPath: String ->
       decode(srcPath, dstPath)
+    }
+
+    // 파일 길이(초). 못 읽으면 0.
+    AsyncFunction("audioDurationSec") { srcPath: String ->
+      durationSec(srcPath)
+    }
+
+    // 긴 파일을 조각으로. 빈 목록이면 안 나눠도 된다는 뜻이다.
+    AsyncFunction("splitAudio") { srcPath: String, dstDir: String, chunkSec: Double ->
+      split(srcPath, dstDir, chunkSec)
     }
 
     // ── 작업 유지 (포그라운드 서비스) ───────────────────────
@@ -232,4 +243,141 @@ private fun decode(srcPath: String, dstPath: String): String {
     raf.write(header.array())
   }
   return dstPath
+}
+
+// ── 파일 나누기 ────────────────────────────────────────────
+//
+// 티로는 한 파일에 5시간까지만 받는다. 8~12시간짜리 통짜 녹음을 가져오면
+// 통째로는 못 보낸다. 그래서 **다시 인코딩하지 않고** 컨테이너만 새로 써서
+// 3시간 조각으로 나눈다 (MediaExtractor 로 압축된 프레임을 그대로 읽어
+// MediaMuxer 로 옮겨 담는다). 음질은 원본 그대로고, 3시간 파일이 몇 초 만에
+// 나뉜다 — 디코딩(decodeToWav16k)과 달리 CPU 를 거의 안 쓴다.
+
+/** MPEG-4 컨테이너가 담을 수 있는 오디오 코덱. 그 밖(mp3 등)은 못 나눈다. */
+private fun muxable(mime: String): Boolean =
+  mime == "audio/mp4a-latm" || mime == "audio/3gpp" || mime == "audio/amr-wb"
+
+private fun audioTrackOf(extractor: MediaExtractor): Pair<Int, MediaFormat>? {
+  for (i in 0 until extractor.trackCount) {
+    val f = extractor.getTrackFormat(i)
+    if ((f.getString(MediaFormat.KEY_MIME) ?: "").startsWith("audio/")) return i to f
+  }
+  return null
+}
+
+/** 길이(초). 못 읽으면 0 — 부르는 쪽에서 '모른다'로 본다. */
+private fun durationSec(srcPath: String): Double {
+  val extractor = MediaExtractor()
+  try {
+    extractor.setDataSource(srcPath)
+    val (_, format) = audioTrackOf(extractor) ?: return 0.0
+    if (!format.containsKey(MediaFormat.KEY_DURATION)) return 0.0
+    return format.getLong(MediaFormat.KEY_DURATION) / 1_000_000.0
+  } finally {
+    runCatching { extractor.release() }
+  }
+}
+
+/**
+ * chunkSec 초씩 잘라 dstDir 에 m4a 조각을 만든다.
+ *
+ * 돌려주는 값은 조각마다 `{ path, startSec, durationSec }`.
+ * **빈 목록은 "안 나눠도 된다"** 는 뜻이다 — 파일이 짧거나, 담을 수 없는
+ * 코덱이거나(mp3 등), 조각이 하나뿐일 때. 부르는 쪽은 원본을 그대로 쓴다.
+ */
+private fun split(srcPath: String, dstDir: String, chunkSec: Double): List<Map<String, Any>> {
+  val chunkUs = (chunkSec * 1_000_000.0).toLong()
+  if (chunkUs <= 0) return emptyList()
+
+  val extractor = MediaExtractor()
+  extractor.setDataSource(srcPath)
+  val found = audioTrackOf(extractor)
+  if (found == null) {
+    extractor.release()
+    throw IllegalArgumentException("오디오 트랙이 없는 파일입니다: $srcPath")
+  }
+  val (track, format) = found
+  val mime = format.getString(MediaFormat.KEY_MIME) ?: ""
+  val knownUs = if (format.containsKey(MediaFormat.KEY_DURATION)) format.getLong(MediaFormat.KEY_DURATION) else -1L
+  if (!muxable(mime) || (knownUs in 1..chunkUs)) {
+    extractor.release()
+    return emptyList()
+  }
+  extractor.selectTrack(track)
+
+  // 한 프레임이 들어갈 만큼. 적으면 readSampleData 가 거절하니 넉넉히 잡는다.
+  val maxInput = if (format.containsKey(MediaFormat.KEY_MAX_INPUT_SIZE)) {
+    format.getInteger(MediaFormat.KEY_MAX_INPUT_SIZE).coerceAtLeast(1 shl 19)
+  } else {
+    1 shl 20
+  }
+  val buffer = ByteBuffer.allocate(maxInput)
+  val info = MediaCodec.BufferInfo()
+
+  val dir = File(dstDir)
+  dir.mkdirs()
+  val parts = mutableListOf<Map<String, Any>>()
+  val written = mutableListOf<File>()
+  var muxer: MediaMuxer? = null
+  var outTrack = -1
+  var partStartUs = 0L
+  var lastUs = 0L
+
+  fun closePart() {
+    val m = muxer ?: return
+    runCatching { m.stop() }
+    runCatching { m.release() }
+    muxer = null
+    val file = written.last()
+    parts.add(
+      mapOf(
+        "path" to file.absolutePath,
+        "startSec" to partStartUs / 1_000_000.0,
+        "durationSec" to (lastUs - partStartUs) / 1_000_000.0,
+      ),
+    )
+  }
+
+  try {
+    while (true) {
+      val n = extractor.readSampleData(buffer, 0)
+      if (n < 0) break
+      val t = extractor.sampleTime
+      if (muxer != null && t - partStartUs >= chunkUs) closePart()
+      if (muxer == null) {
+        val file = File(dir, "part-%02d.m4a".format(parts.size + 1))
+        written.add(file)
+        val m = MediaMuxer(file.absolutePath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
+        outTrack = m.addTrack(format)
+        m.start()
+        muxer = m
+        partStartUs = t
+      }
+      info.offset = 0
+      info.size = n
+      info.presentationTimeUs = t - partStartUs
+      info.flags = if ((extractor.sampleFlags and MediaExtractor.SAMPLE_FLAG_SYNC) != 0) {
+        MediaCodec.BUFFER_FLAG_KEY_FRAME
+      } else {
+        0
+      }
+      muxer!!.writeSampleData(outTrack, buffer, info)
+      lastUs = t
+      extractor.advance()
+    }
+    closePart()
+  } catch (e: Throwable) {
+    runCatching { muxer?.release() }
+    written.forEach { runCatching { it.delete() } }
+    throw e
+  } finally {
+    runCatching { extractor.release() }
+  }
+
+  // 조각이 하나면 나눈 보람이 없다 — 원본을 쓰게 두고 복사본은 지운다.
+  if (parts.size <= 1) {
+    written.forEach { runCatching { it.delete() } }
+    return emptyList()
+  }
+  return parts
 }

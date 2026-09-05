@@ -270,14 +270,22 @@ export default function TranscriptionSetup() {
 
   const saveGeminiKey = useCallback(async () => {
     const key = geminiKeyInput.trim();
-    await setApiKey(key || null, "gemini");
-    setHasGeminiKey(key.length > 0);
-    setGeminiKeyInput("");
-    setCheck({
-      state: "done",
-      ok: key.length > 0,
-      message: key ? "열쇠를 이 폰에 넣었어요." : "열쇠를 지웠어요.",
-    });
+    if (!key) {
+      setCheck({ state: "done", ok: false, message: "열쇠를 먼저 위 칸에 붙여넣어 주세요." });
+      return;
+    }
+    try {
+      await setApiKey(key, "gemini");
+      setHasGeminiKey(true);
+      setGeminiKeyInput("");
+      setCheck({ state: "done", ok: true, message: "열쇠를 이 폰에 넣었어요." });
+    } catch (e) {
+      setCheck({
+        state: "done",
+        ok: false,
+        message: e instanceof Error ? e.message : "열쇠를 저장하지 못했어요. 다시 눌러 주세요.",
+      });
+    }
   }, [geminiKeyInput]);
 
   const clearTiroKey = useCallback(async () => {
@@ -296,9 +304,23 @@ export default function TranscriptionSetup() {
 
   const saveTiroKey = useCallback(async () => {
     const key = tiroKeyInput.trim();
-    await setTiroKey(key || null);
-    setHasTiroKey(key.length > 0);
-    setTiroKeyInput("");
+    // 잠긴 버튼은 왜 안 되는지 말해 주지 않는다. 눌리게 두고 이유를 적는다.
+    if (!key) {
+      setCheck({ state: "done", ok: false, message: "열쇠를 먼저 위 칸에 붙여넣어 주세요." });
+      return;
+    }
+    try {
+      await setTiroKey(key);
+      setHasTiroKey(true);
+      setTiroKeyInput("");
+      setCheck({ state: "done", ok: true, message: "열쇠를 넣었어요. 아래 '연결 확인'을 눌러 보세요." });
+    } catch (e) {
+      setCheck({
+        state: "done",
+        ok: false,
+        message: e instanceof Error ? e.message : "열쇠를 저장하지 못했어요. 다시 눌러 주세요.",
+      });
+    }
   }, [tiroKeyInput]);
 
   const checkTiro = useCallback(async () => {
@@ -392,6 +414,9 @@ export default function TranscriptionSetup() {
 
   return (
     <ScrollView
+      // 키보드가 떠 있으면 첫 탭이 버튼이 아니라 키보드 닫기에 먹힌다. 열쇠를
+      // 붙여넣고 바로 '열쇠 저장'을 눌렀을 때 아무 일도 안 일어나던 이유다.
+      keyboardShouldPersistTaps="handled"
       contentContainerStyle={{
         padding: space.lg,
         // 안드로이드 내비게이션 바가 마지막 카드를 가리지 않게 안전영역만큼 띄운다.
@@ -671,6 +696,7 @@ export default function TranscriptionSetup() {
           <Small>한국어 전용이라 병동 대화에 강해요.</Small>
           <Small>문장마다 실제 시각과 목소리 구분이 함께 와요.</Small>
           <Small>한 시간짜리 하나에 3~6분쯤 걸려요.</Small>
+          <Small>긴 녹음은 3시간씩 나눠서 보내요.</Small>
           <Divider />
           <Small muted={false}>알고 써요</Small>
           <Small>녹음한 소리가 티로로 전송돼요.</Small>
@@ -693,18 +719,12 @@ export default function TranscriptionSetup() {
           />
           {/* 저장과 지우기를 한 버튼에 두면, 저장한 뒤 한 번 더 누른 사람이
               열쇠를 지우게 된다. 실제로 그렇게 열쇠가 사라졌다. 이제 가른다. */}
-          <Button
-            label="열쇠 저장"
-            tone="primary"
-            disabled={tiroKeyInput.trim().length === 0}
-            onPress={() => void saveTiroKey()}
-          />
+          <Button label="열쇠 저장" tone="primary" onPress={() => void saveTiroKey()} />
           {hasTiroKey ? <Button label="열쇠 지우기" onPress={() => void clearTiroKey()} /> : null}
           <Small>열쇠는 이 폰 안에만 남아요.</Small>
           <Button
             label={check.state === "checking" ? "확인 중" : "연결 확인"}
             busy={check.state === "checking"}
-            disabled={!hasTiroKey}
             onPress={() => void checkTiro()}
           />
           {check.state === "done" ? (
@@ -718,7 +738,7 @@ export default function TranscriptionSetup() {
           <Small>아래 버튼은 지금 바로 맞추고 싶을 때만 눌러요.</Small>
           <Small>직접 넣은 병동 말도 함께 올라가요.</Small>
           <Small>환자 이름처럼 사람을 알아볼 말은 사전에 넣지 마세요.</Small>
-          <Button label="지금 맞추기" onPress={() => void pushWordMemory()} disabled={!hasTiroKey} />
+          <Button label="지금 맞추기" onPress={() => void pushWordMemory()} />
           {wordSync ? <Small>{wordSync}</Small> : null}
         </Card>
       ) : null}
@@ -753,12 +773,7 @@ export default function TranscriptionSetup() {
             secureTextEntry
             style={input}
           />
-          <Button
-            label="열쇠 저장"
-            tone="primary"
-            disabled={geminiKeyInput.trim().length === 0}
-            onPress={() => void saveGeminiKey()}
-          />
+          <Button label="열쇠 저장" tone="primary" onPress={() => void saveGeminiKey()} />
           {hasGeminiKey ? (
             <Button label="열쇠 지우기" onPress={() => void clearGeminiKey()} />
           ) : null}
