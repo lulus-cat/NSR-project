@@ -23,6 +23,14 @@ import {
 } from "../../src/services/scheduler";
 import { deleteAllRecordings } from "../../src/services/files";
 import {
+  checkServer,
+  getDeviceToken,
+  getServerUrl,
+  pullFromServer,
+  setDeviceToken,
+  setServerUrl,
+} from "../../src/services/nsr-server";
+import {
   clearWorkplace,
   geofenceEnabled,
   getWorkplace,
@@ -282,6 +290,51 @@ export default function Settings() {
   }, [load]);
 
   const router = useRouter();
+  // 분석 서버 (VPS). 주소는 비밀이 아니고, 기기 토큰은 보안 저장소에만 둔다.
+  const [srvUrl, setSrvUrl] = useState("");
+  const [srvToken, setSrvToken] = useState("");
+  const [srvHasToken, setSrvHasToken] = useState(false);
+  const [srvBusy, setSrvBusy] = useState(false);
+  const [srvNote, setSrvNote] = useState<string | null>(null);
+
+  useEffect(() => {
+    void getServerUrl().then(setSrvUrl);
+    void getDeviceToken().then((t) => setSrvHasToken(!!t));
+  }, []);
+
+  const saveServer = useCallback(async () => {
+    setSrvBusy(true);
+    try {
+      await setServerUrl(srvUrl);
+      if (srvToken.trim()) {
+        await setDeviceToken(srvToken);
+        setSrvHasToken(true);
+        setSrvToken("");
+      }
+      const out = await checkServer();
+      setSrvNote(out.message);
+    } catch (e) {
+      setSrvNote(e instanceof Error ? e.message : "저장하지 못했어요. 다시 눌러 주세요.");
+    } finally {
+      setSrvBusy(false);
+    }
+  }, [srvToken, srvUrl]);
+
+  const pullResults = useCallback(async () => {
+    setSrvBusy(true);
+    try {
+      const got = await pullFromServer();
+      setSrvNote(
+        got.reports + got.terms === 0
+          ? "새로 온 것이 없어요."
+          : `보고서 ${got.reports}개, 새 용어 ${got.terms}개를 받았어요.`,
+      );
+    } catch (e) {
+      setSrvNote(e instanceof Error ? e.message : "받지 못했어요. 다시 눌러 주세요.");
+    } finally {
+      setSrvBusy(false);
+    }
+  }, []);
   const policy = app.policy;
 
   // ── 근무·기록 시간 — 듀티표 화면에 있던 것을 여기로 옮겼다.
@@ -383,6 +436,57 @@ export default function Settings() {
           </View>
         </View>
       </Card>
+      {/* 분석 서버 — 근무를 보내고 AI 가 만든 결과를 받아온다 */}
+      <Card>
+        <GroupHead icon="cloud-outline" color="#7A5AC7" title="분석 서버" />
+        <Small>근무를 보내면 AI 가 읽고 보고서를 써 줘요.</Small>
+        <Small>이름 같은 민감한 말은 가리고 보내요.</Small>
+        <TextInput
+          value={srvUrl}
+          onChangeText={setSrvUrl}
+          placeholder="https://내서버주소"
+          placeholderTextColor={t.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          keyboardType="url"
+          style={{
+            minHeight: TOUCH_MIN,
+            paddingHorizontal: space.md,
+            borderRadius: radius.md,
+            backgroundColor: t.surfaceAlt,
+            color: t.text,
+            fontSize: 15,
+          }}
+        />
+        <TextInput
+          value={srvToken}
+          onChangeText={setSrvToken}
+          placeholder={srvHasToken ? "기기 토큰 — 넣어 뒀어요" : "기기 토큰 붙여넣기"}
+          placeholderTextColor={t.textMuted}
+          autoCapitalize="none"
+          autoCorrect={false}
+          secureTextEntry
+          style={{
+            minHeight: TOUCH_MIN,
+            paddingHorizontal: space.md,
+            borderRadius: radius.md,
+            backgroundColor: t.surfaceAlt,
+            color: t.text,
+            fontSize: 15,
+          }}
+        />
+        <View style={{ flexDirection: "row", gap: space.sm }}>
+          <View style={{ flex: 1 }}>
+            <Button label="저장하고 확인" tone="primary" busy={srvBusy} onPress={() => void saveServer()} />
+          </View>
+          <View style={{ flex: 1 }}>
+            <Button label="결과 받기" busy={srvBusy} onPress={() => void pullResults()} />
+          </View>
+        </View>
+        {srvNote ? <Small muted={false}>{srvNote}</Small> : null}
+        <Small>보낸 뒤에는 클로드·GPT 에서 분석해요.</Small>
+      </Card>
+
       {/* 판 번호와 업데이트 */}
       <Card tone={update?.show ? "accent" : "default"}>
         <GroupHead icon="information-circle-outline" color="#4C7DDB" title="앱 버전" badge={<Badge text="알파" tone="warn" />} />

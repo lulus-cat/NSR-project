@@ -53,6 +53,7 @@ import {
   transcriptToText,
 } from "../../src/services/export-bundle";
 import { exportNotePdf } from "../../src/services/note-doc";
+import { sendShift, serverReady } from "../../src/services/nsr-server";
 
 /** epoch ms → "HH:MM 시작". 이름 없는 녹음 파일을 부를 때. */
 function startClock(ms: number): string {
@@ -123,8 +124,28 @@ export default function ShiftDetail() {
   /** 이 근무를 돌리는 중인 러너 상태. 다른 근무 것이거나 안 돌면 null. */
   const [runner, setRunner] = useState<RunnerState | null>(null);
   const [reportMd, setReportMd] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendNote, setSendNote] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const sendToServer = useCallback(async () => {
+    if (sending) return;
+    setSending(true);
+    setSendNote(null);
+    try {
+      if (!(await serverReady())) {
+        setSendNote("설정에서 서버 주소와 토큰을 먼저 넣어 주세요.");
+        return;
+      }
+      const out = await sendShift(shiftId, (_pct: number, note?: string) => setSendNote(note ?? null));
+      setSendNote(`${out.sentences}문장을 보냈어요. 가린 것 ${out.redacted}건이에요.`);
+    } catch (e) {
+      setSendNote(e instanceof Error ? e.message : "보내지 못했어요. 다시 눌러 주세요.");
+    } finally {
+      setSending(false);
+    }
+  }, [sending, shiftId]);
+
   /** 내보내기 확인 화면이 들고 있어야 할 것 — 무엇을, 어떤 이름으로, 어떤 꼴로. */
   const [preview, setPreview] = useState<{
     label: string;
@@ -725,6 +746,24 @@ export default function ShiftDetail() {
               }
             />
           ))}
+        </Card>
+      ) : null}
+
+      {/* ── 분석 서버로 보내기 ──
+          가린 사본만 올라간다. 올린 뒤 클로드·GPT 에서 "9월 3일 근무 분석해줘"
+          하면 그쪽이 읽고 보고서를 써 넣는다. 받아오는 것은 설정에서 한다. */}
+      {sentenceCount > 0 && !preview ? (
+        <Card>
+          <Heading>분석 서버로 보내기</Heading>
+          <Small>이름 같은 민감한 말은 가리고 보내요.</Small>
+          <Small>보낸 뒤 클로드·GPT 에서 분석해요.</Small>
+          {sendNote ? <Small muted={false}>{sendNote}</Small> : null}
+          <Button
+            label="이 근무 보내기"
+            tone="primary"
+            busy={sending}
+            onPress={() => void sendToServer()}
+          />
         </Card>
       ) : null}
 
