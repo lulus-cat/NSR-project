@@ -232,7 +232,9 @@ def main() -> None:
     app = build_app(config)
     print(f"NSR 서버 시작 — http://{config.host}:{config.port}")
     print(f"바깥 도메인: {config.public_host or '(없음 — 시작하지 못합니다)'}")
-    print(f"커넥터 주소: https://{config.public_host}/t/{config.mcp_token[:6]}…/mcp")
+    # 토큰은 앞자리도 찍지 않는다. systemd 가 stdout 을 journal 로 받으므로
+    # 여기 적히는 것은 곧 로그에 남는 것이다. 주소는 nsr.env 를 보고 만든다.
+    print("커넥터 주소: https://<도메인>/t/<NSR_MCP_TOKEN>/mcp  (nsr.env 에서 확인)")
     # 접근 로그를 끈다 — 주소에 토큰이 들어 있어 로그에 남으면 그게 유출이다.
     uvicorn.run(app, host=config.host, port=config.port, access_log=False)
 

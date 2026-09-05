@@ -208,3 +208,14 @@ def test_토큰이_짧으면_거부한다():
     with pytest.raises(SystemExit) as e:
         config_module.Config()
     assert "32자" in str(e.value)
+
+
+def test_시작_문구에_토큰이_안_들어간다():
+    """systemd 가 stdout 을 journal 로 받는다. 여기 찍히면 로그에 남는 것이다."""
+    import pathlib
+
+    source = pathlib.Path(__file__).resolve().parents[1] / "nsr_server" / "app.py"
+    body = source.read_text()
+    start = body.index("def main()")
+    assert "mcp_token" not in body[start:]
+    assert "device_token" not in body[start:]
