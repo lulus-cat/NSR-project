@@ -159,13 +159,13 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai";
 export const MODEL_CHOICES: Record<Exclude<LlmProvider, "custom">, { id: string; hint: string }[]> = {
   anthropic: [
     { id: "claude-opus-5", hint: "가장 정확해요 (기본)" },
-    { id: "claude-fable-5", hint: "가장 똑똑한 대신 비싸요" },
+    { id: "claude-fable-5-1", hint: "가장 똑똑한 대신 비싸요" },
     { id: "claude-sonnet-5", hint: "값과 성능이 알맞아요" },
     { id: "claude-haiku-4-5", hint: "가장 빠르고 싸요" },
   ],
   openai: [
-    { id: "gpt-5.6-terra", hint: "값과 성능이 알맞아요 (기본)" },
-    { id: "gpt-5.6-sol", hint: "가장 정확해요" },
+    { id: "gpt-6-astra", hint: "가장 정확해요 (기본)" },
+    { id: "gpt-5.6-terra", hint: "값과 성능이 알맞아요" },
     { id: "gpt-5.6-luna", hint: "가장 싸요" },
   ],
   kimi: [
@@ -173,7 +173,7 @@ export const MODEL_CHOICES: Record<Exclude<LlmProvider, "custom">, { id: string;
     { id: "kimi-k2.6", hint: "예전 모델이에요" },
   ],
   gemini: [
-    { id: "gemini-3.7-flash", hint: "무료로 넉넉하게 써요 (기본)" },
+    { id: "gemini-3.8-flash", hint: "무료로 넉넉하게 써요 (기본)" },
     { id: "gemini-3.1-pro-preview", hint: "가장 정확해요" },
     { id: "gemini-3.5-flash-lite", hint: "가장 싸요" },
   ],
@@ -181,9 +181,9 @@ export const MODEL_CHOICES: Record<Exclude<LlmProvider, "custom">, { id: string;
 
 const DEFAULT_MODELS: Record<Exclude<LlmProvider, "custom">, string> = {
   anthropic: "claude-opus-5",
-  openai: "gpt-5.6-terra",
+  openai: "gpt-6-astra",
   kimi: "kimi-k3",
-  gemini: "gemini-3.7-flash",
+  gemini: "gemini-3.8-flash",
 };
 
 /**
@@ -191,7 +191,11 @@ const DEFAULT_MODELS: Record<Exclude<LlmProvider, "custom">, string> = {
  * 요청이 통째로 실패한다 — 조용히 같은 급의 현행 모델로 보낸다.
  */
 const RETIRED_MODELS: Record<string, string> = {
-  "gemini-2.5-flash": "gemini-3.7-flash",
+  // 2026-09-05: 각 자리의 최신판으로 (사용자 요청). 저장된 옛 id 도 따라 옮긴다.
+  "gemini-3.7-flash": "gemini-3.8-flash",
+  "gpt-5.6-sol": "gpt-6-astra",
+  "claude-fable-5": "claude-fable-5-1",
+  "gemini-2.5-flash": "gemini-3.8-flash",
   "gemini-2.5-pro": "gemini-3.1-pro-preview",
   "gemini-2.5-flash-lite": "gemini-3.5-flash-lite",
   "kimi-k2-turbo-preview": "kimi-k3",
@@ -487,11 +491,20 @@ export async function summarizeShift(
     };
   }
 
+  // Fable 계열은 도구 강제(tool_choice any·tool)를 400 으로 막는다. 그 모델에서는
+  // 강제 대신 "이 도구로만 답하라"고 시키고, strict 스키마가 모양을 지킨다.
+  const anthropicModel = await getModelFor("anthropic");
+  const forcesTool = !anthropicModel.startsWith("claude-fable");
   const response = await callAnthropic({
-    model: await getModelFor("anthropic"),
+    model: anthropicModel,
     max_tokens: 8000,
     system: [
-      { type: "text", text: INSIGHT_SYSTEM },
+      {
+        type: "text",
+        text: forcesTool
+          ? INSIGHT_SYSTEM
+          : `${INSIGHT_SYSTEM}\n\n답은 반드시 record_shift_insight 도구 호출 하나로만 하라. 도구 없이 글로 답하지 마라.`,
+      },
       {
         type: "text",
         text: `참고 용어집:\n${glossary}`,
@@ -506,7 +519,7 @@ export async function summarizeShift(
         input_schema: INSIGHT_SCHEMA,
       },
     ],
-    tool_choice: { type: "tool", name: "record_shift_insight" },
+    ...(forcesTool ? { tool_choice: { type: "tool" as const, name: "record_shift_insight" } } : {}),
     messages: [{ role: "user", content: redacted.text }],
   });
 
@@ -557,7 +570,7 @@ export async function careChat(
   context: { temp?: string; study?: string },
   opts?: {
     /**
-     * 심층 파이프라인 5단계(일상 대화) — gemini-3.7-flash 고정, 읽기 전용,
+     * 심층 파이프라인 5단계(일상 대화) — gemini-3.8-flash 고정, 읽기 전용,
      * 세션 대화 전체와 카드·보고서 전체가 상시 컨텍스트로 실린다.
      * 3.7-flash 는 1M 컨텍스트에 긴 입력 할증이 없어 자르지 않는다.
      */
@@ -598,7 +611,7 @@ export async function careChat(
       system,
       messages,
       maxTokens: 1500,
-      override: { provider: "gemini", model: "gemini-3.7-flash" },
+      override: { provider: "gemini", model: "gemini-3.8-flash" },
     });
   }
 

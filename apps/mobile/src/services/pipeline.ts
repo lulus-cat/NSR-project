@@ -1,12 +1,14 @@
 /**
  * 심층 분석 파이프라인 — 3a(추출) → 3b(조사) → 4(보고서·카드).
  *
- *   3a  claude-opus-5 (effort high, 검색 없음)  Anthropic Batch
- *   3b  claude-fable-5 (웹 검색 켬)             Anthropic Batch
- *   4   gemini-3.7-flash (검색 없음)            실시간
+ *   3a  claude-opus-5 (effort high, 검색 없음)   Anthropic Batch
+ *   3b  claude-fable-5-1 (웹 검색 켬)            Anthropic Batch
+ *   4   gemini-3.8-flash (검색 없음)             실시간
  *
  * 왜 이 배정인가(사용자 결정, 벤치마크 근거): Opus 5 는 effort high 에서
- * 긴 문서 종합이 가장 좋고, Fable 5 는 환각률이 가장 낮아 조사 단계를 맡는다.
+ * 긴 문서 종합이 가장 좋고, Fable 은 환각률이 가장 낮아 조사 단계를 맡는다.
+ * 2026-09-05 에 각 자리의 모델을 그 자리의 최신판으로 올렸다 (역할은 그대로):
+ * Fable 5 → 5.1, Flash 3.7 → 3.8, GPT-5.6 Sol → GPT-6 Astra.
  * 바꾸지 말 것. 판독불가의 웹 재해석은 절대 교정목록에 병합하지 않는다 —
  * 안 들린 구간을 웹 지식으로 확정하면 그럴듯한 오답이 카드로 굳는다.
  *
@@ -61,16 +63,16 @@ export const AI_PATHS: {
     path: "claude",
     title: "Claude + Gemini",
     models:
-      "찾아내기: Claude Opus 5 · 사실 확인: Claude Fable 5 · 보고서: Gemini 3.7 Flash",
-    why: "Fable 5 는 헛소리가 가장 적고, Opus 5 는 긴 글 정리를 잘해요. 한 달에 $15~22 쯤 들어요.",
+      "찾아내기: Claude Opus 5 · 사실 확인: Claude Fable 5.1 · 보고서: Gemini 3.8 Flash",
+    why: "Fable 은 헛소리가 가장 적고, Opus 5 는 긴 글 정리를 잘해요. 한 달에 $20~30 쯤 들어요.",
     keys: ["anthropic"],
   },
   {
     path: "hybrid",
     title: "GPT + Gemini",
     models:
-      "찾아내기: GPT-5.6 Sol · 사실 확인: Gemini 3.1 Pro · 보고서: Gemini 3.7 Flash",
-    why: "GPT 는 끝까지 찾아내고, Gemini 는 아닌 것을 걸러내요. 한 달에 $9~13 쯤 들어요.",
+      "찾아내기: GPT-6 Astra · 사실 확인: Gemini 3.1 Pro · 보고서: Gemini 3.8 Flash",
+    why: "GPT 는 끝까지 찾아내고, Gemini 는 아닌 것을 걸러내요. 한 달에 $15~25 쯤 들어요.",
     keys: ["openai"],
   },
 ];
@@ -179,7 +181,7 @@ async function submitBatch(customId: string, params: unknown): Promise<string> {
     if (res.status === 401) throw new Error("Claude 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.");
     if (detail.includes("retention")) {
       throw new Error(
-        "Fable 5 는 Anthropic 설정에서 30일 보관을 켜야 써요.",
+        "Fable 은 Anthropic 설정에서 30일 보관을 켜야 써요.",
       );
     }
     throw new Error(`분석을 맡기지 못했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`);
@@ -294,7 +296,7 @@ const STAGE3B_SYSTEM = `당신은 1차 분석 JSON 을 검증·보강하는 조�
 async function submit3b(shiftId: string, stage3aJson: string): Promise<void> {
   const transcript = await maskedTranscript(shiftId);
   const batchId = await submitBatch(batchCustomId("3b", shiftId), {
-    model: "claude-fable-5",
+    model: "claude-fable-5-1",
     max_tokens: 32000,
     system: [{ type: "text", text: STAGE3B_SYSTEM }],
     tools: [{ type: "web_search_20260209", name: "web_search", max_uses: 15 }],
@@ -369,7 +371,7 @@ interface Stage4Out {
 async function runStage4(shiftId: string, stage3a: string, stage3b: string): Promise<void> {
   const key = await getApiKey("gemini");
   if (!key) throw new Error("구글 열쇠가 없어요. 설정에서 넣어 주세요.");
-  const res = await fetch(`${GEMINI_API}/models/gemini-3.7-flash:generateContent?key=${key}`, {
+  const res = await fetch(`${GEMINI_API}/models/gemini-3.8-flash:generateContent?key=${key}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
@@ -640,7 +642,7 @@ async function submit3aHybrid(shiftId: string): Promise<void> {
   const transcript = await maskedTranscript(shiftId);
   if (!transcript.trim()) throw new Error("글자로 바뀐 문장이 없어요. 녹음부터 바꿔 주세요.");
   const batchId = await submitOpenAiBatch(batchCustomId("3a", shiftId), {
-    model: "gpt-5.6-sol",
+    model: "gpt-6-astra",
     // 추론 모델: temperature 미지원(400), 출력 상한은 max_completion_tokens.
     max_completion_tokens: 32000,
     response_format: {
@@ -714,7 +716,7 @@ async function runStage3v(shiftId: string, data: Stage3aData, transcript: string
     data.검증결과 = [];
     return;
   }
-  const res = await fetch(`${GEMINI_API}/models/gemini-3.7-flash:generateContent?key=${key}`, {
+  const res = await fetch(`${GEMINI_API}/models/gemini-3.8-flash:generateContent?key=${key}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({

@@ -27,7 +27,15 @@ import { Badge, Button, Card, Divider, Heading, Small } from "../src/components/
 import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import { getSetting, setSetting } from "../src/db";
 import { getApiKey, migrateRetiredModel, setApiKey } from "../src/services/llm";
-import { getHfToken, setHfToken, getTiroKey, setTiroKey, syncTiroWordMemory, loadLexicon } from "../src/services/asr";
+import {
+  getHfToken,
+  setHfToken,
+  getTiroKey,
+  setTiroKey,
+  checkTiroConnection,
+  syncTiroWordMemory,
+  loadLexicon,
+} from "../src/services/asr";
 import { SETTINGS_KEYS } from "../src/services/scheduler";
 
 type ServerMode = "colab" | "pc" | "gemini" | "tiro";
@@ -272,12 +280,32 @@ export default function TranscriptionSetup() {
     });
   }, [geminiKeyInput]);
 
+  const clearTiroKey = useCallback(async () => {
+    await setTiroKey(null);
+    setHasTiroKey(false);
+    setTiroKeyInput("");
+    setWordSync(null);
+  }, []);
+
+  const clearGeminiKey = useCallback(async () => {
+    await setApiKey(null, "gemini");
+    setHasGeminiKey(false);
+    setGeminiKeyInput("");
+    setCheck({ state: "done", ok: false, message: "열쇠를 지웠어요." });
+  }, []);
+
   const saveTiroKey = useCallback(async () => {
     const key = tiroKeyInput.trim();
     await setTiroKey(key || null);
     setHasTiroKey(key.length > 0);
     setTiroKeyInput("");
   }, [tiroKeyInput]);
+
+  const checkTiro = useCallback(async () => {
+    setCheck({ state: "checking" });
+    const r = await checkTiroConnection();
+    setCheck({ state: "done", ok: r.ok, message: r.message });
+  }, []);
 
   const pushWordMemory = useCallback(async () => {
     setWordSync("사전 올리는 중");
@@ -663,12 +691,27 @@ export default function TranscriptionSetup() {
             secureTextEntry
             style={input}
           />
+          {/* 저장과 지우기를 한 버튼에 두면, 저장한 뒤 한 번 더 누른 사람이
+              열쇠를 지우게 된다. 실제로 그렇게 열쇠가 사라졌다. 이제 가른다. */}
           <Button
-            label={hasTiroKey && tiroKeyInput.trim().length === 0 ? "열쇠 지우기" : "열쇠 저장"}
-            tone={hasTiroKey && tiroKeyInput.trim().length === 0 ? "default" : "primary"}
+            label="열쇠 저장"
+            tone="primary"
+            disabled={tiroKeyInput.trim().length === 0}
             onPress={() => void saveTiroKey()}
           />
+          {hasTiroKey ? <Button label="열쇠 지우기" onPress={() => void clearTiroKey()} /> : null}
           <Small>열쇠는 이 폰 안에만 남아요.</Small>
+          <Button
+            label={check.state === "checking" ? "확인 중" : "연결 확인"}
+            busy={check.state === "checking"}
+            disabled={!hasTiroKey}
+            onPress={() => void checkTiro()}
+          />
+          {check.state === "done" ? (
+            <Text style={[type.small, { color: check.ok ? t.ok : t.danger, fontWeight: "600" }]}>
+              {check.message}
+            </Text>
+          ) : null}
           <Divider />
           <Small muted={false}>병동 사전 자동 맞추기</Small>
           <Small>티로로 바꿀 때마다 새 단어만 자동으로 올라가요.</Small>
@@ -711,10 +754,14 @@ export default function TranscriptionSetup() {
             style={input}
           />
           <Button
-            label={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "열쇠 지우기" : "열쇠 저장"}
-            tone={hasGeminiKey && geminiKeyInput.trim().length === 0 ? "default" : "primary"}
+            label="열쇠 저장"
+            tone="primary"
+            disabled={geminiKeyInput.trim().length === 0}
             onPress={() => void saveGeminiKey()}
           />
+          {hasGeminiKey ? (
+            <Button label="열쇠 지우기" onPress={() => void clearGeminiKey()} />
+          ) : null}
           <Small>
             키는 기기 보안 저장소에만 보관되고, 설정 → 보조 기능의 Gemini 와 같은
             열쇠를 써요.
@@ -723,11 +770,11 @@ export default function TranscriptionSetup() {
           <Small muted={false}>2. 모델</Small>
           <View style={{ flexDirection: "row", gap: space.xs, flexWrap: "wrap" }}>
             {[
-              ["gemini-3.7-flash", "기본 — 긴 기록도 통짜로"],
+              ["gemini-3.8-flash", "기본 — 긴 기록도 통짜로"],
               ["gemini-3.5-transcribe", "전문 전사 — 30분 이하"],
               ["gemini-3.1-pro-preview", "가장 정확 — 유료 키 전용"],
             ].map(([id, hint]) => {
-              const on = (server.geminiModel?.trim() || "gemini-3.7-flash") === id;
+              const on = (server.geminiModel?.trim() || "gemini-3.8-flash") === id;
               return (
                 <Pressable
                   key={id}
@@ -771,7 +818,7 @@ export default function TranscriptionSetup() {
             </Text>
           ) : null}
           <Small>3.5-transcribe 는 시각이 정확한 대신 30분까지만 받아요.</Small>
-          <Small>더 긴 녹음은 3.7-flash 나 콜랩이 안전해요.</Small>
+          <Small>더 긴 녹음은 3.8-flash 나 콜랩이 안전해요.</Small>
           <Small>3.1-pro 는 결제를 연결한 열쇠에서만 돌아요.</Small>
         </Card>
       ) : null}

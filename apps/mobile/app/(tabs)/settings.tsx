@@ -258,14 +258,20 @@ export default function Settings() {
       mode?: string;
       geminiModel?: string;
     }>(SETTINGS_KEYS.cloudTranscription, {});
-    if (asr.mode === "gemini") {
+    // 모드마다 '연결됨'의 뜻이 다르다 — 티로·Gemini 는 열쇠, 서버 경로는 주소다.
+    // (예전엔 주소만 봐서, 티로 열쇠를 넣어도 '연결 안 됨'이라고 적혀 있었다.)
+    const asrMode = asr.mode ?? (asr.endpoint ? "pc" : "tiro");
+    if (asrMode === "tiro") {
+      const { getTiroKey } = await import("../../src/services/asr");
+      setModelSummary((await getTiroKey()) ? "티로 · 한국어" : "티로 · 열쇠 없음");
+    } else if (asrMode === "gemini") {
       const hasKey = await getApiKey("gemini");
       setModelSummary(
-        hasKey ? `Gemini · ${asr.geminiModel || "gemini-3.7-flash"}` : "Gemini · 키 없음",
+        hasKey ? `Gemini · ${asr.geminiModel || "gemini-3.8-flash"}` : "Gemini · 열쇠 없음",
       );
     } else if (!asr.endpoint) setModelSummary("연결 안 됨");
     else {
-      const where = asr.mode === "pc" ? "내 컴퓨터" : "콜랩";
+      const where = asrMode === "pc" ? "내 컴퓨터" : "콜랩";
       const model = asr.model ? (getServerModel(asr.model)?.name ?? asr.model) : "서버 기본 모델";
       setModelSummary(`${where} · ${model}`);
     }

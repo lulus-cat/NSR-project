@@ -583,7 +583,7 @@ async function geminiTranscribeInteraction(input: {
     if (res.status === 400 && /duration|length|too.?long|minute|hour/i.test(detail)) {
       throw new Error(
         "이 모델이 받는 30분을 넘겼어요. " +
-          "30분 아래로 나누거나 gemini-3.7-flash 로 바꿔 주세요.",
+          "30분 아래로 나누거나 gemini-3.8-flash 로 바꿔 주세요.",
       );
     }
     throw new Error(await geminiErrorText(res.status, detail, "전문 모델 전사"));
@@ -913,7 +913,7 @@ export async function resolveProvider(): Promise<AsrProvider> {
     const { migrateRetiredModel } = await import("./llm");
     return createGeminiProvider(
       key,
-      migrateRetiredModel(cloud.geminiModel?.trim() ?? "") || "gemini-3.7-flash",
+      migrateRetiredModel(cloud.geminiModel?.trim() ?? "") || "gemini-3.8-flash",
     );
   }
 
@@ -955,6 +955,8 @@ export async function resolveProvider(): Promise<AsrProvider> {
  *   한 번 올려 두면 그 뒤 모든 전사에 적용된다. 요청마다 보낼 필요가 없다.
  */
 const TIRO_API = "https://api.tiro.ooo";
+/** 벌크 한 번에 보낼 단어 수. 티로 상한은 1000이고, 사전은 345개라 한 번에 끝난다. */
+const TIRO_BULK = 500;
 
 async function tiroError(res: Response, doing: string): Promise<string> {
   const detail = await res.text().catch(() => "");
@@ -1034,6 +1036,33 @@ function tiroWordsOf(lexicon: Lexicon): { words: { entry: string; subEntry?: str
 }
 
 /**
+ * 단어를 **한 번에** 올린다 (`/word-memories/bulk`, 요청당 1000개까지).
+ *
+ * 예전에는 낱말마다 POST 를 한 번씩 보냈다. 병동 사전이 345개라 첫 전사 때
+ * 345개의 요청이 연달아 나갔고, 티로가 429(너무 바쁨)로 막았다. 그 뒤 요청은
+ * 401/403 으로도 떨어졌다 — 사용자에게는 "열쇠가 맞지 않아요"로 보였다.
+ * 벌크는 같은 일을 요청 한 번으로 끝낸다. 이미 있는 말은 티로가 조용히 건너뛴다.
+ *
+ * 돌려주는 값: 새로 만들어진 개수와 이미 있던 개수. 실패는 던진다 —
+ * 부르는 쪽이 사용자에게 보일지(수동 버튼) 삼킬지(전사 직전)를 정한다.
+ */
+async function pushTiroWordsBulk(
+  apiKey: string,
+  words: { entry: string; subEntry?: string }[],
+): Promise<{ added: number; already: number }> {
+  const res = await fetch(`${TIRO_API}/v1/external/users/me/word-memories/bulk`, {
+    method: "POST",
+    headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
+    body: JSON.stringify({ entries: words }),
+  });
+  if (!res.ok) throw new Error(await tiroError(res, "사전 올리기"));
+  // 응답에는 **새로 만들어진 것만** 온다. 나머지는 이미 있던 말이다.
+  const body = (await res.json().catch(() => null)) as { content?: unknown[] } | null;
+  const added = Array.isArray(body?.content) ? body.content.length : words.length;
+  return { added, already: words.length - added };
+}
+
+/**
  * 전사 직전에 **새로 생긴 말만** 올린다.
  *
  * 사용자가 버튼을 눌러야 하는 기능은 결국 안 누르게 된다. 그래서 티로로 전사할 때마다
@@ -1050,20 +1079,53 @@ async function autoPushTiroWords(apiKey: string): Promise<void> {
   const fresh = words.filter((w) => !pushed.has(w.entry));
   if (fresh.length === 0) return;
 
-  for (const w of fresh) {
-    try {
-      const res = await fetch(`${TIRO_API}/v1/external/users/me/word-memories`, {
-        method: "POST",
-        headers: { authorization: `Bearer ${apiKey}`, "content-type": "application/json" },
-        body: JSON.stringify(w),
-      });
-      // 409 는 이미 있다는 뜻이라 성공과 같다. 그 밖의 실패는 다음 전사 때 다시 시도한다.
-      if (res.ok || res.status === 409) pushed.add(w.entry);
-    } catch {
-      // 단어장은 전사의 곁다리다. 여기서 죽으면 전사 자체를 못 하게 되므로 삼킨다.
+  try {
+    for (let i = 0; i < fresh.length; i += TIRO_BULK) {
+      const part = fresh.slice(i, i + TIRO_BULK);
+      await pushTiroWordsBulk(apiKey, part);
+      for (const w of part) pushed.add(w.entry);
     }
+    await setSetting(TIRO_PUSHED, [...pushed]);
+  } catch (e) {
+    // 단어장은 전사의 곁다리다. 여기서 죽으면 전사 자체를 못 하게 되므로 삼킨다.
+    // 올린 데까지는 남겨서 다음 전사 때 처음부터 다시 보내지 않는다.
+    await setSetting(TIRO_PUSHED, [...pushed]);
+    await logDebug(`티로 사전 자동 올리기 실패(전사는 계속): ${e instanceof Error ? e.message : e}`);
   }
-  await setSetting(TIRO_PUSHED, [...pushed]);
+}
+
+/**
+ * 티로 연결 확인 — 열쇠가 맞는지, 쓸 워크스페이스가 있는지 한 번에 본다.
+ *
+ * 전사를 돌려 봐야만 알 수 있으면 진단이 너무 늦다. 이 버튼은 파일을 올리지
+ * 않고 계정만 물어보므로 몇 초면 끝나고, 무엇이 문제인지 그 자리에서 말한다.
+ */
+export async function checkTiroConnection(): Promise<{ ok: boolean; message: string }> {
+  const key = await getTiroKey();
+  if (!key) return { ok: false, message: "열쇠가 없어요. 위 칸에 넣고 저장해 주세요." };
+  try {
+    const res = await fetch(`${TIRO_API}/v1/external/workspaces/me`, {
+      headers: { authorization: `Bearer ${key}` },
+    });
+    if (res.status === 401 || res.status === 403) {
+      return { ok: false, message: "열쇠가 맞지 않아요. 아이디.비밀문자 전체를 넣었는지 봐 주세요." };
+    }
+    if (res.status === 429) return { ok: false, message: "티로가 바빠요. 잠시 뒤 다시 눌러 주세요." };
+    if (res.ok) {
+      const guid = ((await res.json()) as { guid?: string }).guid;
+      if (guid) {
+        await setSetting(TIRO_WORKSPACE_KEY, guid);
+        return { ok: true, message: "연결됐어요. 이제 녹음을 바꿔 보세요." };
+      }
+    }
+    // 열쇠에 딸린 워크스페이스가 없으면 목록에서 찾는다.
+    const guid = await tiroWorkspaceGuid(key);
+    return guid
+      ? { ok: true, message: "연결됐어요. 이제 녹음을 바꿔 보세요." }
+      : { ok: false, message: "쓸 수 있는 워크스페이스가 없어요. 티로 홈페이지에서 워크스페이스를 하나 만들어 주세요." };
+  } catch {
+    return { ok: false, message: "티로에 닿지 못했어요. 인터넷 연결을 확인해 주세요." };
+  }
 }
 
 export async function syncTiroWordMemory(
@@ -1078,27 +1140,20 @@ export async function syncTiroWordMemory(
 
   let added = 0;
   let already = 0;
-  let failed = 0;
-  for (let i = 0; i < words.length; i++) {
-    const res = await fetch(`${TIRO_API}/v1/external/users/me/word-memories`, {
-      method: "POST",
-      headers: { authorization: `Bearer ${key}`, "content-type": "application/json" },
-      body: JSON.stringify(words[i]),
-    });
-    if (res.ok) {
-      added++;
-      pushed.add(words[i].entry);
-    } else if (res.status === 409) {
-      already++;
-      pushed.add(words[i].entry);
+  try {
+    for (let i = 0; i < words.length; i += TIRO_BULK) {
+      const part = words.slice(i, i + TIRO_BULK);
+      const r = await pushTiroWordsBulk(key, part);
+      added += r.added;
+      already += r.already;
+      for (const w of part) pushed.add(w.entry);
+      onProgress?.(Math.min(i + TIRO_BULK, words.length), words.length);
     }
-    else if (res.status === 401 || res.status === 403) {
-      throw new Error("티로 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.");
-    } else failed++;
-    onProgress?.(i + 1, words.length);
+    return { added, already, skipped, failed: 0 };
+  } finally {
+    // 중간에 막혀도 올린 데까지는 기억한다. 다시 누르면 남은 것부터 간다.
+    await setSetting(TIRO_PUSHED, [...pushed]);
   }
-  await setSetting(TIRO_PUSHED, [...pushed]);
-  return { added, already, skipped, failed };
 }
 
 export function createTiroProvider(apiKey: string): AsrProvider {
