@@ -959,12 +959,40 @@ const TIRO_API = "https://api.tiro.ooo";
 /** 벌크 한 번에 보낼 단어 수. 티로 상한은 1000이고, 사전은 345개라 한 번에 끝난다. */
 const TIRO_BULK = 500;
 
+/**
+ * 티로 오류를 사람 말로.
+ *
+ * 403 을 전부 "열쇠가 틀렸다"고 적었던 것이 사고였다. 실제 계정으로 확인해 보니
+ * 열쇠는 멀쩡한데 **워크스페이스에 '파일 전사'가 안 켜져 있어서** 403000 이 왔다
+ * ("Voice File Job is not enabled for this workspace"). 화면에는 열쇠를 다시
+ * 넣으라고 나오니, 맞는 열쇠를 몇 번이고 다시 넣게 만들었다. 이유마다 다르게 적는다.
+ */
 async function tiroError(res: Response, doing: string): Promise<string> {
   const detail = await res.text().catch(() => "");
-  if (res.status === 401 || res.status === 403) return "티로 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.";
-  if (res.status === 429) return "티로가 바빠요. 잠시 뒤 다시 해 주세요.";
   // 원문 JSON 은 사용자에게 보여줄 말이 아니다. 진단은 디버그 기록으로 남긴다.
   void logDebug(`티로 ${doing} 실패 ${res.status}: ${detail.slice(0, 300)}`);
+
+  let code = 0;
+  let message = "";
+  try {
+    const body = JSON.parse(detail) as { error?: { code?: number; message?: string } };
+    code = body.error?.code ?? 0;
+    message = body.error?.message ?? "";
+  } catch {
+    // JSON 이 아니면 상태 코드만 보고 판단한다.
+  }
+
+  if (res.status === 401) return "티로 열쇠가 맞지 않아요. 설정에서 다시 넣어 주세요.";
+  if (res.status === 403) {
+    if (code === 403013) {
+      return "이 열쇠에 파일 전사 권한이 없어요. 티로에서 권한을 켜고 열쇠를 새로 만들어 주세요.";
+    }
+    if (code === 403000 || /not enabled|disabled/i.test(message)) {
+      return "티로 계정에 파일 전사가 안 켜져 있어요. 티로에 켜 달라고 요청해 주세요.";
+    }
+    return "티로가 이 요청을 막았어요. 티로 계정 설정을 확인해 주세요.";
+  }
+  if (res.status === 429) return "티로가 바빠요. 잠시 뒤 다시 해 주세요.";
   if (detail.includes("workspaceGuid")) {
     return "티로 워크스페이스를 찾지 못했어요. 열쇠를 다시 넣고 해 보세요.";
   }
@@ -1101,29 +1129,44 @@ async function autoPushTiroWords(apiKey: string): Promise<void> {
  * 전사를 돌려 봐야만 알 수 있으면 진단이 너무 늦다. 이 버튼은 파일을 올리지
  * 않고 계정만 물어보므로 몇 초면 끝나고, 무엇이 문제인지 그 자리에서 말한다.
  */
+/**
+ * 열쇠가 맞는지, 그리고 **정말 전사가 되는지** 확인한다.
+ *
+ * 예전에는 워크스페이스만 물어보고 "연결됐어요"라고 적었다. 그런데 티로는
+ * 워크스페이스마다 '파일 전사'를 따로 켜 준다 — 안 켜져 있으면 워크스페이스는
+ * 멀쩡히 보이는데 전사만 403 으로 막힌다. 그래서 여기서 **빈 작업을 하나
+ * 만들어 본다.** 파일을 안 올리면 그 작업은 아무 일도 하지 않고 한 시간 뒤
+ * 올리기 주소가 만료된다. 3시간짜리를 올린 뒤에 막히는 것보다 낫다.
+ */
 export async function checkTiroConnection(): Promise<{ ok: boolean; message: string }> {
   const key = await getTiroKey();
   if (!key) return { ok: false, message: "열쇠가 없어요. 위 칸에 넣고 저장해 주세요." };
+  const headers = { authorization: `Bearer ${key}` };
   try {
-    const res = await fetch(`${TIRO_API}/v1/external/workspaces/me`, {
-      headers: { authorization: `Bearer ${key}` },
-    });
-    if (res.status === 401 || res.status === 403) {
+    // 1) 열쇠가 맞는지 + 어느 워크스페이스인지.
+    const me = await fetch(`${TIRO_API}/v1/external/workspaces/me`, { headers });
+    if (me.status === 401) {
       return { ok: false, message: "열쇠가 맞지 않아요. 아이디.비밀문자 전체를 넣었는지 봐 주세요." };
     }
-    if (res.status === 429) return { ok: false, message: "티로가 바빠요. 잠시 뒤 다시 눌러 주세요." };
-    if (res.ok) {
-      const guid = ((await res.json()) as { guid?: string }).guid;
-      if (guid) {
-        await setSetting(TIRO_WORKSPACE_KEY, guid);
-        return { ok: true, message: "연결됐어요. 이제 녹음을 바꿔 보세요." };
-      }
+    if (me.status === 429) return { ok: false, message: "티로가 바빠요. 잠시 뒤 다시 눌러 주세요." };
+    let guid = me.ok ? ((await me.json()) as { guid?: string }).guid : undefined;
+    if (guid) await setSetting(TIRO_WORKSPACE_KEY, guid);
+    else guid = await tiroWorkspaceGuid(key);
+    if (!guid) {
+      return {
+        ok: false,
+        message: "쓸 수 있는 워크스페이스가 없어요. 티로 홈페이지에서 하나 만들어 주세요.",
+      };
     }
-    // 열쇠에 딸린 워크스페이스가 없으면 목록에서 찾는다.
-    const guid = await tiroWorkspaceGuid(key);
-    return guid
-      ? { ok: true, message: "연결됐어요. 이제 녹음을 바꿔 보세요." }
-      : { ok: false, message: "쓸 수 있는 워크스페이스가 없어요. 티로 홈페이지에서 워크스페이스를 하나 만들어 주세요." };
+
+    // 2) 그 워크스페이스에서 파일 전사가 되는지 — 빈 작업으로 물어본다.
+    const probe = await fetch(`${TIRO_API}/v1/external/voice-file/jobs`, {
+      method: "POST",
+      headers: { ...headers, "content-type": "application/json" },
+      body: JSON.stringify({ transcriptLocaleHints: ["ko_KR"], workspaceGuid: guid }),
+    });
+    if (!probe.ok) return { ok: false, message: await tiroError(probe, "연결 확인") };
+    return { ok: true, message: "연결됐어요. 이제 녹음을 바꿔 보세요." };
   } catch {
     return { ok: false, message: "티로에 닿지 못했어요. 인터넷 연결을 확인해 주세요." };
   }

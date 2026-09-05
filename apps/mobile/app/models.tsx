@@ -701,6 +701,7 @@ export default function TranscriptionSetup() {
           <Small muted={false}>알고 써요</Small>
           <Small>녹음한 소리가 티로로 전송돼요.</Small>
           <Small>병동 음성이니 티로의 보관 정책을 한 번 확인해요.</Small>
+          <Small>티로가 계정에 파일 전사를 켜 줘야 돼요.</Small>
           <Divider />
           <Small muted={false}>열쇠{hasTiroKey ? " — 넣어 뒀어요" : " — 아직 없어요"}</Small>
           <Button
