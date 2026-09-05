@@ -640,6 +640,13 @@ export default function Home() {
             value="고르기"
             onPress={() => router.push("/import-audio")}
           />
+          <DashedDivider />
+          <BriefRow
+            icon="cloud-download-outline"
+            label="티로 노트에서 글자 가져오기"
+            value="고르기"
+            onPress={() => router.push("/tiro-notes")}
+          />
         </>
       ),
     },

@@ -15,6 +15,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Linking, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import { Text } from "react-native";
+import { useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps } from "react";
@@ -171,6 +172,7 @@ function ModelRow({
 export default function TranscriptionSetup() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
+  const router = useRouter();
   const [server, setServer] = useState<ServerAsr>({ enabled: false, endpoint: "" });
   const [check, setCheck] = useState<
     { state: "idle" } | { state: "checking" } | { state: "done"; ok: boolean; message: string }
@@ -702,6 +704,10 @@ export default function TranscriptionSetup() {
           <Small>녹음한 소리가 티로로 전송돼요.</Small>
           <Small>병동 음성이니 티로의 보관 정책을 한 번 확인해요.</Small>
           <Small>티로가 계정에 파일 전사를 켜 줘야 돼요.</Small>
+          <Divider />
+          <Small muted={false}>파일 전사가 안 켜졌을 때</Small>
+          <Small>티로 앱으로 녹음하고 글자만 가져오면 돼요.</Small>
+          <Button label="노트 가져오기" onPress={() => router.push("/tiro-notes")} />
           <Divider />
           <Small muted={false}>열쇠{hasTiroKey ? " — 넣어 뒀어요" : " — 아직 없어요"}</Small>
           <Button

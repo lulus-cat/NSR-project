@@ -207,6 +207,26 @@ export async function finishRecording(input: {
   );
 }
 
+/**
+ * 파일 없이 전사본만 들어온 기록 (티로 노트 가져오기).
+ *
+ * 오디오가 이 폰에 없으니 file_uri 는 비운다 — 화면은 '파일 없음'으로 적고
+ * 재생 단추를 잠근다. 그래도 문장·카드·보고서는 평소와 똑같이 만들어진다.
+ */
+export async function finishImportedTranscript(input: {
+  id: string;
+  endedAt: number;
+  durationSec: number;
+}): Promise<void> {
+  const db = await getDb();
+  await db.runAsync(
+    `UPDATE recordings
+        SET ended_at = ?, duration_sec = ?, size_bytes = 0, state = 'recorded'
+      WHERE id = ?`,
+    [input.endedAt, input.durationSec, input.id],
+  );
+}
+
 export async function setRecordingState(
   id: string,
   state: RecordingState,
@@ -217,6 +237,15 @@ export async function setRecordingState(
     "UPDATE recordings SET state = ?, discard_reason = ? WHERE id = ?",
     [state, discardReason ?? null, id],
   );
+}
+
+export async function getRecording(id: string): Promise<RecordingRow | null> {
+  const db = await getDb();
+  const row = await db.getFirstAsync<RecordingRow>(
+    "SELECT * FROM recordings WHERE id = ?",
+    [id],
+  );
+  return row ?? null;
 }
 
 export async function listRecordings(shiftId?: string): Promise<RecordingRow[]> {

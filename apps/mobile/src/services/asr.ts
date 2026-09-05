@@ -708,6 +708,76 @@ export async function buildAsrOptions(lexicon: Lexicon): Promise<AsrOptions> {
  * 기록 파일 하나를 전사하고 교정해 저장한다.
  * 근무 단위 산출물(카드·보고서·지표)은 `finalizeShift`에서 만든다.
  */
+/**
+ * ASR 이 준 덩어리를 문장으로 펴고, 교정하고, 저장한다.
+ *
+ * 전사 엔진이 무엇이든(서버 휘스퍼·제미나이·티로) 여기서부터는 같다. 티로 노트
+ * 가져오기처럼 **파일 없이 전사본만 들어오는 길**도 이 함수를 탄다 — 교정 규칙과
+ * 문장 나누기가 한 곳에만 있어야 결과가 갈리지 않는다.
+ */
+export async function saveAsrSegments(input: {
+  recordingId: string;
+  shiftId: string | null;
+  segments: AsrResult["segments"];
+  /** 오인식 목록을 들이댈지. 휘스퍼 전사본에만 맞는다. */
+  asrEngine: "whisper" | "other";
+  onProgress?: (pct: number, note?: string) => void;
+}): Promise<number> {
+  const lexicon = await loadLexicon();
+  const memory = await loadCorrectionMemory();
+
+  // 1) ASR 덩어리를 문장으로 편다.
+  //
+  //    Whisper 가 주는 것은 30초짜리 덩어리이지 문장이 아니다. 문장으로 나눠야
+  //    화자를 문장별로 지정하고, 한 문장만 골라 고치고, 카드 예문이 문단째로
+  //    들어가지 않는다. **교정보다 먼저** 나눠야 교정 위치가 문장 기준으로 잡힌다.
+  const rawSegments: TranscriptSegment[] = input.segments.map((s, i) => ({
+    id: `${input.recordingId}#s${i}`,
+    startSec: s.startSec,
+    endSec: s.endSec,
+    rawText: s.text,
+    text: s.text,
+    speakerId: s.speakerId,
+    asrConfidence: s.confidence,
+  }));
+  // 같은 문장이 세 번 이상 연달아 나오면 디코더 환각으로 보고 접는다
+  // ("네. 네. 네." 수십 줄이 1,600문장을 만든 실사례). 재생 구간은 넓혀 둔다.
+  const sentences = collapseRepeatedSentences(splitAllIntoSentences(rawSegments));
+
+  // 2) 문장마다 교정한다.
+  //
+  //    3시간짜리 통짜 기록이면 문장이 수천 개다. 교정은 동기 CPU 작업이라
+  //    한 번에 돌리면 JS 스레드가 몇 분씩 멎고, 화면이 100% 에서 굳은 채
+  //    안드로이드가 "앱이 응답하지 않음"으로 죽인다 — 실사용 사고다.
+  //    덩어리로 나눠 이벤트 루프에 숨 쉴 틈을 주고, 어디까지 왔는지 말한다.
+  const segments: TranscriptSegment[] = [];
+  const perSegment: { edits: Edit[]; annotations: TermAnnotation[] }[] = [];
+  const CHUNK = 25;
+
+  for (let i = 0; i < sentences.length; i++) {
+    if (i % CHUNK === 0) {
+      input.onProgress?.(100, `뱉어낸 글자 예쁘게 빚는 중 — ${i}/${sentences.length} 문장`);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    const sentence = sentences[i];
+    const corrected = correctTranscript(sentence.text, {
+      lexicon,
+      memory,
+      asrEngine: input.asrEngine,
+    });
+    segments.push({ ...sentence, text: corrected.text });
+    perSegment.push({ edits: corrected.edits, annotations: corrected.annotations });
+  }
+
+  input.onProgress?.(100, `폰에 저장하는 중 (${segments.length}문장)`);
+  await saveSegments(input.recordingId, input.shiftId, segments, perSegment);
+  return segments.length;
+}
+
+/**
+ * 기록 파일 하나를 전사하고 교정해 저장한다.
+ * 근무 단위 산출물(카드·보고서·지표)은 `finalizeShift`에서 만든다.
+ */
 export async function processRecording(
   recording: RecordingRow,
   provider: AsrProvider,
@@ -720,7 +790,6 @@ export async function processRecording(
     const lexicon = await loadLexicon();
     const options = await buildAsrOptions(lexicon);
     const asr = await provider.transcribe(recording.file_uri, options, onProgress);
-    const memory = await loadCorrectionMemory();
     // 오인식 목록은 **휘스퍼가** 어떻게 틀리는지의 기록이다. 제미나이·티로 전사본에
     // 들이대면 맞지도 않고 엉뚱한 말을 바꾼다 (@nsr/core CorrectionOptions.asrEngine).
     // 휘스퍼로 도는 것은 서버 경로(콜랩·내 PC)뿐이라, 그것만 "whisper" 로 본다.
@@ -728,47 +797,14 @@ export async function processRecording(
       ? ("whisper" as const)
       : ("other" as const);
 
-    // 1) ASR 덩어리를 문장으로 편다.
-    //
-    //    Whisper 가 주는 것은 30초짜리 덩어리이지 문장이 아니다. 문장으로 나눠야
-    //    화자를 문장별로 지정하고, 한 문장만 골라 고치고, 카드 예문이 문단째로
-    //    들어가지 않는다. **교정보다 먼저** 나눠야 교정 위치가 문장 기준으로 잡힌다.
-    const rawSegments: TranscriptSegment[] = asr.segments.map((s, i) => ({
-      id: `${recording.id}#s${i}`,
-      startSec: s.startSec,
-      endSec: s.endSec,
-      rawText: s.text,
-      text: s.text,
-      speakerId: s.speakerId,
-      asrConfidence: s.confidence,
-    }));
-    // 같은 문장이 세 번 이상 연달아 나오면 디코더 환각으로 보고 접는다
-    // ("네. 네. 네." 수십 줄이 1,600문장을 만든 실사례). 재생 구간은 넓혀 둔다.
-    const sentences = collapseRepeatedSentences(splitAllIntoSentences(rawSegments));
+    const count = await saveAsrSegments({
+      recordingId: recording.id,
+      shiftId: recording.shift_id,
+      segments: asr.segments,
+      asrEngine,
+      onProgress,
+    });
 
-    // 2) 문장마다 교정한다.
-    //
-    //    3시간짜리 통짜 기록이면 문장이 수천 개다. 교정은 동기 CPU 작업이라
-    //    한 번에 돌리면 JS 스레드가 몇 분씩 멎고, 화면이 100% 에서 굳은 채
-    //    안드로이드가 "앱이 응답하지 않음"으로 죽인다 — 실사용 사고다.
-    //    덩어리로 나눠 이벤트 루프에 숨 쉴 틈을 주고, 어디까지 왔는지 말한다.
-    const segments: TranscriptSegment[] = [];
-    const perSegment: { edits: Edit[]; annotations: TermAnnotation[] }[] = [];
-    const CHUNK = 25;
-
-    for (let i = 0; i < sentences.length; i++) {
-      if (i % CHUNK === 0) {
-        onProgress?.(100, `뱉어낸 글자 예쁘게 빚는 중 — ${i}/${sentences.length} 문장`);
-        await new Promise((resolve) => setTimeout(resolve, 0));
-      }
-      const sentence = sentences[i];
-      const corrected = correctTranscript(sentence.text, { lexicon, memory, asrEngine });
-      segments.push({ ...sentence, text: corrected.text });
-      perSegment.push({ edits: corrected.edits, annotations: corrected.annotations });
-    }
-
-    onProgress?.(100, `폰에 저장하는 중 (${segments.length}문장)`);
-    await saveSegments(recording.id, recording.shift_id, segments, perSegment);
     if (asr.partial) {
       // 부분 회수: 받은 데까지는 방금 저장했다. 던지면 아래 catch 가 상태를
       // 'recorded' 로 되돌려서, 부분 전사본은 화면에 보이고 기록은
@@ -776,7 +812,7 @@ export async function processRecording(
       throw new Error(asr.partial);
     }
     await setRecordingState(recording.id, "transcribed");
-    return segments.length;
+    return count;
   } catch (error) {
     await setRecordingState(recording.id, "recorded");
     throw error;
@@ -955,7 +991,7 @@ export async function resolveProvider(): Promise<AsrProvider> {
  *   workspace, and organization scopes`). 그래서 `syncTiroWordMemory` 로 병동 사전을
  *   한 번 올려 두면 그 뒤 모든 전사에 적용된다. 요청마다 보낼 필요가 없다.
  */
-const TIRO_API = "https://api.tiro.ooo";
+export const TIRO_API = "https://api.tiro.ooo";
 /** 벌크 한 번에 보낼 단어 수. 티로 상한은 1000이고, 사전은 345개라 한 번에 끝난다. */
 const TIRO_BULK = 500;
 
@@ -967,7 +1003,7 @@ const TIRO_BULK = 500;
  * ("Voice File Job is not enabled for this workspace"). 화면에는 열쇠를 다시
  * 넣으라고 나오니, 맞는 열쇠를 몇 번이고 다시 넣게 만들었다. 이유마다 다르게 적는다.
  */
-async function tiroError(res: Response, doing: string): Promise<string> {
+export async function tiroError(res: Response, doing: string): Promise<string> {
   const detail = await res.text().catch(() => "");
   // 원문 JSON 은 사용자에게 보여줄 말이 아니다. 진단은 디버그 기록으로 남긴다.
   void logDebug(`티로 ${doing} 실패 ${res.status}: ${detail.slice(0, 300)}`);
@@ -1010,7 +1046,7 @@ async function tiroError(res: Response, doing: string): Promise<string> {
  *
  * 한 번 찾으면 설정에 남긴다. 열쇠를 바꾸면 `setTiroKey` 가 지운다.
  */
-async function tiroWorkspaceGuid(apiKey: string): Promise<string | undefined> {
+export async function tiroWorkspaceGuid(apiKey: string): Promise<string | undefined> {
   const cached = await getSetting<string>(TIRO_WORKSPACE_KEY, "");
   if (cached) return cached;
   const headers = { authorization: `Bearer ${apiKey}` };
