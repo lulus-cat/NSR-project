@@ -52,6 +52,7 @@ from .store import Store
 ACCESS_TTL = 60 * 60 * 24 * 30  # 30일
 CODE_TTL = 60 * 5  # 5분
 PENDING_TTL = 60 * 10  # 로그인 화면을 열어 둔 채 자리를 비울 수 있는 시간
+LIVE_CODES = 20  # 동시에 살아 있을 수 있는 연결 번호 (90만 자리 중 20개)
 
 
 class NsrOAuthProvider:
@@ -104,6 +105,11 @@ class NsrOAuthProvider:
         번호가 짧아도 되는 이유: 승인하려면 이미 이어진 폰의 열쇠가 있어야 하고,
         번호는 10분 뒤 사라진다. 번호만 알아서는 아무것도 못 연다.
         """
+        # 살아 있는 번호가 너무 많으면 만들지 않는다. 아무나 /authorize 를
+        # 두드려 번호 공간을 채워 두면, 사용자가 한 자리를 잘못 눌러도 남의
+        # 대기표에 떨어질 수 있다 — 그건 곧 남에게 문을 열어 주는 것이다.
+        if self.store.count_oauth_pending("code-") >= LIVE_CODES:
+            raise RuntimeError("연결 시도가 너무 많습니다. 10분 뒤에 다시 해 주십시오.")
         for _ in range(20):
             code = f"{secrets.randbelow(900000) + 100000}"
             if not self.store.peek_oauth_pending(f"code-{code}"):

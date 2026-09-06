@@ -52,7 +52,8 @@ class NsrAudioDecodeModule : Module() {
       val context = appContext.reactContext ?: return@Function
       val running = NsrWorkService.instance
       if (running != null) {
-        running.updateWork(title, body)
+        // 이미 떠 있어도 마이크 유형이 필요하면 그때 올린다.
+        running.updateWork(title, body, mic)
         return@Function
       }
       val intent = Intent(context, NsrWorkService::class.java)
@@ -64,6 +65,10 @@ class NsrAudioDecodeModule : Module() {
     }
     Function("workUpdate") { title: String, body: String ->
       NsrWorkService.instance?.updateWork(title, body)
+    }
+    Function("workNeedsMic") {
+      // 녹음이 뒤늦게 시작될 때 유형만 올린다 (알림 문구는 그대로).
+      NsrWorkService.instance?.updateWork("기록 중", "화면을 꺼도 계속 기록해요", true)
     }
     Function("workStop") {
       NsrWorkService.instance?.stopWork()

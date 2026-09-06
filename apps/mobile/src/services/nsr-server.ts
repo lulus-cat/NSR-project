@@ -45,6 +45,8 @@ import { logDebug } from "./debug";
 
 const URL_KEY = "nsr.server.url";
 const TOKEN_KEY = "nsr.server.deviceToken";
+/** 연달아 몇 번 401 이 났나. 두 번이면 열쇠를 버린다. */
+const UNAUTH_KEY = "nsr.server.unauthorizedCount";
 
 export interface ServerSettings {
   url: string;
@@ -136,11 +138,18 @@ async function serverError(res: Response, doing: string): Promise<string> {
   }
   void logDebug(`서버 ${doing} 실패 ${res.status}: ${body.error ?? ""}`);
   if (res.status === 401) {
-    // 서버가 이 폰의 열쇠를 모른다. 들고 있어 봐야 계속 막히기만 하고, 화면에는
-    // '연결됨'으로 보여서 더 헷갈린다. 지우고 사실대로 적는다.
-    await setDeviceToken(null);
+    // 서버가 이 폰의 열쇠를 모른다. 다만 **한 번으로 지우지 않는다** — 배포 중이거나
+    // 프록시가 끼어들어도 401 은 나오고, 그때 지우면 QR 을 다시 만들러 VPS 에
+    // 들어가야 한다. 연달아 두 번이면 진짜다.
+    const before = (await getSetting<number>(UNAUTH_KEY, 0)) + 1;
+    await setSetting(UNAUTH_KEY, before);
+    if (before >= 2) {
+      await setDeviceToken(null);
+      await setSetting(UNAUTH_KEY, 0);
+    }
     return "이 폰이 서버에 안 이어져 있어요. QR 로 다시 이어 주세요.";
   }
+  await setSetting(UNAUTH_KEY, 0);
   if (res.status === 422) {
     // 서버가 무엇을 몇 건 잡았는지만 준다. 값은 오지 않는다.
     const kinds = Object.keys(body.found ?? {}).join(", ");
@@ -163,8 +172,10 @@ export async function checkServer(): Promise<{ ok: boolean; message: string }> {
     // 토큰까지 맞는지는 실제로 한 번 물어봐야 안다.
     const pull = await call("/pull");
     if (pull.status === 401) {
-      // 낡은 열쇠는 여기서도 지운다 — 화면이 '연결됨'으로 남아 있으면 안 된다.
+      // 여기까지 왔다는 것은 /healthz 가 200 이었다는 뜻이다 — 서버는 멀쩡한데
+      // 열쇠만 안 맞는다. 그러면 미루지 않고 지운다.
       await setDeviceToken(null);
+      await setSetting(UNAUTH_KEY, 0);
       return { ok: false, message: "이 폰이 서버에 안 이어져 있어요. QR 로 이어 주세요." };
     }
     return { ok: true, message: "연결됐어요. 이제 근무를 보낼 수 있어요." };

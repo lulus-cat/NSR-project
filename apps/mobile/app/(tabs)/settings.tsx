@@ -494,7 +494,7 @@ export default function Settings() {
           placeholder="번호 여섯 자리"
           placeholderTextColor={t.textMuted}
           keyboardType="number-pad"
-          maxLength={7}
+          maxLength={6}
           style={{
             minHeight: TOUCH_MIN,
             paddingHorizontal: space.md,

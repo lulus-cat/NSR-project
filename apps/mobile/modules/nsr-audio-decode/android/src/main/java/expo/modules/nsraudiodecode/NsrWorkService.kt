@@ -39,6 +39,8 @@ class NsrWorkService : Service() {
      * Android 12+ 가 막는데, 진행 갱신은 대부분 백그라운드에서 일어난다.
      */
     @Volatile var instance: NsrWorkService? = null
+    /** 지금 마이크 유형까지 잡고 있는가. 한 번 잡으면 내려가지 않는다. */
+    @Volatile var hasMic = false
   }
 
   private var wakeLock: PowerManager.WakeLock? = null
@@ -54,37 +56,58 @@ class NsrWorkService : Service() {
     val title = intent?.getStringExtra(EXTRA_TITLE) ?: "작업 진행 중"
     val body = intent?.getStringExtra(EXTRA_BODY) ?: ""
     val mic = intent?.getBooleanExtra(EXTRA_MIC, false) ?: false
-    ensureChannel()
-    val notification = build(title, body)
-    if (Build.VERSION.SDK_INT >= 29) {
-      // 녹음 중에는 microphone 유형이 있어야 화면을 꺼도 마이크가 살아 있다
-      // (안드로이드 14+). 그 유형은 RECORD_AUDIO 를 받은 뒤에만 쓸 수 있으므로
-      // 녹음이 아닌 작업(내려받기)에는 dataSync 만 준다 — 아니면 SecurityException.
-      val type =
-        if (mic) {
-          ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
-            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        } else {
-          ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-        }
-      startForeground(NOTIF_ID, notification, type)
-    } else {
-      startForeground(NOTIF_ID, notification)
-    }
+    goForeground(title, body, mic)
     acquireWakeLock()
     return START_NOT_STICKY
   }
 
-  /** 진행 알림 갱신. 포그라운드 상태는 건드리지 않는다. */
-  fun updateWork(title: String, body: String) {
+  /**
+   * 알림 갱신. `mic` 가 참인데 아직 마이크 유형이 아니면 **유형을 올린다.**
+   *
+   * 이게 없으면 이런 일이 난다: 아침에 티로 노트를 가져오느라 서비스가
+   * dataSync 로 떠 있고, 그 상태에서 근무 기록이 시작되면 유형이 그대로라
+   * 화면을 끄는 순간 안드로이드 14+ 가 마이크를 끊는다. 사용자에게는
+   * "기록 중" 알림만 보인다.
+   */
+  fun updateWork(title: String, body: String, mic: Boolean = false) {
+    if (mic && !hasMic) {
+      goForeground(title, body, true)
+      return
+    }
     ensureChannel()
     val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
     manager.notify(NOTIF_ID, build(title, body))
   }
 
+  /**
+   * 포그라운드로 올린다(또는 유형을 바꾼다).
+   *
+   * 녹음일 때는 **microphone 만** 쓴다. dataSync 를 함께 주면 안드로이드 14+ 의
+   * dataSync 시간 제한(24시간에 6시간)이 이 서비스에도 걸려서, 8~12시간 근무
+   * 도중에 시스템이 서비스를 끝내 버린다. microphone 에는 그 제한이 없다.
+   */
+  private fun goForeground(title: String, body: String, mic: Boolean) {
+    ensureChannel()
+    val notification = build(title, body)
+    if (Build.VERSION.SDK_INT >= 29) {
+      val type =
+        if (mic) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        else ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+      startForeground(NOTIF_ID, notification, type)
+    } else {
+      startForeground(NOTIF_ID, notification)
+    }
+    if (mic) hasMic = true
+  }
+
   /** 작업 종료 — 알림을 내리고 서비스를 끝낸다. */
   fun stopWork() {
     releaseWakeLock()
+    // instance 를 **여기서** 비운다. onDestroy 까지 기다리면, 곧바로 이어지는
+    // 재시작이 죽어 가는 인스턴스를 보고 "이미 떠 있네" 하며 알림만 갱신한다 —
+    // 그 결과 되살린 기록에는 포그라운드 서비스가 아예 없다.
+    instance = null
+    hasMic = false
     stopForeground(STOP_FOREGROUND_REMOVE)
     stopSelf()
   }
@@ -124,7 +147,8 @@ class NsrWorkService : Service() {
     wakeLock = pm.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "nsr:work").apply {
       setReferenceCounted(false)
       // 안전핀: 작업이 끝맺음을 놓쳐도 6시간이면 스스로 풀린다.
-      acquire(6 * 3600 * 1000L)
+      // 근무는 8~12시간이다. 6시간에 놓으면 후반이 통째로 잠금 없이 돈다.
+      acquire(13 * 3600 * 1000L)
     }
   }
 

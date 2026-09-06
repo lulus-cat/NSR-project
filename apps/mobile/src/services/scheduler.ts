@@ -35,8 +35,13 @@ import {
   recordingWindows,
   type DutyEntry,
   type DutySchedule,
+  type RecordingOwner,
   type RecordingPolicy,
   type RecordingWindow,
+  type SessionState,
+  MANUAL_MAX_MS,
+  geoDecision,
+  tickDecision,
   type ShiftCode,
   type ShiftTemplate,
 } from "@nsr/core";
@@ -130,24 +135,38 @@ export async function upcomingWindows(now = Date.now()): Promise<RecordingWindow
 // 앱 프로세스 안에서 유일한 세션. 두 개가 동시에 마이크를 잡으면 둘 다 실패한다.
 let activeSession: RecordingSession | null = null;
 let activeShiftId: string | null = null;
-/**
- * tick 이 아닌 곳에서 시작한 세션의 시작 시각 (0 이면 tick 이 시작한 것이다).
- *
- * 홈의 기록 버튼과 지오펜스가 여기 해당한다. 이 세션들은 듀티표 판정의 대상이
- * 아니다 — tick 이 "지금은 기록 구간이 아니다"라며 꺼 버리면 안 된다.
- *
- * 예전에는 이것을 `activeShiftId.endsWith(":MANUAL")` 로 판정했다. 그래서 홈
- * 버튼은 지켜졌지만 **지오펜스로 켜진 기록은 안 지켜졌다** — 지오펜스는 근무
- * id(2026-09-06:D)로 시작하기 때문이다. 출근 40분 전에 병동에 도착해 기록이
- * 켜져도, 근무 시각이 아직 안 됐으니 다음 tick(대개 15분 안)이 꺼 버렸다.
- * 자동 기록을 꺼 두고 지오펜스만 쓰면 아예 15분마다 끊겼다.
- */
-let manualStartedAt = 0;
+/** 이 기록을 켠 주체. 끄는 권한이 여기서 갈린다 (@nsr/core 의 규칙). */
+let activeOwner: RecordingOwner = "tick";
+let activeStartedAt = 0;
 
-export function currentSession(): { session: RecordingSession; shiftId: string } | null {
-  return activeSession && activeShiftId
-    ? { session: activeSession, shiftId: activeShiftId }
-    : null;
+/**
+ * 시작·정지가 겹치지 않게 줄을 세운다.
+ *
+ * tick 은 백그라운드 태스크·화면 복귀·정책 변경 세 곳에서 불리고, 지오펜스는
+ * 그와 무관하게 또 부른다. 둘이 겹치면 둘 다 "지금 세션이 없네" 를 보고 각자
+ * 마이크를 잡는다 — 같은 이름의 조각 파일을 둘이 쓰고, 하나는 주인 없이 남아
+ * 타이머만 돈다. 그 사고를 막는 것이 이 한 줄이다.
+ */
+let queue: Promise<unknown> = Promise.resolve();
+function serialize<T>(work: () => Promise<T>): Promise<T> {
+  const next = queue.then(work, work);
+  queue = next.catch(() => {});
+  return next;
+}
+
+/** 지금 세션의 상태 — core 의 판단 함수가 받는 모양 그대로. */
+export function sessionOwner(): SessionState | null {
+  return sessionState();
+}
+
+function sessionState(): SessionState | null {
+  if (!activeSession || !activeShiftId) return null;
+  return {
+    owner: activeOwner,
+    shiftId: activeShiftId,
+    startedAt: activeStartedAt,
+    alive: activeSession.isActive,
+  };
 }
 
 /**
@@ -170,38 +189,23 @@ export async function tick(now = Date.now()): Promise<{
   const window = policy.enabled ? activeWindowAt(windows, now) : null;
   const next = nextWindowAfter(windows, now);
 
-  // tick 밖에서 켜진 기록인가 (홈 버튼·지오펜스). 이름이 아니라 시작한 경로로 본다.
-  const manual = manualStartedAt > 0;
-
-  // 죽은 세션 되살리기. 조각을 새로 여는 데 실패하면(마이크를 뺏겼거나 저장이
-  // 막혔거나) 세션은 남아 있는데 기록은 멎는다. 화면에는 계속 '기록 중'이다.
-  // 여기서 한 번 더 켠다 — 사용자가 알아채고 다시 누르기를 기다릴 수 없다.
-  if (activeSession && !activeSession.isActive && activeShiftId) {
-    const dead = activeShiftId;
-    const startedAt = manualStartedAt;
-    await stopActive(now);
-    await startFor(
-      { shiftId: dead, code: "OTHER", label: "이어서 기록", date: dead.split(":")[0], startAt: now, endAt: now + 12 * 3600_000 },
-      policy,
+  await serialize(async () => {
+    const act = tickDecision({
+      session: sessionState(),
+      windowShiftId: window?.shiftId ?? null,
       now,
-    );
-    // 되살린 것이 tick 밖에서 켜졌던 기록이면 그 성격도 그대로 이어 준다.
-    if (startedAt > 0) manualStartedAt = startedAt;
-    return { recording: activeSession?.isActive ?? false, window, next };
-  }
-
-  if (window && !manual) {
-    if (!activeSession || activeShiftId !== window.shiftId) {
+    });
+    if (act.do === "stop") {
       await stopActive(now);
-      await startFor(window, policy, now);
+    } else if (act.do === "start") {
+      await stopActive(now);
+      await startFor(windowFor(act.shiftId, now, window), policy, now, act.owner);
+    } else if (act.do === "revive") {
+      // 세션은 남아 있는데 마이크가 죽었다. 껐다가 같은 근무·같은 주인으로 다시.
+      await stopActive(now);
+      await startFor(windowFor(act.shiftId, now, window), policy, now, act.owner);
     }
-  } else if (activeSession && !manual) {
-    await stopActive(now);
-  } else if (activeSession && manual && now - manualStartedAt > 12 * 3600_000) {
-    // 끄는 것은 사람(또는 지오펜스 이탈)이다. 다만 12시간 상한은 둔다 —
-    // 끄는 것을 잊고 잠들면 폰이 하루 종일 듣는다.
-    await stopActive(now);
-  }
+  });
 
   // 위치로 한 번 더 맞춘다. 안드로이드는 지오펜스 진입·이탈 신호를 심심찮게
   // 빠뜨린다 — 그때 기록이 안 켜지거나, 퇴근했는데 계속 켜져 있다.
@@ -209,8 +213,12 @@ export async function tick(now = Date.now()): Promise<{
   try {
     const { syncByLocation } = await import("./geofence");
     await syncByLocation(now);
-  } catch {
-    // 위치가 없거나 꺼져 있으면 그만이다. 듀티표 판정은 위에서 이미 끝났다.
+  } catch (e) {
+    // 위치를 못 읽는 것은 흔하다(실내·권한). 다만 조용히 삼키지는 않는다.
+    void setSetting("recording.lastGeoError", {
+      at: now,
+      message: e instanceof Error ? e.message : String(e),
+    });
   }
 
   await housekeeping(policy, now);
@@ -218,10 +226,24 @@ export async function tick(now = Date.now()): Promise<{
   return { recording: activeSession?.isActive ?? false, window, next };
 }
 
+/** 근무 id 로 기록 구간 하나를 만든다. 진짜 구간이 있으면 그것을 그대로 쓴다. */
+function windowFor(shiftId: string, now: number, real: RecordingWindow | null): RecordingWindow {
+  if (real && real.shiftId === shiftId) return real;
+  return {
+    shiftId,
+    code: "OTHER",
+    label: "이어서 기록",
+    date: shiftId.split(":")[0],
+    startAt: now,
+    endAt: now + MANUAL_MAX_MS,
+  };
+}
+
 async function startFor(
   window: RecordingWindow,
   policy: RecordingPolicy,
   now: number,
+  owner: RecordingOwner,
 ): Promise<void> {
   // 이 근무에 이미 있는 조각 다음 번호부터. 0 에서 다시 세면 앞 파일을 덮는다.
   const existing = await listRecordings(window.shiftId);
@@ -229,20 +251,33 @@ async function startFor(
 
   const backend = createExpoAudioBackend();
   const session = new RecordingSession(backend, policy, window.shiftId, {
+    // 조각을 **열 때** 줄을 만든다. 닫을 때 만들면, 앱이 그사이에 죽었을 때
+    // 파일만 남고 줄이 없어 다음 조각이 같은 번호를 써서 그 파일을 덮는다.
+    async onChunkStart(index, startedAt) {
+      await createRecording({
+        id: `${window.shiftId}#${index}`,
+        shiftId: window.shiftId,
+        seq: index,
+        startedAt,
+      });
+    },
     async onChunk(chunk) {
       const id = `${window.shiftId}#${chunk.index}`;
-      await createRecording({
-        id,
-        shiftId: window.shiftId,
-        seq: chunk.index,
-        startedAt: chunk.startedAt,
-      });
       await finishRecording({
         id,
         endedAt: chunk.endedAt,
         durationSec: chunk.durationSec,
         fileUri: chunk.uri,
         sizeBytes: chunk.sizeBytes,
+      });
+    },
+    onEmptyChunk(chunk) {
+      // 소리 없이 마이크를 뺏기는 길이 있다 — 전화가 오거나, 다른 앱이 가져가거나,
+      // OS 가 권한을 거둘 때. 그러면 상태는 '기록 중'인데 파일만 0바이트로 쌓인다.
+      // 크기를 보고 알아채서 다음 tick 이 되살리게 한다.
+      void setSetting("recording.lastError", {
+        at: Date.now(),
+        message: `${Math.round(chunk.durationSec)}초짜리 빈 파일이 나왔어요. 마이크를 다른 앱이 쓰고 있는지 봐 주세요.`,
       });
     },
     onError(error) {
@@ -259,32 +294,49 @@ async function startFor(
   if (started) {
     activeSession = session;
     activeShiftId = window.shiftId;
+    activeOwner = owner;
+    activeStartedAt = now;
   }
+  // 실패하면 아무것도 안 남긴다. 예전에는 '수동으로 켰음' 표시만 남아서,
+  // 그 뒤로 듀티 자동 기록이 영영 안 켜졌다 (세션은 없는데 표시는 있었다).
 }
 
 async function stopActive(now: number): Promise<void> {
+  activeOwner = "tick";
+  activeStartedAt = 0;
   if (!activeSession) return;
-  await activeSession.stop(now);
+  const session = activeSession;
   activeSession = null;
   activeShiftId = null;
-  manualStartedAt = 0;
+  await session.stop(now);
 }
 
-/** 사용자가 화면에서 직접 시작/정지할 때. 듀티표와 무관하게 동작한다. */
-export async function startManual(shiftId: string, now = Date.now()): Promise<boolean> {
-  const policy = await loadPolicy();
-  await stopActive(now);
-  manualStartedAt = now;
-  await startFor(
-    { shiftId, code: "OTHER", label: "직접 켠 기록", date: shiftId.split(":")[0], startAt: now, endAt: now + 12 * 3600_000 },
-    policy,
-    now,
-  );
-  return activeSession?.isActive === true;
+/**
+ * 화면 버튼과 지오펜스가 쓰는 시작·정지.
+ *
+ * `owner` 가 곧 이 기록을 끌 수 있는 사람이다 — 홈 버튼으로 켠 기록("user")은
+ * 위치 판정도 듀티표 판정도 못 끈다. 병원 밖에서 인계를 녹음하는 경우가 그렇다.
+ */
+export async function startManual(
+  shiftId: string,
+  now = Date.now(),
+  owner: RecordingOwner = "user",
+): Promise<boolean> {
+  return serialize(async () => {
+    const policy = await loadPolicy();
+    await stopActive(now);
+    await startFor(
+      { shiftId, code: "OTHER", label: "직접 켠 기록", date: shiftId.split(":")[0], startAt: now, endAt: now + MANUAL_MAX_MS },
+      policy,
+      now,
+      owner,
+    );
+    return activeSession?.isActive === true;
+  });
 }
 
 export async function stopManual(now = Date.now()): Promise<void> {
-  await stopActive(now);
+  await serialize(() => stopActive(now));
 }
 
 /**

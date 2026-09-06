@@ -11,7 +11,7 @@
  * 서비스가 없는 환경(iOS 등)에서는 예전처럼 일반 알림으로만 보여준다.
  */
 
-import { workStart, workStop, workUpdate } from "../../modules/nsr-audio-decode";
+import { workNeedsMic, workStart, workStop, workUpdate } from "../../modules/nsr-audio-decode";
 
 const lastPct = new Map<string, number>();
 let workRefs = 0;
@@ -34,8 +34,14 @@ export async function ensureNotifPermission(): Promise<void> {
 export async function beginWork(title: string, body: string, mic = false): Promise<void> {
   await ensureNotifPermission();
   workRefs += 1;
-  if (workRefs === 1) fgsActive = workStart(title, body, mic);
-  else if (fgsActive) workUpdate(title, body);
+  if (workRefs === 1) {
+    fgsActive = workStart(title, body, mic);
+  } else if (fgsActive) {
+    // 내려받기가 먼저 서비스를 잡고 있다가 녹음이 시작되는 경우가 있다.
+    // 그때 유형을 안 올리면 화면을 끄는 순간 마이크가 끊긴다.
+    if (mic) workNeedsMic();
+    workUpdate(title, body);
+  }
 }
 
 /**

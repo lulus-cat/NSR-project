@@ -568,3 +568,41 @@ def test_QR_그림은_lib_없이도_안_죽는다(monkeypatch):
     monkeypatch.setattr(builtins, "__import__", no_qrcode)
     assert pair.svg_qr("https://nsr.example.com/pair/x") is None
     assert pair.ascii_qr("https://nsr.example.com/pair/x") is None
+
+
+def test_기기_열쇠_목록에_열쇠는_없다(tmp_path):
+    """구글 절을 지우면서 같이 없앴는데, 지금도 도는 동작이라 되살린다."""
+    store = Store(str(tmp_path / "d.db"))
+    store.put_device_token("tok-1", "(qr)", "폰")
+    assert store.device_token_ok("tok-1")
+    assert not store.device_token_ok("남의-열쇠")
+    rows = store.list_device_tokens()
+    assert len(rows) == 1 and rows[0]["label"] == "폰"
+    assert "tok-1" not in str(rows)
+
+
+def test_시간이_지난_번호는_안_열린다(tmp_path):
+    import time as t
+
+    from nsr_server.oauth import NsrOAuthProvider
+
+    store = Store(str(tmp_path / "e.db"))
+    provider = NsrOAuthProvider(store, "nsr.example.com")
+    code = provider.new_code("p-old")
+    # 대기표를 만료시킨다 (10분 뒤와 같은 상태)
+    store.put_oauth_pending(f"code-{code}", {"p": "p-old"}, expires_at=t.time() - 1)
+    assert provider.approve_from_phone(code) is False
+
+
+def test_번호는_스무_개까지만_살아_있다(tmp_path):
+    """아무나 /authorize 를 두드려 번호 공간을 채우면 남의 대기표에 승인이 떨어진다."""
+    import pytest
+
+    from nsr_server.oauth import LIVE_CODES, NsrOAuthProvider
+
+    store = Store(str(tmp_path / "f.db"))
+    provider = NsrOAuthProvider(store, "nsr.example.com")
+    for i in range(LIVE_CODES):
+        provider.new_code(f"p-{i}")
+    with pytest.raises(RuntimeError):
+        provider.new_code("p-넘침")

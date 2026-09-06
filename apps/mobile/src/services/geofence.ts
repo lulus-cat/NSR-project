@@ -26,10 +26,10 @@
  */
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import { distanceMeters, reallyLeft, resolveAll, toDateString } from "@nsr/core";
+import { distanceMeters, geoDecision, reallyLeft, resolveAll, toDateString } from "@nsr/core";
 import { getSetting, listDutyEntries, setSetting } from "../db";
 import { searchHospitalsHira, searchPlacesKakao } from "./publicdata";
-import { buildSchedule, currentSession, startManual, stopManual } from "./scheduler";
+import { buildSchedule, sessionOwner, startManual, stopManual } from "./scheduler";
 
 export const GEOFENCE_TASK = "nsr-workplace-geofence";
 
@@ -44,7 +44,7 @@ export const DEFAULT_RADIUS = 250;
 export interface Workplace {
   latitude: number;
   longitude: number;
-  /** 미터. 병원 건물 하나면 150 정도가 무난하다. */
+  /** 미터. 사람이 설정에서 고른다 (100·250·500·1000). 기본은 250. */
   radius: number;
   label: string;
 }
@@ -72,40 +72,27 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   if (error || !data) return;
   const { eventType } = data as { eventType: Location.GeofencingEventType };
   try {
-    if (eventType === Location.GeofencingEventType.Enter) {
-      const enabled = await getSetting<boolean>(GEO_KEYS.enabled, false);
-      if (!enabled) return;
-      const day = await isWorkingDay();
-      if (!day.working) return;
-      if (!currentSession()) await startManual(day.shiftId);
-      await setSetting("geofence.lastEnterAt", Date.now());
-      watchExit();
-    } else if (eventType === Location.GeofencingEventType.Exit) {
-      // 나갔다는 신호를 그대로 믿지 않는다. 안드로이드는 실내에서 위치가 수백
-      // 미터씩 튀고, 그 한 번에 근무 중 기록이 끊기면 그날 근무는 통째로 없다.
-      // 지금 어디인지 한 번 더 재 보고, 확실히 벗어났을 때만 끊는다.
-      if (await stillInside()) {
-        await setSetting("geofence.ignoredExitAt", Date.now());
-        return;
-      }
-      await stopManual();
-      await setSetting("geofence.lastExitAt", Date.now());
-      clearExitWatch();
-    }
+    // 진입이든 이탈이든 판단은 한 곳에서 한다 (syncByLocation → core 의 규칙).
+    // 신호를 그대로 믿지 않고 지금 위치를 다시 본다 — 안드로이드는 실내에서
+    // 위치가 수백 미터씩 튀고, 그 한 번에 근무 기록이 끊기면 그날은 통째로 없다.
+    void eventType;
+    await syncByLocation();
   } catch (e) {
     console.error("[앗] 위치 감지기 뻗음", e);
   }
 });
 
 /**
- * 지금 근무지 안에 있는가. 이탈 신호를 되짚어 볼 때와, 사용자가 화면에서
- * "지금 위치로 확인"을 누를 때 같은 함수를 쓴다.
+ * 지금 근무지에서 얼마나 떨어져 있는가.
  *
- * 위치를 못 읽으면 **안에 있다고 본다.** 못 읽었다는 이유로 기록을 끊는 것이
- * 잘못 끊는 것보다 나쁘다 (녹음은 다시 만들 수 없다).
+ * 이탈 신호를 되짚어 볼 때, 5분마다 도는 감시, 설정 화면의 '지금' 줄이 모두
+ * 이 함수를 쓴다. 켜는 기준(inside)과 끄는 기준(left)을 따로 준다.
  */
 export async function whereAmI(): Promise<{
+  /** 반경 안 — **켤 때** 쓰는 좁은 기준. */
   inside: boolean;
+  /** 확실히 벗어남 — **끌 때** 쓰는 넉넉한 기준. */
+  left: boolean;
   distance: number | null;
   radius: number;
 } | null> {
@@ -114,15 +101,22 @@ export async function whereAmI(): Promise<{
   try {
     const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
     const distance = Math.round(distanceMeters(pos.coords, wp));
-    return { inside: !reallyLeft(distance, wp.radius), distance, radius: wp.radius };
+    // 켜는 기준과 끄는 기준이 달라야 한다. 같은 값을 쓰면 여유(±100m 이상)만큼
+    // 밖에서도 기록이 켜진다 — 근무일에 병원 앞을 지나가기만 해도 켜진다.
+    return { inside: distance <= wp.radius, left: reallyLeft(distance, wp.radius), distance, radius: wp.radius };
   } catch {
-    return { inside: true, distance: null, radius: wp.radius };
+    // 못 읽었으면 '안에 있고 안 나갔다'로 본다. 못 읽었다는 이유로 끊는 것이
+    // 잘못 끊는 것보다 나쁘다 (녹음은 다시 만들 수 없다).
+    return { inside: false, left: false, distance: null, radius: wp.radius };
   }
 }
 
-async function stillInside(): Promise<boolean> {
-  const now = await whereAmI();
-  return now?.inside ?? false;
+/** 사람이 직접 끈 시각. 그 뒤에는 위치로 다시 켜지 않는다. */
+const STOPPED_KEY = "geofence.stoppedByUserAt";
+
+/** 홈 화면에서 사람이 끄면 이걸 부른다. 위치 판정이 되살리지 못하게 막는다. */
+export async function markStoppedByUser(at = Date.now()): Promise<void> {
+  await setSetting(STOPPED_KEY, at);
 }
 
 /**
@@ -133,24 +127,34 @@ async function stillInside(): Promise<boolean> {
  * 신호를 기다리기만 하지 않고 **주기적으로 직접 본다** — tick(대개 15분)과,
  * 기록 중에는 5분마다 도는 아래 감시가 이 함수를 부른다.
  *
- * 아무것도 안 하는 경우가 대부분이라 값이 싸다: 위치 한 번 읽고 끝난다.
+ * 무엇을 켜고 끌지는 `@nsr/core` 의 geoDecision 이 정한다. 거기 시험이 있다.
  */
 export async function syncByLocation(now = Date.now()): Promise<void> {
   if (!(await geofenceEnabled())) return;
   const here = await whereAmI();
   if (!here || here.distance === null) return; // 위치를 못 읽으면 건드리지 않는다
 
-  const session = currentSession();
-  if (here.inside) {
-    if (session) return;
-    const day = await isWorkingDay(now);
-    if (!day.working) return;
-    await startManual(day.shiftId);
+  const day = await isWorkingDay(now);
+  const act = geoDecision({
+    session: sessionOwner(),
+    inside: here.inside,
+    left: here.left,
+    working: day.working,
+    stoppedByUserAt: await getSetting<number>(STOPPED_KEY, 0),
+    shiftId: day.shiftId,
+  });
+
+  if (act.do === "start") {
+    await startManual(act.shiftId, now, "geofence");
     await setSetting("geofence.lastEnterAt", now);
     watchExit();
-  } else if (session) {
+  } else if (act.do === "stop") {
+    // 끊기 전에 한 번 더 본다. 튀는 값 하나에 근무 기록이 끝나면 안 된다.
+    const again = await whereAmI();
+    if (!again?.left) return;
     await stopManual();
     await setSetting("geofence.lastExitAt", now);
+    clearExitWatch();
   }
 }
 
@@ -168,15 +172,11 @@ function watchExit(): void {
   if (exitWatch) return;
   exitWatch = setInterval(() => {
     void (async () => {
-      if (!currentSession()) {
+      if (sessionOwner()?.owner !== "geofence") {
         clearExitWatch();
         return;
       }
-      if (!(await stillInside())) {
-        await stopManual();
-        await setSetting("geofence.lastExitAt", Date.now());
-        clearExitWatch();
-      }
+      await syncByLocation();
     })();
   }, EXIT_WATCH_MS);
 }

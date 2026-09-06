@@ -344,6 +344,14 @@ class Store:
         ).fetchone()
         return bool(row and row["expires_at"] >= time.time())
 
+    def count_oauth_pending(self, prefix: str) -> int:
+        """살아 있는 대기표 수. 연결 번호가 너무 많이 열리는 것을 막을 때 쓴다."""
+        row = self.db.execute(
+            "SELECT COUNT(*) AS n FROM oauth_pending WHERE id LIKE ? AND expires_at >= ?",
+            (f"{prefix}%", time.time()),
+        ).fetchone()
+        return int(row["n"]) if row else 0
+
     def take_oauth_pending(self, pending_id: str) -> dict[str, Any] | None:
         """꺼내면서 지운다. 같은 대기표를 두 번 쓰지 못한다."""
         row = self.db.execute(

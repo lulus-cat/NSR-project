@@ -259,9 +259,9 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         """
         폰인가.
 
-        두 갈래를 다 받는다 — 구글 로그인으로 **발급된** 열쇠(기기마다 하나)와,
-        nsr.env 에 적어 둔 고정 토큰(비상문). 구글 설정이 잘못돼도 서버에 자료를
-        올리는 길이 끊기지 않게 둘 다 둔다.
+        두 갈래를 다 받는다 — QR 로 이을 때 **발급된** 열쇠(기기마다 하나)와,
+        nsr.env 에 적어 둔 고정 토큰(비상문). QR 이 깨져도 자료를 올리는 길이
+        끊기지 않게 둘 다 둔다.
         """
         header = request.headers.get("authorization", "")
         if not header.startswith("Bearer "):
@@ -467,7 +467,9 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             body = await request.json()
         except Exception:
             return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
-        code = "".join(ch for ch in str(body.get("code", "")) if ch.isdigit())
+        # isdigit() 은 전각 '３' 이나 아랍 숫자도 참이다. 그런 글자로 만든 번호는
+        # 어떤 대기표에도 안 맞아서, 맞게 누른 사람이 "번호가 틀렸다"를 본다.
+        code = "".join(ch for ch in str(body.get("code", "")) if ch in "0123456789")
         if len(code) != 6:
             return JSONResponse({"error": "여섯 자리 번호를 넣어 주십시오."}, status_code=400)
         if not auth.approve_from_phone(code):

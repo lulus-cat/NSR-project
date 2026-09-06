@@ -605,8 +605,12 @@ export default function Home() {
             accessibilityRole="button"
             accessibilityLabel={app.recording ? "기록 멈추기" : "기록 시작하기"}
             onPress={async () => {
-              if (app.recording) await stopManual();
-              else if (!(await startManual(`${today}:MANUAL`))) {
+              const geo = await import("../../src/services/geofence");
+              if (app.recording) {
+                // 사람이 끈 것을 위치 판정이 15분 뒤에 되살리면 안 된다.
+                await geo.markStoppedByUser();
+                await stopManual();
+              } else if (!(await startManual(`${today}:MANUAL`))) {
                 // 조용히 실패하면 사용자는 기록되는 줄 알고 근무를 다 보낸다.
                 const last = await getSetting<{ message?: string } | null>("recording.lastError", null);
                 Alert.alert(
@@ -614,6 +618,8 @@ export default function Home() {
                   last?.message ??
                     "마이크 사용이 꺼져 있어요. 폰 설정에서 NSR 마이크를 켜 주세요.",
                 );
+              } else {
+                await geo.markStoppedByUser(0); // 다시 켰으니 잠금을 푼다
               }
               await app.refresh();
             }}

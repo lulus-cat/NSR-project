@@ -12,6 +12,7 @@ const Native = requireOptionalNativeModule<{
   splitAudio(srcPath: string, dstDir: string, chunkSec: number): Promise<AudioPart[]>;
   workStart(title: string, body: string, mic: boolean): void;
   workUpdate(title: string, body: string): void;
+  workNeedsMic(): void;
   workStop(): void;
 }>("NsrAudioDecode");
 
@@ -64,6 +65,15 @@ export function workStart(title: string, body: string, mic = false): boolean {
     return true;
   } catch {
     return false;
+  }
+}
+
+/** 이미 떠 있는 서비스에 마이크 유형을 뒤늦게 붙인다 (녹음이 나중에 시작될 때). */
+export function workNeedsMic(): void {
+  try {
+    Native?.workNeedsMic?.();
+  } catch {
+    // 없는 환경이면 그만이다.
   }
 }
 

@@ -26,7 +26,7 @@ import type { RecordingPolicy } from "@nsr/core";
 import { fileSize, moveIntoRecordings, recordingFileUri } from "./files";
 import { beginWork, endWork } from "./progress-notify";
 
-/** 이 기록이 잡고 있는 작업의 이름. begin 과 end 가 같은 이름을 써야 짝이 맞는다. */
+/** 진행 알림의 이름. 참조를 세는 쪽(progress-notify)이 이 이름으로 짝을 맞춘다. */
 const RECORDING_WORK_ID = "recording";
 
 export interface AudioBackend {
@@ -59,8 +59,12 @@ export interface RecordedChunk {
 }
 
 export interface SessionCallbacks {
+  /** 조각을 열 때. 여기서 DB 줄을 먼저 만든다 (파일만 남는 창을 없앤다). */
+  onChunkStart?(index: number, startedAt: number): void | Promise<void>;
   /** 파일 하나가 완결될 때마다. 여기서 DB 저장과 전사 큐 등록을 한다. */
   onChunk(chunk: RecordedChunk): void | Promise<void>;
+  /** 소리가 안 담긴 조각. 마이크를 뺏겼다는 뜻이다. */
+  onEmptyChunk?(chunk: RecordedChunk): void;
   onError(error: unknown): void;
 }
 
@@ -77,6 +81,8 @@ export class RecordingSession {
   private timer: ReturnType<typeof setTimeout> | null = null;
   private chunkIndex: number;
   private chunkStartedAt = 0;
+  /** 포그라운드 서비스를 이 세션이 쥐고 있는가. 짝을 맞추려고 센다. */
+  private holdsService = false;
 
   /**
    * @param startIndex 이 근무에 이미 있는 조각 다음 번호.
@@ -105,35 +111,77 @@ export class RecordingSession {
     const granted = await this.backend.ensurePermission();
     if (!granted) return false;
 
-    await this.backend.prepareSession({ silent: this.policy.silentStart });
-    this.state = "recording";
-    await this.beginChunk(now);
+    // **포그라운드 서비스를 잡는다 (안드로이드).**
+    //
+    // 이게 없으면 화면을 끄거나 다른 앱으로 넘어간 순간 시스템이 우리를
+    // 얼리고(cached app freezer), 안드로이드 14+ 는 아예 마이크를 끊는다.
+    // 사용자는 기록되는 줄 알고 근무를 다 보낸 뒤에야 파일이 없는 것을 안다.
+    // 유형은 microphone 이어야 한다 — dataSync 만으로는 마이크가 안 산다.
+    //
+    // 잡는 것과 놓는 것을 **세션이** 짝지어 쥔다. 백엔드에 두었더니 시작이
+    // 실패한 경로에서 놓지 못하고 참조가 새서, 아무것도 기록하지 않는 채
+    // "기록 중" 알림만 영영 떠 있었다.
+    await beginWork("기록 중", "화면을 꺼도 계속 기록해요", true);
+    this.holdsService = true;
+
+    try {
+      await this.backend.prepareSession({ silent: this.policy.silentStart });
+      this.state = "recording";
+      await this.beginChunk(now);
+    } catch (error) {
+      this.callbacks.onError(error);
+      this.state = "idle";
+    }
     // beginChunk 이 실패하면 state 가 idle 로 돌아온다. 그때도 true 를 주면
     // 화면이 "기록 중"으로 보이고 사용자는 안 되는 줄 모른 채 근무를 다 보낸다.
-    return this.state === "recording";
+    if (this.state !== "recording") {
+      await this.release();
+      return false;
+    }
+    return true;
+  }
+
+  /** 서비스를 놓는다. 두 번 불러도 한 번만 놓는다. */
+  private async release(): Promise<void> {
+    await this.backend.releaseSession();
+    if (!this.holdsService) return;
+    this.holdsService = false;
+    await endWork(RECORDING_WORK_ID);
   }
 
   /** 근무 종료 또는 사용자 중지. */
   async stop(now: number): Promise<void> {
-    if (this.state !== "recording") return;
+    // 상태가 무엇이든 서비스는 놓는다. 예전에는 idle 이면 곧장 돌아가서,
+    // 조각 열기에 실패한 세션이 서비스를 쥔 채 버려졌다.
+    if (this.state !== "recording") {
+      await this.release();
+      return;
+    }
     this.state = "stopping";
     this.clearTimer();
     try {
       await this.finishChunk(now);
     } finally {
-      await this.backend.releaseSession();
+      await this.release();
       this.state = "idle";
     }
   }
 
   private async beginChunk(now: number): Promise<void> {
     this.chunkStartedAt = now;
+    try {
+      await this.callbacks.onChunkStart?.(this.chunkIndex, now);
+    } catch (error) {
+      // 줄을 못 만들어도 소리는 담는다. 파일이 있으면 나중에 이어 붙일 수 있다.
+      this.callbacks.onError(error);
+    }
     const fileName = `${this.shiftId.replace(/:/g, "_")}__${String(this.chunkIndex).padStart(3, "0")}.m4a`;
     try {
       await this.backend.start(fileName);
     } catch (error) {
       this.callbacks.onError(error);
       this.state = "idle";
+      await this.release();
       return;
     }
     this.scheduleRotation();
@@ -170,6 +218,10 @@ export class RecordingSession {
       durationSec: result.durationSec,
       sizeBytes: result.sizeBytes,
     };
+    // 0바이트거나 몇 초 만에 끝난 조각은 마이크를 뺏긴 것이다.
+    if (chunk.sizeBytes === 0 || (chunk.durationSec < 1 && now - this.chunkStartedAt > 5_000)) {
+      this.callbacks.onEmptyChunk?.(chunk);
+    }
     try {
       await this.callbacks.onChunk(chunk);
     } catch (error) {
@@ -219,17 +271,6 @@ export function createExpoAudioBackend(): AudioBackend {
         // 다른 앱 소리를 끊지 않는다. 통화나 알람이 죽으면 바로 들킨다.
         interruptionMode: "mixWithOthers",
       });
-
-      // **포그라운드 서비스를 잡는다 (안드로이드).**
-      //
-      // 이게 없으면 화면을 끄거나 다른 앱으로 넘어간 순간 시스템이 우리를
-      // 얼리고(cached app freezer), 안드로이드 14+ 는 아예 마이크를 끊는다.
-      // 사용자는 기록되는 줄 알고 근무를 다 보낸 뒤에야 파일이 없는 것을 안다.
-      // 유형은 microphone 이어야 한다 — dataSync 만으로는 마이크가 안 산다.
-      //
-      // 알림 하나가 상시 떠 있는 것은 OS 요구사항이라 우회할 수 없다. 대신
-      // 최소 중요도 채널이고 문구는 거짓말하지 않는다 (docs/01).
-      await beginWork("기록 중", "화면을 꺼도 계속 기록해요", true);
       // 시작음·종료음은 애초에 재생하지 않는다.
       // 이 플래그는 정책을 코드에 남겨두기 위한 것이고, 여기서 할 일은 없다.
       void silent;
@@ -264,7 +305,6 @@ export function createExpoAudioBackend(): AudioBackend {
 
     async releaseSession() {
       await setAudioModeAsync({ allowsRecording: false, shouldPlayInBackground: false });
-      await endWork(RECORDING_WORK_ID);
     },
 
     isRecording() {
