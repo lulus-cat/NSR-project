@@ -195,16 +195,31 @@ https://nsr.example.com/mcp
 
 Jellyfin·Home Assistant·Immich 의 첫 실행과 같은 방식이다.
 
-### 첫 폰 — 처음 한 번만 열리는 문
+### 첫 폰 — 처음 한 번만, 그것도 30분만 열리는 문
 
-서버에 이어진 기기가 **하나도 없을 때만** 잇기가 열린다. 첫 폰이 붙는 순간 문은
-닫히고, 그 뒤로는 아래 두 길로만 늘어난다.
+서버에 이어진 기기가 **하나도 없고**, **서버를 켠 지 30분 안**일 때만 잇기가
+열린다. 첫 폰이 붙는 순간 문은 닫히고, 그 뒤로는 아래 두 길로만 늘어난다.
+
+시간을 건 이유: 도메인은 인증서 기록(CT)으로 공개된다. 서버를 세워 두고 며칠 뒤에
+폰을 이으면 그 며칠 내내 도메인을 아는 누구나 먼저 붙을 수 있다. 실제로 점검하던
+쪽의 `curl` 이 첫 기기 자리를 두 번 차지한 일이 있었다.
+
+**시간이 지났으면 `sudo systemctl restart nsr` 로 다시 30분을 연다.** 앱도 그때는
+"서버를 다시 켠 뒤에 이어 주세요" 라고 말한다. 시간 제한이 싫으면 `nsr.env` 에
+`NSR_OPEN_MINUTES=0` 을 넣는다 (문이 첫 기기가 붙을 때까지 계속 열린다).
+
+문이 열려 있는지 **확인만** 하려면 `GET /device/door` 를 쓴다 — 아무것도 발급하지
+않는다. `POST /device/link` 로 확인하면 그 순간 열쇠가 나가고 문이 닫힌다.
+
+```bash
+curl -s https://<도메인>/device/door    # {"open":true,"devices":0}
+```
 
 이을 때 서버가 **복구 번호**(`ABCD-EFGH-JKLM`)를 하나 만들어 앱 화면에 띄운다.
 **적어 두거나 화면을 찍어 둔다.** 설정 → 분석 서버에 늘 떠 있으니 나중에 봐도 된다.
 
-문이 열려 있는 동안의 위험은 "먼저 붙는 쪽이 이긴다" 하나다. 도메인은 인증서
-기록(CT)으로 공개되므로 아주 없지는 않다. **서버를 세운 날 바로 잇는 것이 좋다.**
+문이 열려 있는 30분 동안의 위험은 "먼저 붙는 쪽이 이긴다" 하나다. **서버를 켜고
+바로 잇는 것이 좋다.**
 
 이은 뒤에는 설정 → 분석 서버에 **이어진 기기**가 줄로 뜬다. 내 폰인 줄에는
 '이 폰', 나머지에는 이은 날짜가 붙는다. 모르는 줄이 있으면 그 자리에서
@@ -314,15 +329,14 @@ sudo -iu nsr bash -c 'cd ~/NSR-project && echo "{\"paragraphs\":[{\"transcript\"
 sudo -iu nsr bash -c 'cd ~/NSR-project && git fetch origin && git checkout claude/clinical-nursing-app-whisper-vn25k5 && git pull && git log --oneline -1'
 sudo -iu nsr bash -c '~/NSR-project/server/venv/bin/pip install -r ~/NSR-project/server/requirements.txt'
 sudo systemctl restart nsr && sleep 2 && systemctl is-active nsr
-curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<도메인>/device/link \
-  -H 'content-type: application/json' -d '{}'
+curl -s https://<도메인>/device/door    # {"open":true,"devices":0} 가 나오면 새 판
 ```
 
 - 첫 줄이 `error: Your local changes…` 로 멈추면: `sudo -iu nsr bash -c 'cd ~/NSR-project && git stash && git pull'`
 - `systemctl is-active` 가 `failed` 면: `sudo journalctl -u nsr -n 30 --no-pager`
-- 마지막 줄이 아직 **404** 면 서비스가 다른 폴더를 보고 있다. 확인:
+- 마지막 줄이 **404** 면 서비스가 다른 폴더를 보고 있다. 확인:
   `systemctl show nsr -p WorkingDirectory -p ExecStart`
-- **200 이나 202** 가 나오면 올라간 것이다. 이제 앱에서 잇는다 (7번).
+- JSON 이 나오면 올라간 것이다. **30분 안에** 앱에서 잇는다 (7번).
 
 venv 는 `~/NSR-project/server/venv` 에 있다 (4번의 systemd 설정과 같은 자리).
 
@@ -343,6 +357,7 @@ cd server && ./venv/bin/python -m pytest -q
 | "로그인 서비스에 등록할 수 없습니다" | 옛 주소(`/t/…/mcp`)를 넣었다 | 주소를 `https://도메인/mcp` 로 바꾼다 |
 | 번호 화면이 안 넘어간다 | 폰이 아직 승인하지 않았다 | 앱 → 설정 → 분석 서버 → 승인 번호에 번호를 넣는다 (10분 안에) |
 | 앱이 "서버가 옛 판이에요" | 코드는 새 판인데 서비스가 옛 판을 돌고 있다 | 아래 **서버 올리기** 를 그대로 돌린다 |
+| 앱이 "서버를 다시 켠 뒤에 이어 주세요" | 첫 기기를 받는 30분이 지났다 | `sudo systemctl restart nsr` 하고 바로 잇는다 (7번) |
 | 앱이 "이 폰은 이어져 있지 않습니다" | 폰이 아직 안 이어졌다 | 앱 → 설정 → 분석 서버 → 잇기 (7번) |
 | 「잇기」 를 눌렀는데 번호만 뜬다 | 서버에 이미 다른 기기가 있다 | 그 기기에서 승인하거나, 복구 번호로 잇는다 (7번) |
 | `400 Invalid HTTP request` | 프록시가 `Host` 를 두 번 넣었다 | `proxy_set_header Host $host;` 하나만 남긴다 |

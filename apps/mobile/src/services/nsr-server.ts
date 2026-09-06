@@ -19,8 +19,9 @@
  * ----------------------
  * 주소를 넣고 「잇기」 를 누르는 것이 전부다. 터미널도 QR 도 없다.
  *
- *   - 서버에 이어진 기기가 **하나도 없으면** 그대로 이어진다 (처음 한 번만
- *     열리는 문). Jellyfin·Home Assistant 의 첫 실행과 같은 방식이다.
+ *   - 서버에 이어진 기기가 **하나도 없고**, 서버를 켠 지 30분 안이면 그대로
+ *     이어진다 (처음 한 번만 열리는 문). Jellyfin·Home Assistant 의 첫 실행과
+ *     같은 방식이고, 시간을 건 것은 도메인이 인증서 기록으로 공개되기 때문이다.
  *   - 이미 기기가 있으면 여섯 자리 번호가 뜨고, **이미 이어진 폰**에서 승인해야
  *     열쇠가 나온다 (Syncthing·시그널의 기기 연결과 같은 방식이다).
  *   - 앱을 지웠다 다시 깔면 열쇠가 사라진다. 그때 승인해 줄 기기도 없으면
@@ -156,6 +157,8 @@ async function why(res: Response, fallback: string): Promise<string> {
   if (res.status === 401) return "이 폰이 서버에 안 이어져 있어요. 다시 이어 주세요.";
   if (res.status === 404) return await notFound();
   if (res.status === 429) return "지금은 이을 수 없어요. 10분 뒤에 해 주세요.";
+  // 첫 기기를 받는 문이 닫혔다. 서버를 다시 켜면 30분 동안 다시 열린다.
+  if (res.status === 403) return "서버를 다시 켠 뒤에 이어 주세요.";
   if (res.status >= 500) return "서버가 대답하지 못했어요. 잠시 뒤 다시 해 주세요.";
   return fallback;
 }

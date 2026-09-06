@@ -9,6 +9,9 @@
   NSR_ALLOWED_ORIGINS  커넥터의 Origin 목록. 쉼표로 나눈다. 비우면 기본값을 쓴다.
   NSR_TIRO_KEY      티로 API 열쇠. 있으면 서버가 티로에서 직접 노트를 가져온다.
   NSR_REPO          저장소 경로 (기본 ../ — 가리기 스크립트를 여기서 찾는다)
+  NSR_OPEN_MINUTES  첫 기기를 받는 문이 열려 있는 시간(분). 기본 30.
+                    서버가 켜진 뒤 이 시간 안에만 첫 폰이 그냥 이어진다.
+                    지나면 `systemctl restart nsr` 로 다시 연다. 0 은 제한 없음.
 
 대화 AI(클로드·GPT) 쪽에는 토큰이 없다. 커넥터를 연결할 때 화면에 여섯 자리
 번호가 뜨고, **이미 이어진 폰에서** 그 번호를 승인해야 열린다. 그래서 이 서버에
@@ -59,6 +62,12 @@ class Config:
             os.environ.get("NSR_REPO", os.path.join(os.path.dirname(__file__), "..", ".."))
         )
         self.public_host = os.environ.get("NSR_PUBLIC_HOST", "").strip()
+        # 문을 언제까지 열어 둘까. 도메인은 인증서 기록(CT)으로 공개되므로,
+        # 아무 때나 열려 있으면 도메인을 아는 쪽이 먼저 붙을 수 있다.
+        try:
+            self.open_minutes = max(0, int(os.environ.get("NSR_OPEN_MINUTES", "30")))
+        except ValueError:
+            self.open_minutes = 30
 
         origins = os.environ.get("NSR_ALLOWED_ORIGINS", "").strip()
         self.allowed_origins = [o.strip() for o in origins.split(",") if o.strip()] or list(

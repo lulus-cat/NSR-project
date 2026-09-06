@@ -8,6 +8,7 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
   GET  /pull                   서버 → 폰. 보고서·새 용어 가져가기. 기기 토큰 필요
   POST /pulled                 폰이 "받았다"고 알림. 기기 토큰 필요
   *    /mcp                     대화 AI 커넥터 주소 (클로드·GPT 공통)
+  GET  /device/door            문이 열려 있나 보기만 한다 (아무것도 발급 안 한다)
   POST /device/link            앱이 잇기를 시작한다 (첫 기기면 바로, 아니면 번호)
   POST /device/link/poll       새 기기가 승인을 기다리며 들여다보는 자리
   POST /device/recover         복구 번호로 잇기 (앱을 다시 깔았을 때)
@@ -42,6 +43,7 @@ import logging
 import re
 import json
 import secrets
+import time
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -364,6 +366,16 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     # 예전에는 VPS 에서 명령을 돌려 QR 을 만들었는데, 잇고 싶을 때마다 서버에
     # 들어가야 하는 것이 벽이라 지웠다.
 
+    # 서버가 켜진 시각. 첫 기기를 받는 문이 이때부터 잠깐만 열린다.
+    started_at = time.monotonic()
+
+    def door_open() -> bool:
+        if store.count_device_tokens() > 0:
+            return False
+        if config.open_minutes <= 0:
+            return True
+        return time.monotonic() - started_at < config.open_minutes * 60
+
     def bearer(request: Request) -> str:
         header = request.headers.get("authorization", "")
         return header[7:] if header.startswith("Bearer ") else ""
@@ -374,14 +386,32 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         except Exception:
             return None
 
+    async def device_door(request: Request) -> JSONResponse:
+        """
+        문이 열려 있나 **보기만** 한다. 아무것도 발급하지 않는다.
+
+        POST 로 확인하다가 열쇠를 받아 가는 사고가 실제로 났다 — 서버를 점검하던
+        쪽의 curl 이 첫 기기 자리를 두 번 차지했다. 확인은 이 주소로 한다.
+        """
+        return JSONResponse({"open": door_open(), "devices": store.count_device_tokens()})
+
     async def device_link(request: Request) -> JSONResponse:
         """
         잇기 시작.
 
-        이어진 기기가 하나도 없으면 그대로 열쇠를 준다 — 처음 한 번만 열리는 문이다.
-        하나라도 있으면 여섯 자리 번호를 주고, 이미 이어진 기기의 승인을 기다린다.
+        이어진 기기가 하나도 없고 **문이 아직 열려 있으면** 그대로 열쇠를 준다
+        (처음 한 번만 열리는 문). 기기가 있으면 여섯 자리 번호를 주고, 이미 이어진
+        기기의 승인을 기다린다.
+
+        문에 시간을 건 이유: 도메인은 인증서 기록으로 공개된다. 서버를 세워 두고
+        며칠 뒤에 폰을 이으면, 그 며칠 내내 도메인을 아는 누구나 먼저 붙을 수 있다.
         """
         if store.count_device_tokens() == 0:
+            if not door_open():
+                log.info("첫 기기 문이 닫혀 있다 — 다시 켜야 열린다")
+                return JSONResponse(
+                    {"error": "서버를 다시 켠 뒤에 이어 주십시오."}, status_code=403
+                )
             log.info("첫 기기 연결 — 이제 문이 닫힌다")
             return JSONResponse({"open": True, **issue_token(store, "처음 이은 기기")})
         try:
@@ -566,6 +596,7 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             Route("/pull", pull, methods=["GET"]),
             Route("/pulled", pulled, methods=["POST"]),
             Route("/device/link", device_link, methods=["POST"]),
+            Route("/device/door", device_door, methods=["GET"]),
             Route("/device/link/poll", device_link_poll, methods=["POST"]),
             Route("/device/recover", device_recover, methods=["POST"]),
             Route("/device/state", device_state, methods=["GET"]),

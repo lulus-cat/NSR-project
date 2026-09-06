@@ -481,6 +481,38 @@ def test_첫_기기는_그냥_이어진다(tmp_path, monkeypatch):
         assert res.status_code == 200
 
 
+def test_문은_켠_뒤_잠깐만_열린다(tmp_path, monkeypatch):
+    """도메인은 인증서 기록으로 공개된다. 며칠씩 열어 두면 남이 먼저 붙는다."""
+    import nsr_server.app as app_module
+
+    monkeypatch.setenv("NSR_OPEN_MINUTES", "30")
+    app, _ = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        # 열려 있는지 '보기만' 하는 자리는 아무것도 발급하지 않는다
+        peek = c.get("/device/door").json()
+        assert peek == {"open": True, "devices": 0}
+        assert app.state.store.count_device_tokens() == 0
+
+        # 서른 한 시간 뒤로 시계를 돌린다
+        later = app_module.time.monotonic() + 31 * 60
+        monkeypatch.setattr(app_module.time, "monotonic", lambda: later)
+        assert c.get("/device/door").json()["open"] is False
+        refused = c.post("/device/link", json={})
+        assert refused.status_code == 403
+        assert app.state.store.count_device_tokens() == 0
+
+
+def test_문에_시간을_안_걸_수도_있다(tmp_path, monkeypatch):
+    import nsr_server.app as app_module
+
+    monkeypatch.setenv("NSR_OPEN_MINUTES", "0")
+    app, _ = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        later = app_module.time.monotonic() + 999 * 60
+        monkeypatch.setattr(app_module.time, "monotonic", lambda: later)
+        assert c.post("/device/link", json={}).status_code == 200
+
+
 def test_문은_한_번만_열린다(tmp_path, monkeypatch):
     """두 번째부터는 번호가 뜨고, 이미 이어진 폰이 승인해야 열쇠가 나온다."""
     app, _ = _app(tmp_path, monkeypatch)
