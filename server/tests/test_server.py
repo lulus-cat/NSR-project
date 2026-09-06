@@ -431,3 +431,154 @@ def test_단어장_오류에_본문을_안_옮긴다(monkeypatch):
         raise AssertionError("멈췄어야 한다")
     except tiro.TiroError as e:
         assert "403" in str(e) and "열쇠" not in str(e)
+
+
+# ── 구글 로그인 ────────────────────────────────────────────
+#
+# 열쇠를 사람이 붙여넣지 않게 하는 길이다. 여기서 지키는 것은 하나 —
+# **허용한 계정만** 들어온다. 그 검사가 빠지면 구글 계정이 있는 누구나
+# 내 근무 기록을 읽는다.
+
+import time as _time  # noqa: E402
+
+
+def _claims(**over):
+    base = {
+        "aud": "client-1",
+        "iss": "https://accounts.google.com",
+        "exp": _time.time() + 600,
+        "email": "Me@Gmail.com",
+        "email_verified": True,
+    }
+    base.update(over)
+    return base
+
+
+def test_내_표만_받는다():
+    from nsr_server.google import GoogleError, check
+
+    assert check(_claims(), "client-1") == "me@gmail.com"  # 소문자로 맞춘다
+    for bad in (
+        _claims(aud="남의-앱"),
+        _claims(iss="https://evil.example"),
+        _claims(exp=_time.time() - 1),
+        _claims(email_verified=False),
+        _claims(email=""),
+    ):
+        try:
+            check(bad, "client-1")
+            raise AssertionError("막았어야 한다")
+        except GoogleError:
+            pass
+
+
+def test_계정_목록을_안_적으면_시작하지_않는다(monkeypatch):
+    import importlib
+
+    import pytest
+
+    monkeypatch.setenv("NSR_MCP_TOKEN", "a" * 40)
+    monkeypatch.setenv("NSR_DEVICE_TOKEN", "b" * 40)
+    monkeypatch.setenv("NSR_GOOGLE_CLIENT_ID", "client-1")
+    monkeypatch.setenv("NSR_GOOGLE_CLIENT_SECRET", "s" * 20)
+    monkeypatch.delenv("NSR_ALLOWED_EMAILS", raising=False)
+    config_module = importlib.import_module("nsr_server.config")
+    with pytest.raises(SystemExit):
+        config_module.Config()
+
+
+def test_기기_열쇠는_발급되고_취소된다(tmp_path):
+    store = Store(str(tmp_path / "t.db"))
+    store.put_device_token("tok-1", "me@gmail.com", "폰")
+    assert store.device_token_ok("tok-1")
+    assert not store.device_token_ok("남의-열쇠")
+    assert not store.device_token_ok("")
+    rows = store.list_device_tokens()
+    assert len(rows) == 1 and rows[0]["email"] == "me@gmail.com"
+    assert "tok-1" not in str(rows)  # 목록에 열쇠 자체는 안 준다
+
+
+# ── 실제 주소로 (앱이 밟는 순서 그대로) ──────────────────
+
+
+def _app(tmp_path, monkeypatch, google=True):
+    import importlib
+
+    monkeypatch.setenv("NSR_MCP_TOKEN", "m" * 40)
+    monkeypatch.setenv("NSR_DEVICE_TOKEN", "d" * 40)
+    monkeypatch.setenv("NSR_DB", str(tmp_path / "app.db"))
+    monkeypatch.setenv("NSR_PUBLIC_HOST", "nsr.example.com")
+    if google:
+        monkeypatch.setenv("NSR_GOOGLE_CLIENT_ID", "client-1")
+        monkeypatch.setenv("NSR_GOOGLE_CLIENT_SECRET", "s" * 20)
+        monkeypatch.setenv("NSR_ALLOWED_EMAILS", "me@gmail.com")
+    else:
+        for k in ("NSR_GOOGLE_CLIENT_ID", "NSR_GOOGLE_CLIENT_SECRET", "NSR_ALLOWED_EMAILS"):
+            monkeypatch.delenv(k, raising=False)
+    config_module = importlib.import_module("nsr_server.config")
+    app_module = importlib.import_module("nsr_server.app")
+    config = config_module.Config()
+    return app_module.build_app(config), app_module
+
+
+def _client(app):
+    from starlette.testclient import TestClient
+
+    return TestClient(app, base_url="https://nsr.example.com")
+
+
+def test_폰_잇기는_구글로_보낸다(tmp_path, monkeypatch):
+    app, _ = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        res = c.get("/device/start", follow_redirects=False)
+        assert res.status_code == 302
+        assert res.headers["location"].startswith("https://accounts.google.com/o/oauth2/v2/auth")
+
+
+def test_구글이_꺼져_있으면_안_열린다(tmp_path, monkeypatch):
+    app, _ = _app(tmp_path, monkeypatch, google=False)
+    with _client(app) as c:
+        assert c.get("/device/start", follow_redirects=False).status_code == 400
+
+
+def _link(c, app_module, monkeypatch, email="me@gmail.com"):
+    """구글 로그인을 흉내 내어 쪽지(claim)까지 받아 온다."""
+    start = c.get("/device/start", follow_redirects=False)
+    state = start.headers["location"].split("state=")[1].split("&")[0]
+    monkeypatch.setattr(app_module.google, "email_of", lambda *a, **k: email)
+    return c.get(f"/oauth/google/callback?code=x&state={state}", follow_redirects=False)
+
+
+def test_허용된_계정만_기기를_잇는다(tmp_path, monkeypatch):
+    app, app_module = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        bad = _link(c, app_module, monkeypatch, email="stranger@gmail.com")
+        assert bad.status_code == 400
+        ok = _link(c, app_module, monkeypatch)
+        assert ok.status_code == 302
+        assert ok.headers["location"].startswith("nsr://linked?c=")
+
+
+def test_쪽지는_한_번만_열쇠가_된다(tmp_path, monkeypatch):
+    app, app_module = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        back = _link(c, app_module, monkeypatch)
+        claim = back.headers["location"].split("c=")[1]
+        first = c.post("/device/claim", json={"code": claim})
+        assert first.status_code == 200 and first.json()["token"]
+        assert c.post("/device/claim", json={"code": claim}).status_code == 400
+        assert c.post("/device/claim", json={"code": "지어낸-쪽지"}).status_code == 400
+
+        # 받은 열쇠로 실제로 올릴 수 있어야 한다.
+        token = first.json()["token"]
+        bundle = {
+            "shiftId": "2026-09-06:D",
+            "date": "2026-09-06",
+            "code": "D",
+            "masked": True,
+            "sentences": [{"t": 0, "text": "[이름]님 폴리 확인했어요."}],
+        }
+        good = c.post("/ingest", json=bundle, headers={"authorization": f"Bearer {token}"})
+        assert good.status_code == 200
+        bad = c.post("/ingest", json=bundle, headers={"authorization": "Bearer not-a-real-token"})
+        assert bad.status_code == 401

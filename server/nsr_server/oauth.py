@@ -50,10 +50,15 @@ PENDING_TTL = 60 * 10  # 로그인 화면을 열어 둔 채 자리를 비울 수
 class NsrOAuthProvider:
     """한 사람만 쓰는 서버의 인증 담당. 아는 열쇠가 곧 신분이다."""
 
-    def __init__(self, store: Store, mcp_token: str, public_host: str) -> None:
+    def __init__(
+        self, store: Store, mcp_token: str, public_host: str, use_google: bool = False
+    ) -> None:
         self.store = store
         self.mcp_token = mcp_token
         self.public_host = public_host
+        # 구글 로그인이 켜져 있으면 열쇠를 묻지 않고 구글로 보낸다. 꺼져 있으면
+        # 예전처럼 열쇠 화면이다 — 구글 설정이 잘못돼도 서버에 못 들어가는 일은 없다.
+        self.use_google = use_google
 
     # ── 커넥터 등록 ───────────────────────────────────────
 
@@ -88,6 +93,8 @@ class NsrOAuthProvider:
             },
             expires_at=time.time() + PENDING_TTL,
         )
+        if self.use_google:
+            return f"https://{self.public_host}/oauth/google/begin?p={pending}"
         return f"https://{self.public_host}/oauth/login?p={pending}"
 
     def approve(self, pending_id: str, key: str) -> str | None:
@@ -105,7 +112,15 @@ class NsrOAuthProvider:
             # 열쇠가 틀렸으면 대기표를 되살려 다시 시도할 수 있게 둔다.
             self.store.put_oauth_pending(pending_id, pending, expires_at=time.time() + PENDING_TTL)
             return None
+        return self.grant(pending)
 
+    def grant(self, pending: dict[str, Any]) -> str:
+        """
+        신분 확인이 끝난 뒤 — 코드를 만들어 커넥터가 돌아갈 주소를 준다.
+
+        누가 확인했는지는 여기서 묻지 않는다. 열쇠를 맞힌 사람일 수도 있고
+        (`approve`), 허용된 구글 계정일 수도 있다 (`/oauth/google/callback`).
+        """
         code = secrets.token_urlsafe(32)
         self.store.put_oauth_code(
             code,

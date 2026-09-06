@@ -15,10 +15,20 @@
  * 대화 AI 가 써 넣은 근무 보고서와, 대화 중에 배운 병동 용어. 받은 것은 "받았다"고
  * 알려 줘서 같은 것을 두 번 붙이지 않는다.
  *
- * 열쇠 두 개
- * ---------
- * 기기 토큰은 이 앱이 자료를 올릴 때 쓴다 — `expo-secure-store` 에만 둔다(규칙 7).
- * 대화 AI 가 쓰는 열쇠는 이 앱에 없다. 그건 커넥터를 연결할 때 사람이 넣는다.
+ * 열쇠는 사람이 안 만진다
+ * ----------------------
+ * 예전에는 서버의 기기 토큰을 사람이 복사해 앱에 붙여넣었다. 이제는 **구글
+ * 로그인**을 하면 서버가 이 폰만의 열쇠를 만들어 준다. 절차는 이렇다.
+ *
+ *   1. 앱이 브라우저로 `/device/start` 를 연다
+ *   2. 구글 로그인 → 서버가 계정을 확인한다 (허용 목록에 있는 계정만)
+ *   3. 서버가 `nsr://linked?c=…` 로 앱을 다시 연다. c 는 **일회용 쪽지**다
+ *   4. 앱이 그 쪽지를 `/device/claim` 에서 열쇠로 바꿔 보안 저장소에 넣는다
+ *
+ * 열쇠를 주소에 직접 실어 보내지 않는 이유: 그러면 브라우저 기록에 남는다.
+ * 쪽지는 5분 뒤 사라지고 한 번 쓰면 없어진다.
+ *
+ * 토큰을 손으로 넣는 길도 남겨 둔다 — 구글 설정이 잘못됐을 때의 비상문이다.
  */
 import * as SecureStore from "expo-secure-store";
 import {
@@ -60,6 +70,41 @@ export async function setDeviceToken(token: string | null): Promise<void> {
   else await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
+/**
+ * 구글 로그인 화면을 연다. 돌아오는 것은 `nsr://linked?c=…` 딥링크이고,
+ * 그건 `app/linked.tsx` 가 받는다.
+ */
+export async function startGoogleLink(): Promise<void> {
+  const url = await getServerUrl();
+  if (!url) throw new Error("서버 주소가 없어요. 위 칸에 넣고 저장해 주세요.");
+  const { Linking } = await import("react-native");
+  // canOpenURL 로 먼저 묻지 않는다 — 안드로이드에서는 앱 목록 권한 때문에
+  // 멀쩡한 주소에도 false 가 오는 일이 있다. 열어 보고 실패하면 그때 말한다.
+  try {
+    await Linking.openURL(`${url}/device/start`);
+  } catch {
+    throw new Error("브라우저를 열지 못했어요. 주소를 확인해 주세요.");
+  }
+}
+
+/** 일회용 쪽지를 이 폰의 열쇠로 바꾼다. 성공하면 보안 저장소에 넣는다. */
+export async function claimDeviceToken(code: string): Promise<void> {
+  const url = await getServerUrl();
+  if (!url) throw new Error("서버 주소가 없어요. 설정에서 넣어 주세요.");
+  const res = await fetch(`${url}/device/claim`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ code }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "연결하지 못했어요. 다시 로그인해 주세요.");
+  }
+  const { token } = (await res.json()) as { token?: string };
+  if (!token) throw new Error("서버가 열쇠를 주지 않았어요. 다시 로그인해 주세요.");
+  await setDeviceToken(token);
+}
+
 export async function serverReady(): Promise<boolean> {
   return !!(await getServerUrl()) && !!(await getDeviceToken());
 }
@@ -87,7 +132,7 @@ async function serverError(res: Response, doing: string): Promise<string> {
     // JSON 이 아니면 상태 코드로만 본다.
   }
   void logDebug(`서버 ${doing} 실패 ${res.status}: ${body.error ?? ""}`);
-  if (res.status === 401) return "기기 토큰이 맞지 않아요. 설정에서 다시 넣어 주세요.";
+  if (res.status === 401) return "연결이 풀렸어요. 설정에서 다시 로그인해 주세요.";
   if (res.status === 422) {
     // 서버가 무엇을 몇 건 잡았는지만 준다. 값은 오지 않는다.
     const kinds = Object.keys(body.found ?? {}).join(", ");
@@ -105,12 +150,12 @@ export async function checkServer(): Promise<{ ok: boolean; message: string }> {
     const res = await fetch(`${url}/healthz`);
     if (!res.ok) return { ok: false, message: `서버가 ${res.status} 를 줬어요. 주소를 확인해 주세요.` };
     if (!(await getDeviceToken())) {
-      return { ok: false, message: "서버는 살아 있어요. 이제 기기 토큰을 넣어 주세요." };
+      return { ok: false, message: "서버는 살아 있어요. 이제 구글로 로그인해 주세요." };
     }
     // 토큰까지 맞는지는 실제로 한 번 물어봐야 안다.
     const pull = await call("/pull");
     if (pull.status === 401) {
-      return { ok: false, message: "토큰이 맞지 않아요. 서버의 값을 그대로 넣어 주세요." };
+      return { ok: false, message: "연결이 풀렸어요. 구글로 다시 로그인해 주세요." };
     }
     return { ok: true, message: "연결됐어요. 이제 근무를 보낼 수 있어요." };
   } catch {

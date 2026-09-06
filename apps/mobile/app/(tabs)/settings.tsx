@@ -29,6 +29,7 @@ import {
   pullFromServer,
   setDeviceToken,
   setServerUrl,
+  startGoogleLink,
 } from "../../src/services/nsr-server";
 import {
   clearWorkplace,
@@ -269,6 +270,23 @@ export default function Settings() {
     void getDeviceToken().then((t) => setSrvHasToken(!!t));
   }, []);
 
+  const [srvManual, setSrvManual] = useState(false);
+
+  /** 구글 로그인 — 주소를 먼저 저장하고 브라우저를 연다. */
+  const loginWithGoogle = useCallback(async () => {
+    setSrvBusy(true);
+    setSrvNote(null);
+    try {
+      await setServerUrl(srvUrl);
+      await startGoogleLink();
+      setSrvNote("브라우저에서 구글 로그인을 마치면 앱으로 돌아와요.");
+    } catch (e) {
+      setSrvNote(e instanceof Error ? e.message : "열지 못했어요. 다시 눌러 주세요.");
+    } finally {
+      setSrvBusy(false);
+    }
+  }, [srvUrl]);
+
   const saveServer = useCallback(async () => {
     setSrvBusy(true);
     try {
@@ -427,33 +445,53 @@ export default function Settings() {
             fontSize: 15,
           }}
         />
-        <TextInput
-          value={srvToken}
-          onChangeText={setSrvToken}
-          placeholder={srvHasToken ? "기기 토큰 — 넣어 뒀어요" : "기기 토큰 붙여넣기"}
-          placeholderTextColor={t.textMuted}
-          autoCapitalize="none"
-          autoCorrect={false}
-          secureTextEntry
-          style={{
-            minHeight: TOUCH_MIN,
-            paddingHorizontal: space.md,
-            borderRadius: radius.md,
-            backgroundColor: t.surfaceAlt,
-            color: t.text,
-            fontSize: 15,
-          }}
-        />
         <View style={{ flexDirection: "row", gap: space.sm }}>
           <View style={{ flex: 1 }}>
-            <Button label="저장하고 확인" tone="primary" busy={srvBusy} onPress={() => void saveServer()} />
+            <Button label="주소 저장" busy={srvBusy} onPress={() => void saveServer()} />
           </View>
           <View style={{ flex: 1 }}>
-            <Button label="결과 받기" busy={srvBusy} onPress={() => void pullResults()} />
+            <Button
+              label={srvHasToken ? "다시 로그인" : "구글로 로그인"}
+              tone="primary"
+              busy={srvBusy}
+              onPress={() => void loginWithGoogle()}
+            />
           </View>
         </View>
+        <Row label="이 기기" value={srvHasToken ? "연결됨" : "아직 연결 안 됨"} />
+        <Button label="결과 받기" busy={srvBusy} onPress={() => void pullResults()} />
         {srvNote ? <Small muted={false}>{srvNote}</Small> : null}
         <Small>보낸 뒤에는 클로드·GPT 에서 분석해요.</Small>
+        <Divider />
+        {/* 비상문 — 구글 로그인이 안 될 때만 쓴다. 평소에는 접어 둔다. */}
+        <Row
+          label="열쇠로 잇기"
+          value={srvManual ? "접기" : "열기 ›"}
+          onPress={() => setSrvManual((v) => !v)}
+        />
+        {srvManual ? (
+          <>
+            <Small>구글 로그인이 안 될 때만 써요. 서버의 NSR_DEVICE_TOKEN 이에요.</Small>
+            <TextInput
+              value={srvToken}
+              onChangeText={setSrvToken}
+              placeholder="기기 열쇠 붙여넣기"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="none"
+              autoCorrect={false}
+              secureTextEntry
+              style={{
+                minHeight: TOUCH_MIN,
+                paddingHorizontal: space.md,
+                borderRadius: radius.md,
+                backgroundColor: t.surfaceAlt,
+                color: t.text,
+                fontSize: 15,
+              }}
+            />
+            <Button label="열쇠 저장" busy={srvBusy} onPress={() => void saveServer()} />
+          </>
+        ) : null}
       </Card>
 
       {/* 판 번호와 업데이트 */}

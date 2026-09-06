@@ -8,7 +8,11 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
   GET  /pull                   서버 → 폰. 보고서·새 용어 가져가기. 기기 토큰 필요
   POST /pulled                 폰이 "받았다"고 알림. 기기 토큰 필요
   *    /mcp                     대화 AI 커넥터 주소 (클로드·GPT 공통)
-  GET  /oauth/login            커넥터를 연결할 때 열쇠를 넣는 화면
+  GET  /device/start           폰을 잇는다 — 구글 로그인으로 보내고 열쇠를 만들어 준다
+  POST /device/claim           폰이 그 열쇠를 한 번만 받아 간다 (일회용 쪽지)
+  GET  /oauth/google/begin     커넥터를 구글 로그인으로 보낸다
+  GET  /oauth/google/callback  구글이 돌아오는 자리 (구글 콘솔에 적는 주소)
+  GET  /oauth/login            구글이 꺼져 있을 때 열쇠를 넣는 화면 (비상문)
   *    /.well-known/oauth-*     커넥터가 로그인 방법을 찾아보는 자리 (SDK 가 만든다)
   *    /register /authorize /token   OAuth 절차 (SDK 가 만든다)
 
@@ -31,6 +35,8 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
 from __future__ import annotations
 
 import logging
+import secrets
+import time
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -45,6 +51,7 @@ from pydantic import AnyHttpUrl
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from .config import Config
+from . import google
 from .oauth import NsrOAuthProvider
 from .tiro import TiroError, fetch_paragraphs, list_notes, mask, push_word, word_reject
 from .screen import screen_bundle
@@ -91,7 +98,9 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     config = config or Config()
     store = store or Store(config.db_path)
 
-    auth = NsrOAuthProvider(store, config.mcp_token, config.public_host)
+    auth = NsrOAuthProvider(
+        store, config.mcp_token, config.public_host, use_google=config.google_ready
+    )
     base = f"https://{config.public_host}"
     mcp = MCPServer(
         name="NSR 근무 기록",
@@ -247,8 +256,20 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     # ── 폰이 쓰는 주소 ────────────────────────────────────
 
     def device_ok(request: Request) -> bool:
+        """
+        폰인가.
+
+        두 갈래를 다 받는다 — 구글 로그인으로 **발급된** 열쇠(기기마다 하나)와,
+        nsr.env 에 적어 둔 고정 토큰(비상문). 구글 설정이 잘못돼도 서버에 자료를
+        올리는 길이 끊기지 않게 둘 다 둔다.
+        """
         header = request.headers.get("authorization", "")
-        return header == f"Bearer {config.device_token}"
+        if not header.startswith("Bearer "):
+            return False
+        token = header[7:]
+        if secrets.compare_digest(token.encode("utf-8"), config.device_token.encode("utf-8")):
+            return True
+        return store.device_token_ok(token)
 
     async def healthz(_: Request) -> PlainTextResponse:
         return PlainTextResponse("ok")
@@ -300,6 +321,108 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
         store.mark_pulled(list(body.get("shiftIds") or []), list(body.get("entries") or []))
         return JSONResponse({"ok": True})
+
+    # ── 구글 로그인 ───────────────────────────────────────
+    #
+    # 폰과 커넥터가 같은 문을 쓴다. 다른 것은 끝에 어디로 돌아가느냐뿐이다.
+    #   폰:     /device/start → 구글 → /oauth/google/callback → nsr://linked?c=…
+    #   커넥터: /oauth/google/begin → 구글 → /oauth/google/callback → 커넥터 주소
+    #
+    # 대기표(pending)에 무엇을 하려던 것인지 적어 두고, 돌아왔을 때 그것을 보고 나눈다.
+
+    GOOGLE_TTL = 60 * 10  # 로그인 화면을 열어 둔 채 잠깐 자리를 비울 수 있는 시간
+    CLAIM_TTL = 60 * 5  # 앱이 쪽지를 주우러 올 시간
+
+    def google_off_page(why: str) -> HTMLResponse:
+        return HTMLResponse(
+            f"<!doctype html><meta charset=utf-8>"
+            f"<p style=\"font:16px system-ui;padding:24px\">{why}</p>",
+            status_code=400,
+        )
+
+    async def device_start(request: Request) -> Any:
+        """폰이 브라우저로 여는 자리. 구글로 넘긴다."""
+        if not config.google_ready:
+            return google_off_page("이 서버에는 구글 로그인이 켜져 있지 않아요.")
+        pending = "g-" + secrets.token_urlsafe(24)
+        store.put_oauth_pending(pending, {"kind": "device"}, expires_at=time.time() + GOOGLE_TTL)
+        return RedirectResponse(
+            google.auth_url(config.google_client_id, config.google_redirect, pending),
+            status_code=302,
+        )
+
+    async def google_begin(request: Request) -> Any:
+        """커넥터를 구글로 넘긴다. p 는 MCP 쪽이 만들어 둔 대기표다."""
+        if not config.google_ready:
+            return google_off_page("이 서버에는 구글 로그인이 켜져 있지 않아요.")
+        pending = request.query_params.get("p", "")
+        if not pending:
+            return google_off_page("연결 정보가 없어요. 커넥터에서 다시 시작해 주세요.")
+        return RedirectResponse(
+            google.auth_url(config.google_client_id, config.google_redirect, pending),
+            status_code=302,
+        )
+
+    async def google_callback(request: Request) -> Any:
+        """구글이 돌려보내는 자리. 여기서 계정을 보고 문을 연다."""
+        if not config.google_ready:
+            return google_off_page("이 서버에는 구글 로그인이 켜져 있지 않아요.")
+        code = request.query_params.get("code", "")
+        state = request.query_params.get("state", "")
+        if not code or not state:
+            return google_off_page("구글이 준 정보가 모자라요. 다시 로그인해 주세요.")
+
+        pending = store.take_oauth_pending(state)
+        if not pending:
+            return google_off_page("시간이 지났어요. 앱이나 커넥터에서 다시 시작해 주세요.")
+
+        try:
+            email = google.email_of(
+                code, config.google_client_id, config.google_client_secret, config.google_redirect
+            )
+        except google.GoogleError as e:
+            log.info("구글 로그인 실패")  # 이메일도 사유 원문도 로그에 안 남긴다
+            return google_off_page(f"로그인하지 못했어요. {e}")
+
+        if not config.email_allowed(email):
+            # 어떤 계정이 시도했는지는 남기지 않는다. 남기면 그것이 곧 개인정보다.
+            log.info("허용되지 않은 계정의 로그인 시도")
+            return google_off_page("이 계정은 들어올 수 없어요. 서버에 등록된 계정으로 해 주세요.")
+
+        if pending.get("kind") == "device":
+            # 폰 열쇠를 만들고, 앱이 주워 갈 일회용 쪽지를 남긴다. 열쇠를 주소에
+            # 직접 실어 보내면 브라우저 기록에 남는다 — 쪽지는 한 번 쓰면 사라진다.
+            token = secrets.token_urlsafe(32)
+            store.put_device_token(token, email, label=request.headers.get("user-agent", "")[:60])
+            claim = secrets.token_urlsafe(24)
+            store.put_oauth_pending(
+                f"claim-{claim}", {"token": token}, expires_at=time.time() + CLAIM_TTL
+            )
+            log.info("폰 연결 — 새 기기 열쇠 발급")
+            return RedirectResponse(f"nsr://linked?c={claim}", status_code=302)
+
+        # 커넥터 — MCP 쪽 대기표다. 코드를 만들어 커넥터에게 돌려보낸다.
+        try:
+            back = auth.grant(pending)
+        except KeyError:
+            return google_off_page("연결 정보가 상했어요. 커넥터에서 다시 시작해 주세요.")
+        log.info("커넥터 연결 — 구글 로그인 성공")
+        return RedirectResponse(back, status_code=302)
+
+    async def device_claim(request: Request) -> JSONResponse:
+        """앱이 쪽지를 열쇠로 바꾼다. 한 번만 된다."""
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
+        claim = str(body.get("code", "")).strip()
+        pending = store.take_oauth_pending(f"claim-{claim}") if claim else None
+        if not pending:
+            return JSONResponse(
+                {"error": "쪽지가 없거나 시간이 지났습니다. 다시 로그인해 주십시오."},
+                status_code=400,
+            )
+        return JSONResponse({"token": pending["token"]})
 
     # ── 로그인 화면 ───────────────────────────────────────
     #
@@ -366,6 +489,10 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             Route("/ingest", ingest, methods=["POST"]),
             Route("/pull", pull, methods=["GET"]),
             Route("/pulled", pulled, methods=["POST"]),
+            Route("/device/start", device_start, methods=["GET"]),
+            Route("/device/claim", device_claim, methods=["POST"]),
+            Route("/oauth/google/begin", google_begin, methods=["GET"]),
+            Route("/oauth/google/callback", google_callback, methods=["GET"]),
             Route("/oauth/login", oauth_login_form, methods=["GET"]),
             Route("/oauth/login", oauth_login_submit, methods=["POST"]),
             # 나머지는 전부 MCP 앱이 받는다 (mcp · well-known · register · authorize · token)
@@ -388,7 +515,8 @@ def main() -> None:
     print(f"바깥 도메인: {config.public_host or '(없음 — 시작하지 못합니다)'}")
     # 토큰은 앞자리도 찍지 않는다. systemd 가 stdout 을 journal 로 받으므로
     # 여기 적히는 것은 곧 로그에 남는 것이다. 주소는 nsr.env 를 보고 만든다.
-    print("커넥터 주소: https://<도메인>/t/<NSR_MCP_TOKEN>/mcp  (nsr.env 에서 확인)")
+    print(f"커넥터 주소: https://{config.public_host or '<도메인>'}/mcp")
+    print("로그인: " + ("구글 계정" if config.google_ready else "열쇠(NSR_MCP_TOKEN) — 구글은 README 8번"))
     # 접근 로그를 끈다 — 주소에 토큰이 들어 있어 로그에 남으면 그게 유출이다.
     uvicorn.run(app, host=config.host, port=config.port, access_log=False)
 

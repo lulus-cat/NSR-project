@@ -171,6 +171,7 @@ function Gate() {
       <Stack.Screen name="transcript/[id]" options={{ title: "전사 결과" }} />
       <Stack.Screen name="import-audio" options={{ title: "음성 가져오기" }} />
       <Stack.Screen name="tiro-notes" options={{ title: "티로 노트 가져오기" }} />
+      <Stack.Screen name="linked" options={{ title: "서버 잇기" }} />
     </Stack>
     <LaunchOverlay ready />
     </>

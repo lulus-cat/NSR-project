@@ -8,6 +8,12 @@
   NSR_PUBLIC_HOST   바깥에서 부르는 도메인 (예: nsr.example.com). **없으면 붙지 않는다.**
   NSR_ALLOWED_ORIGINS  커넥터의 Origin 목록. 쉼표로 나눈다. 비우면 기본값을 쓴다.
   NSR_TIRO_KEY      티로 API 열쇠. 있으면 서버가 티로에서 직접 노트를 가져온다.
+  NSR_GOOGLE_CLIENT_ID / NSR_GOOGLE_CLIENT_SECRET
+                    구글 로그인. 넣으면 폰과 커넥터가 **열쇠 대신 구글 계정**으로
+                    들어온다. 구글 클라우드 콘솔의 '웹 애플리케이션' 클라이언트다
+                    (안드로이드 클라이언트가 아니다 — 서명 지문이 필요 없다).
+  NSR_ALLOWED_EMAILS  들어올 수 있는 구글 계정. 쉼표로 나눈다. **구글 로그인을
+                    켜면 반드시 넣어야 한다** — 없으면 아무 구글 계정이나 들어온다.
   NSR_REPO          저장소 경로 (기본 ../ — 가리기 스크립트를 여기서 찾는다)
 
 두 토큰을 나눠 둔 이유: 하나가 새면 그 하나만 갈면 된다. 폰 토큰이 새도 남이
@@ -62,7 +68,38 @@ class Config:
             os.environ.get("NSR_REPO", os.path.join(os.path.dirname(__file__), "..", ".."))
         )
         self.public_host = os.environ.get("NSR_PUBLIC_HOST", "").strip()
+
+        # 구글 로그인 (선택). 셋이 다 있어야 켜진다.
+        self.google_client_id = os.environ.get("NSR_GOOGLE_CLIENT_ID", "").strip()
+        self.google_client_secret = os.environ.get("NSR_GOOGLE_CLIENT_SECRET", "").strip()
+        emails = os.environ.get("NSR_ALLOWED_EMAILS", "").strip()
+        self.allowed_emails = [e.strip().lower() for e in emails.split(",") if e.strip()]
+        if (self.google_client_id or self.google_client_secret) and not self.allowed_emails:
+            # 이걸 빠뜨리면 구글 계정이 있는 **누구나** 내 근무 기록을 읽는다.
+            raise SystemExit(
+                "NSR_ALLOWED_EMAILS 가 비어 있습니다. 구글 로그인을 켤 때는 들어올 수 있는\n"
+                "계정을 반드시 적으십시오:\n"
+                "  NSR_ALLOWED_EMAILS=my.name@gmail.com"
+            )
         origins = os.environ.get("NSR_ALLOWED_ORIGINS", "").strip()
         self.allowed_origins = [o.strip() for o in origins.split(",") if o.strip()] or list(
             DEFAULT_ORIGINS
         )
+
+    @property
+    def google_ready(self) -> bool:
+        """구글 로그인을 쓸 수 있는가. 하나라도 빠지면 열쇠 화면으로 돌아간다."""
+        return bool(
+            self.google_client_id
+            and self.google_client_secret
+            and self.allowed_emails
+            and self.public_host
+        )
+
+    @property
+    def google_redirect(self) -> str:
+        """구글 콘솔의 '승인된 리디렉션 URI' 에 **글자 그대로** 넣을 주소."""
+        return f"https://{self.public_host}/oauth/google/callback"
+
+    def email_allowed(self, email: str) -> bool:
+        return email.strip().lower() in self.allowed_emails

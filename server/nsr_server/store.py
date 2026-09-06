@@ -77,6 +77,16 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   created_at  INTEGER NOT NULL
 );
 
+-- 폰마다 하나씩 발급되는 열쇠. 구글 로그인을 마치면 서버가 만들어 준다.
+-- 사람이 보거나 옮겨 적을 일이 없다 — 앱이 받아 보안 저장소에 넣는다.
+CREATE TABLE IF NOT EXISTS device_tokens (
+  token        TEXT PRIMARY KEY,
+  email        TEXT NOT NULL,
+  label        TEXT,
+  created_at   INTEGER NOT NULL,
+  last_seen_at INTEGER
+);
+
 CREATE TABLE IF NOT EXISTS terms (
   entry       TEXT PRIMARY KEY,
   meaning     TEXT NOT NULL,
@@ -271,6 +281,38 @@ class Store:
         }
 
     # ── OAuth ─────────────────────────────────────────────
+
+    # ── 기기 열쇠 ─────────────────────────────────────────
+
+    def put_device_token(self, token: str, email: str, label: str | None = None) -> None:
+        with self.db:
+            self.db.execute(
+                "INSERT OR REPLACE INTO device_tokens (token, email, label, created_at) VALUES (?, ?, ?, ?)",
+                (token, email.strip().lower(), (label or "").strip() or None, int(time.time())),
+            )
+
+    def device_token_ok(self, token: str) -> bool:
+        """이 열쇠가 살아 있는가. 쓸 때마다 마지막 사용 시각을 적어 둔다."""
+        if not token:
+            return False
+        row = self.db.execute(
+            "SELECT token FROM device_tokens WHERE token = ?", (token,)
+        ).fetchone()
+        if not row:
+            return False
+        with self.db:
+            self.db.execute(
+                "UPDATE device_tokens SET last_seen_at = ? WHERE token = ?",
+                (int(time.time()), token),
+            )
+        return True
+
+    def list_device_tokens(self) -> list[dict[str, Any]]:
+        """어떤 기기가 붙어 있나. **열쇠 자체는 주지 않는다.**"""
+        rows = self.db.execute(
+            "SELECT email, label, created_at, last_seen_at FROM device_tokens ORDER BY created_at"
+        ).fetchall()
+        return [dict(r) for r in rows]
 
     def put_oauth_client(self, client_id: str, info: dict[str, Any]) -> None:
         with self.db:
