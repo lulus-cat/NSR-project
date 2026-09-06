@@ -50,6 +50,8 @@ const URL_KEY = "nsr.server.url";
 const TOKEN_KEY = "nsr.server.deviceToken";
 /** 연달아 몇 번 401 이 났나. 두 번이면 열쇠를 버린다. */
 const UNAUTH_KEY = "nsr.server.unauthorizedCount";
+/** 이 근무를 언제 보냈나. 안 남기면 사람이 보냈는지 알 길이 없다. */
+const sentKey = (shiftId: string) => `nsr.server.sent.${shiftId}`;
 
 export interface ServerSettings {
   url: string;
@@ -271,6 +273,11 @@ export async function approveCode(code: string): Promise<"ai" | "device"> {
   return kind ?? "ai";
 }
 
+/** 이 근무를 서버에 보낸 시각(초). 안 보냈으면 null. */
+export async function shiftSentAt(shiftId: string): Promise<number | null> {
+  return (await getSetting<number>(sentKey(shiftId), 0)) || null;
+}
+
 export async function serverReady(): Promise<boolean> {
   return !!(await getServerUrl()) && !!(await getDeviceToken());
 }
@@ -419,6 +426,9 @@ export async function sendShift(
     120_000,
   );
   if (!res.ok) throw new Error(await serverError(res, "근무 보내기"));
+  // 보낸 것을 적어 둔다. 이게 없으면 화면이 매번 처음처럼 보여서, 같은 근무를
+  // 몇 번씩 보내거나 아직 안 보낸 근무를 보냈다고 여기게 된다.
+  await setSetting(sentKey(shiftId), Math.floor(Date.now() / 1000));
   onProgress?.(100, "보냈어요");
   return { sentences: out.length, redacted };
 }

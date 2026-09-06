@@ -50,7 +50,7 @@ import {
   transcriptToText,
 } from "../../src/services/export-bundle";
 import { exportNotePdf } from "../../src/services/note-doc";
-import { sendShift, serverReady } from "../../src/services/nsr-server";
+import { sendShift, serverReady, shiftSentAt } from "../../src/services/nsr-server";
 
 /** epoch ms → "HH:MM 시작". 이름 없는 녹음 파일을 부를 때. */
 function startClock(ms: number): string {
@@ -106,6 +106,12 @@ function stateBadge(state: string): { text: string; tone: "ok" | "muted" | "warn
   }
 }
 
+/** 보낸 시각(초)을 '9월 6일' 로. 언제 보냈는지만 알면 된다. */
+function sentDayText(seconds: number): string {
+  const d = new Date(seconds * 1000);
+  return Number.isNaN(d.getTime()) ? "언젠가" : `${d.getMonth() + 1}월 ${d.getDate()}일`;
+}
+
 export default function ShiftDetail() {
   const t = useTheme();
   const insets = useSafeAreaInsets();
@@ -122,6 +128,10 @@ export default function ShiftDetail() {
   const [reportMd, setReportMd] = useState<string | null>(null);
   const [sending, setSending] = useState(false);
   const [sendNote, setSendNote] = useState<string | null>(null);
+  /** 서버가 이어져 있나, 이 근무를 언제 보냈나. 둘 다 화면에서 말해 줘야 한다 —
+      예전에는 못 보내는 근무에서 카드가 통째로 사라져서 이유를 알 수가 없었다. */
+  const [srvReady, setSrvReady] = useState(false);
+  const [sentAt, setSentAt] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const sendToServer = useCallback(async () => {
@@ -135,9 +145,11 @@ export default function ShiftDetail() {
       }
       const out = await sendShift(shiftId, (_pct: number, note?: string) => setSendNote(note ?? null));
       setSendNote(`${out.sentences}문장을 보냈어요. 가린 것 ${out.redacted}건이에요.`);
+      setSentAt(await shiftSentAt(shiftId));
     } catch (e) {
       setSendNote(e instanceof Error ? e.message : "보내지 못했어요. 다시 눌러 주세요.");
     } finally {
+      setSrvReady(await serverReady());
       setSending(false);
     }
   }, [sending, shiftId]);
@@ -167,14 +179,18 @@ export default function ShiftDetail() {
   }, [allPending.length, showAll]);
 
   const load = useCallback(async () => {
-    const [count, recs, md, cfs, perRec, waiting] = await Promise.all([
+    const [count, recs, md, cfs, perRec, waiting, ready, sent] = await Promise.all([
       countSegments(shiftId),
       listRecordings(shiftId),
       getShiftReportMarkdown(shiftId),
       listConfirmations(shiftId),
       segmentCountsByRecording(shiftId),
       pendingTranscriptions(),
+      serverReady(),
+      shiftSentAt(shiftId),
     ]);
+    setSrvReady(ready);
+    setSentAt(sent);
     setSentenceCount(count);
     setRecordings(recs);
     setCounts(perRec);
@@ -766,18 +782,30 @@ export default function ShiftDetail() {
       {/* ── 분석 서버로 보내기 ──
           가린 사본만 올라간다. 올린 뒤 클로드·GPT 에서 "9월 3일 근무 분석해줘"
           하면 그쪽이 읽고 보고서를 써 넣는다. 받아오는 것은 설정에서 한다. */}
-      {sentenceCount > 0 && !preview ? (
+      {!preview ? (
         <Card>
           <Heading>분석 서버로 보내기</Heading>
           <Small>이름 같은 민감한 말은 가리고 보내요.</Small>
           <Small>보낸 뒤 클로드·GPT 에서 분석해요.</Small>
+          {/* 못 보낼 때 카드를 감추면 왜 못 보내는지 알 길이 없다. 이유를 말한다. */}
+          {sentenceCount === 0 ? (
+            <Small muted={false}>먼저 티로에서 전사본을 가져오세요.</Small>
+          ) : !srvReady ? (
+            <Small muted={false}>설정에서 서버를 먼저 이어 주세요.</Small>
+          ) : (
+            <>
+              <Small muted={false}>
+                {sentAt ? `${sentDayText(sentAt)}에 보냈어요.` : "아직 안 보냈어요."}
+              </Small>
+              <Button
+                label={sentAt ? "다시 보내기" : "이 근무 보내기"}
+                tone={sentAt ? "default" : "primary"}
+                busy={sending}
+                onPress={() => void sendToServer()}
+              />
+            </>
+          )}
           {sendNote ? <Small muted={false}>{sendNote}</Small> : null}
-          <Button
-            label="이 근무 보내기"
-            tone="primary"
-            busy={sending}
-            onPress={() => void sendToServer()}
-          />
         </Card>
       ) : null}
 
