@@ -62,7 +62,10 @@ export async function getServerUrl(): Promise<string> {
 
 export async function setServerUrl(url: string): Promise<void> {
   // 끝의 빗금은 붙이는 쪽에서 늘 틀린다. 여기서 한 번 정리한다.
-  await setSetting(URL_KEY, url.trim().replace(/\/+$/, ""));
+  // https:// 도 여기서 붙인다 — 사람은 주소창에 그걸 안 치는 것이 보통이고,
+  // 없으면 fetch 가 영어 오류를 던져서 화면에 그대로 나간다.
+  const bare = url.trim().replace(/\/+$/, "");
+  await setSetting(URL_KEY, bare && !/^https?:\/\//i.test(bare) ? `https://${bare}` : bare);
 }
 
 export async function getDeviceToken(): Promise<string | null> {
@@ -81,19 +84,63 @@ async function keep(body: { token?: string }): Promise<void> {
   await setSetting(UNAUTH_KEY, 0);
 }
 
-async function postPublic(path: string, payload: unknown): Promise<Response> {
+/**
+ * 서버에 한 번 묻는다.
+ *
+ * 셋을 여기서 한꺼번에 막는다.
+ *  - 그물이 끊기면 fetch 는 영어로 "Network request failed" 를 던진다. 그대로
+ *    화면에 나가면 사람이 읽을 수가 없다.
+ *  - 안드로이드의 기본 fetch 에는 시간 제한이 아예 없다. 서버가 받기만 하고
+ *    대답을 안 하면 버튼이 영원히 도는 중이 된다.
+ *  - 프록시가 HTML 오류 쪽지를 200 으로 돌려주면 res.json() 이 터진다.
+ */
+const ASK_MS = 20_000;
+
+async function ask(path: string, init: RequestInit, timeoutMs = ASK_MS): Promise<Response> {
   const url = await getServerUrl();
   if (!url) throw new Error("서버 주소가 없어요. 설정에서 넣어 주세요.");
-  return fetch(`${url}${path}`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(payload ?? {}),
-  });
+  const stop = new AbortController();
+  const timer = setTimeout(() => stop.abort(), timeoutMs);
+  try {
+    return await fetch(`${url}${path}`, { ...init, signal: stop.signal });
+  } catch {
+    throw new Error("서버에 닿지 못했어요. 주소와 인터넷을 확인해 주세요.");
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
+async function postPublic(path: string, payload: unknown, timeoutMs = ASK_MS): Promise<Response> {
+  return ask(
+    path,
+    {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload ?? {}),
+    },
+    timeoutMs,
+  );
+}
+
+/** JSON 이 아니어도 안 죽는다. 프록시는 HTML 오류 쪽지를 200 으로도 준다. */
+async function readJson<T>(res: Response): Promise<Partial<T>> {
+  return (await res.json().catch(() => ({}))) as Partial<T>;
+}
+
+/**
+ * 실패한 대답을 사람 말로 바꾼다.
+ *
+ * 서버가 보낸 문장을 그대로 쓰지 않는다 — 서버 문구는 '…해 주십시오' 이고
+ * 'JSON' 같은 말이 섞여 있다. 화면 문구는 해요체다 (`nsr-design` 스킬).
+ */
 async function why(res: Response, fallback: string): Promise<string> {
-  const body = (await res.json().catch(() => ({}))) as { error?: string };
-  return body.error ?? fallback;
+  const body = await readJson<{ error?: string }>(res);
+  void logDebug(`서버 ${res.status}: ${body.error ?? ""}`);
+  if (res.status === 401) return "이 폰이 서버에 안 이어져 있어요. 다시 이어 주세요.";
+  if (res.status === 404) return "주소가 다르거나 서버가 옛 판이에요.";
+  if (res.status === 429) return "지금은 이을 수 없어요. 10분 뒤에 해 주세요.";
+  if (res.status >= 500) return "서버가 대답하지 못했어요. 잠시 뒤 다시 해 주세요.";
+  return fallback;
 }
 
 /**
@@ -103,40 +150,70 @@ async function why(res: Response, fallback: string): Promise<string> {
  * 여섯 자리 번호를 받아 오고, 그 번호를 이미 이어진 폰이 승인할 때까지
  * `pollLink` 로 기다린다.
  */
-export async function linkDevice(): Promise<{ linked: boolean; code?: string; recovery?: string }> {
+export interface LinkTicket {
+  linked: boolean;
+  /** 사람이 옮겨 적는 여섯 자리 */
+  code?: string;
+  /** 이 기기만 아는 쪽지. 번호를 남이 맞혀도 열쇠는 못 가져간다 */
+  poll?: string;
+  recovery?: string;
+}
+
+export async function linkDevice(): Promise<LinkTicket> {
   const res = await postPublic("/device/link", {});
   if (res.status === 202) {
-    const { code } = (await res.json()) as { code?: string };
-    if (!code) throw new Error("서버가 번호를 주지 않았어요. 다시 눌러 주세요.");
-    return { linked: false, code };
+    const { code, poll } = await readJson<{ code: string; poll: string }>(res);
+    if (!code || !poll) throw new Error("서버가 번호를 주지 않았어요. 다시 눌러 주세요.");
+    return { linked: false, code, poll };
   }
   if (!res.ok) throw new Error(await why(res, "잇지 못했어요. 주소를 확인해 주세요."));
-  const body = (await res.json()) as { token?: string; recovery?: string };
+  const body = await readJson<{ token: string; recovery: string }>(res);
   await keep(body);
   return { linked: true, recovery: body.recovery };
 }
 
 /** 승인을 기다린다. 아직이면 false, 승인되면 열쇠를 넣고 true. */
-export async function pollLink(code: string): Promise<{ linked: boolean; recovery?: string }> {
-  const res = await postPublic("/device/link/poll", { code });
+export async function pollLink(
+  code: string,
+  poll: string,
+): Promise<{ linked: boolean; recovery?: string }> {
+  const res = await postPublic("/device/link/poll", { code, poll });
   if (res.status === 404) return { linked: false };
   if (!res.ok) throw new Error(await why(res, "기다리지 못했어요. 다시 해 주세요."));
-  const body = (await res.json()) as { token?: string; recovery?: string };
+  const body = await readJson<{ token: string; recovery: string }>(res);
   await keep(body);
   return { linked: true, recovery: body.recovery };
 }
 
-/** 복구 번호로 잇는다. 앱을 지웠다 다시 깔았을 때 쓴다. */
+/** 서버가 쓰는 글자만 남긴다 (헷갈리는 0·O·1·I 는 애초에 안 쓴다). */
+const RECOVERY_LETTERS = /[23456789ABCDEFGHJKLMNPQRSTUVWXYZ]/g;
+
+/**
+ * 복구 번호로 잇는다. 앱을 지웠다 다시 깔았을 때 쓴다.
+ *
+ * 길이는 여기서 먼저 본다. 서버는 다섯 번 틀리면 10분 잠그는데, 빈 칸이나
+ * 오타로 그 다섯 번을 다 쓰면 정작 맞는 번호를 넣을 때 잠겨 있다.
+ */
 export async function recoverDevice(recovery: string): Promise<string | undefined> {
-  const res = await postPublic("/device/recover", { recovery });
-  if (!res.ok) throw new Error(await why(res, "복구 번호가 맞지 않아요."));
-  const body = (await res.json()) as { token?: string; recovery?: string };
+  const letters = (recovery.toUpperCase().match(RECOVERY_LETTERS) ?? []).join("");
+  if (letters.length !== 12) throw new Error("복구 번호 열두 자리를 넣어 주세요.");
+  const res = await postPublic("/device/recover", { recovery: letters });
+  if (!res.ok) throw new Error(await why(res, "복구 번호가 맞지 않아요. 다시 넣어 주세요."));
+  const body = await readJson<{ token: string; recovery: string }>(res);
   await keep(body);
   return body.recovery;
 }
 
+export interface LinkedDevice {
+  label?: string | null;
+  created_at: number;
+  last_seen_at?: number | null;
+  /** 지금 이 폰인가. 낯선 줄을 가리려면 이게 있어야 한다 */
+  mine?: boolean;
+}
+
 export interface ServerState {
-  devices: { label?: string | null; created_at: number; last_seen_at?: number | null }[];
+  devices: LinkedDevice[];
   recovery: string;
 }
 
@@ -144,14 +221,15 @@ export interface ServerState {
 export async function serverState(): Promise<ServerState> {
   const res = await call("/device/state");
   if (!res.ok) throw new Error(await serverError(res, "기기 목록 보기"));
-  return (await res.json()) as ServerState;
+  const body = await readJson<ServerState>(res);
+  return { devices: body.devices ?? [], recovery: body.recovery ?? "" };
 }
 
 /** 이 폰만 남기고 끊는다. 앱을 여러 번 다시 깔면 죽은 열쇠가 쌓인다. */
 export async function forgetOtherDevices(): Promise<number> {
   const res = await call("/device/forget-others", { method: "POST" });
   if (!res.ok) throw new Error(await serverError(res, "다른 기기 끊기"));
-  const { removed } = (await res.json()) as { removed?: number };
+  const { removed } = await readJson<{ removed: number }>(res);
   return removed ?? 0;
 }
 
@@ -168,8 +246,8 @@ export async function approveCode(code: string): Promise<"ai" | "device"> {
     method: "POST",
     body: JSON.stringify({ code: digits }),
   });
-  if (!res.ok) throw new Error(await why(res, "승인하지 못했어요. 번호를 다시 봐 주세요."));
-  const { kind } = (await res.json()) as { kind?: "ai" | "device" };
+  if (!res.ok) throw new Error(await serverError(res, "승인"));
+  const { kind } = await readJson<{ kind: "ai" | "device" }>(res);
   return kind ?? "ai";
 }
 
@@ -177,19 +255,21 @@ export async function serverReady(): Promise<boolean> {
   return !!(await getServerUrl()) && !!(await getDeviceToken());
 }
 
-async function call(path: string, init: RequestInit = {}): Promise<Response> {
-  const url = await getServerUrl();
+async function call(path: string, init: RequestInit = {}, timeoutMs = ASK_MS): Promise<Response> {
   const token = await getDeviceToken();
-  if (!url) throw new Error("서버 주소가 없어요. 설정에서 넣어 주세요.");
   if (!token) throw new Error("이 폰이 아직 서버에 안 이어졌어요. 설정에서 이어 주세요.");
-  return fetch(`${url}${path}`, {
-    ...init,
-    headers: {
-      ...(init.headers ?? {}),
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
+  return ask(
+    path,
+    {
+      ...init,
+      headers: {
+        ...(init.headers ?? {}),
+        authorization: `Bearer ${token}`,
+        "content-type": "application/json",
+      },
     },
-  });
+    timeoutMs,
+  );
 }
 
 async function serverError(res: Response, doing: string): Promise<string> {
@@ -300,9 +380,11 @@ export async function sendShift(
     .filter((t) => clean(t.entry) && clean(t.meaning) && (!t.note || clean(t.note)));
 
   onProgress?.(70, "서버로 보내는 중");
-  const res = await call("/ingest", {
-    method: "POST",
-    body: JSON.stringify({
+  const res = await call(
+    "/ingest",
+    {
+      method: "POST",
+      body: JSON.stringify({
       shiftId,
       date,
       code,
@@ -310,9 +392,12 @@ export async function sendShift(
       masked: true,
       taeum: taeum ? { score: taeum.score, level: taeum.level } : undefined,
       terms,
-      sentences: out,
-    }),
-  });
+        sentences: out,
+      }),
+    },
+    // 8시간 근무는 문장이 수천 개다. 다른 요청과 같은 잣대로 끊으면 못 올린다.
+    120_000,
+  );
   if (!res.ok) throw new Error(await serverError(res, "근무 보내기"));
   onProgress?.(100, "보냈어요");
   return { sentences: out.length, redacted };

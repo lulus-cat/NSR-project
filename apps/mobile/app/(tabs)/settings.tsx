@@ -36,6 +36,7 @@ import {
   serverState,
   setDeviceToken,
   setServerUrl,
+  type LinkTicket,
   type ServerState,
 } from "../../src/services/nsr-server";
 import {
@@ -196,6 +197,12 @@ function GroupHead({
   );
 }
 
+/** 서버가 주는 초 단위 시각을 '9월 6일' 로. 어느 줄이 언제 붙었는지만 보면 된다. */
+function dayText(seconds: number): string {
+  const d = new Date((seconds || 0) * 1000);
+  return Number.isNaN(d.getTime()) ? "언젠가" : `${d.getMonth() + 1}월 ${d.getDate()}일`;
+}
+
 export default function Settings() {
   const t = useTheme();
   const app = useApp();
@@ -296,10 +303,15 @@ export default function Settings() {
       return;
     }
     // 서버가 잠깐 안 되는 것 때문에 설정 화면 전체가 멎으면 안 된다.
+    // 다만 조용히 비우지는 않는다 — 그러면 '연결됨' 인데 복구 번호도 기기 수도
+    // 없는, 사람이 무슨 일인지 알 수 없는 화면이 된다.
     try {
       setSrvState(await serverState());
-    } catch {
+    } catch (e) {
       setSrvState(null);
+      setSrvNote(e instanceof Error ? e.message : "서버에 닿지 못했어요.");
+      // 위 요청이 401 이었으면 열쇠가 지워졌을 수 있다. 다시 읽어야 줄이 안 거짓말한다.
+      setSrvHasToken((await getDeviceToken()) !== null);
     }
   }, []);
   useFocusEffect(
@@ -321,8 +333,8 @@ export default function Settings() {
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "승인하지 못했어요. 다시 해 주세요.");
     } finally {
-      await refreshServer();
       setSrvBusy(false);
+      void refreshServer();
     }
   }, [refreshServer, srvCode]);
 
@@ -331,10 +343,15 @@ export default function Settings() {
   // 서버에 기기가 하나도 없으면 버튼 한 번으로 끝난다. 있으면 여섯 자리가 뜨고,
   // 이미 이어진 폰이 승인할 때까지 3초마다 물어본다. 화면을 떠나면 멈춘다 —
   // 안 멈추면 탭을 옮겨 다니는 동안에도 계속 서버를 두드린다.
-  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [ticket, setTicket] = useState<LinkTicket | null>(null);
   const [recovery, setRecovery] = useState<string | null>(null);
   const [recoveryIn, setRecoveryIn] = useState("");
+  // 복구 번호는 서버 열쇠다. 늘 띄워 두면 어깨너머·화면 캡처로 샌다.
+  const [showRecovery, setShowRecovery] = useState(false);
   const polling = useRef(false);
+  // 물어본 횟수는 화면을 드나들어도 이어져야 한다. 상태에 두면 탭을 옮길 때마다
+  // 0 으로 돌아가서 '시간이 지났어요' 가 영영 안 뜬다.
+  const tries = useRef(0);
 
   const linkNow = useCallback(async () => {
     setSrvBusy(true);
@@ -347,34 +364,34 @@ export default function Settings() {
         setRecovery(out.recovery ?? null);
         setSrvNote("이어졌어요. 복구 번호를 적어 두세요.");
       } else {
-        setLinkCode(out.code ?? null);
+        tries.current = 0;
+        setTicket(out);
         setSrvNote("이미 이은 폰에서 이 번호를 승인해 주세요.");
       }
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "잇지 못했어요. 다시 눌러 주세요.");
     } finally {
-      await refreshServer();
       setSrvBusy(false);
+      void refreshServer();
     }
   }, [refreshServer, srvUrl]);
 
   useFocusEffect(
     useCallback(() => {
-      if (!linkCode) return;
+      if (!ticket?.code || !ticket.poll) return;
       polling.current = true;
-      let tries = 0;
       const timer = setInterval(() => {
         void (async () => {
           if (!polling.current) return;
-          if (++tries > 100) {
-            setLinkCode(null);
+          if (++tries.current > 100) {
+            setTicket(null);
             setSrvNote("시간이 지났어요. 다시 눌러 주세요.");
             return;
           }
           try {
-            const out = await pollLink(linkCode);
+            const out = await pollLink(ticket.code!, ticket.poll!);
             if (!out.linked || !polling.current) return;
-            setLinkCode(null);
+            setTicket(null);
             setRecovery(out.recovery ?? null);
             setSrvNote("이어졌어요. 복구 번호를 적어 두세요.");
             await refreshServer();
@@ -387,7 +404,7 @@ export default function Settings() {
         polling.current = false;
         clearInterval(timer);
       };
-    }, [linkCode, refreshServer]),
+    }, [refreshServer, ticket]),
   );
 
   const recoverNow = useCallback(async () => {
@@ -398,13 +415,13 @@ export default function Settings() {
       urlDirty.current = false;
       setRecovery((await recoverDevice(recoveryIn)) ?? null);
       setRecoveryIn("");
-      setLinkCode(null);
+      setTicket(null);
       setSrvNote("이어졌어요. 새 복구 번호를 적어 두세요.");
     } catch (e) {
-      setSrvNote(e instanceof Error ? e.message : "복구 번호가 맞지 않아요.");
+      setSrvNote(e instanceof Error ? e.message : "복구 번호가 맞지 않아요. 다시 넣어 주세요.");
     } finally {
-      await refreshServer();
       setSrvBusy(false);
+      void refreshServer();
     }
   }, [recoveryIn, refreshServer, srvUrl]);
 
@@ -423,8 +440,8 @@ export default function Settings() {
             } catch (e) {
               setSrvNote(e instanceof Error ? e.message : "끊지 못했어요. 다시 해 주세요.");
             } finally {
-              await refreshServer();
               setSrvBusy(false);
+              void refreshServer();
             }
           })();
         },
@@ -441,8 +458,8 @@ export default function Settings() {
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "저장하지 못했어요. 다시 눌러 주세요.");
     } finally {
-      await refreshServer();
       setSrvBusy(false);
+      void refreshServer();
     }
   }, [refreshServer, srvUrl]);
 
@@ -458,8 +475,8 @@ export default function Settings() {
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "받지 못했어요. 다시 눌러 주세요.");
     } finally {
-      await refreshServer();
       setSrvBusy(false);
+      void refreshServer();
     }
   }, [refreshServer]);
   const policy = app.policy;
@@ -543,8 +560,14 @@ export default function Settings() {
               const { setTiroKey } = await import("../../src/services/asr");
               await setTiroKey(null);
               await setDeviceToken(null);
+              // 분석 서버 카드도 같이 비운다. 안 그러면 다 지운 뒤에도 '연결됨'
+              // 과 복구 번호가 그대로 떠 있다 (탭을 다녀와야 사라졌다).
+              setRecovery(null);
+              setTicket(null);
+              setShowRecovery(false);
               await app.refresh();
               await load();
+              await refreshServer();
             } catch (e) {
               Alert.alert(
                 "다 지우지 못했어요",
@@ -555,7 +578,7 @@ export default function Settings() {
         },
       ],
     );
-  }, [app, load]);
+  }, [app, load, refreshServer]);
 
   const runCheck = useCallback(async () => {
     setChecking(true);
@@ -629,25 +652,32 @@ export default function Settings() {
           }}
         />
         {srvHasToken ? (
-          <Button label="연결 확인" busy={srvBusy} onPress={() => void saveServer()} />
+          <Button label="다시 확인" busy={srvBusy} onPress={() => void saveServer()} />
         ) : (
           <Button label="잇기" tone="primary" busy={srvBusy} onPress={() => void linkNow()} />
         )}
         <Row label="이 기기" value={srvHasToken ? "연결됨" : "아직 연결 안 됨"} />
 
         {/* 아직 안 이어졌을 때 — 버튼 하나로 끝나거나, 번호가 뜨거나 */}
-        {srvHasToken ? null : linkCode ? (
+        {srvHasToken ? null : ticket?.code ? (
           <>
             <Small muted={false}>이미 이은 폰에서 승인해 주세요.</Small>
-            <Text style={codeStyle}>{`${linkCode.slice(0, 3)} ${linkCode.slice(3)}`}</Text>
-            <Small>승인하면 저절로 이어져요. 기다리는 중이에요.</Small>
+            <Text style={codeStyle}>{`${ticket.code.slice(0, 3)} ${ticket.code.slice(3)}`}</Text>
+            <Small>승인하면 저절로 이어져요.</Small>
             <Small>폰이 이것 하나면 아래 복구 번호를 쓰세요.</Small>
+            <Button
+              label="그만두기"
+              onPress={() => {
+                setTicket(null);
+                setSrvNote(null);
+              }}
+            />
           </>
         ) : (
           <Small>서버에 처음 잇는 폰이면 바로 이어져요.</Small>
         )}
 
-        {/* 이어진 뒤 한 번만 뜨는 복구 번호. 여기서 놓쳐도 아래 줄에 늘 있다 */}
+        {/* 이은 직후 한 번 — 여기서 놓쳐도 아래 '복구 번호 보기' 에 늘 있다 */}
         {recovery ? (
           <>
             <Small muted={false}>복구 번호예요. 적어 두세요.</Small>
@@ -655,15 +685,31 @@ export default function Settings() {
           </>
         ) : null}
 
-        {/* 이어진 뒤 — 어떤 기기가 붙어 있나. 낯선 줄이 있으면 여기서 보인다 */}
+        {/* 이어진 뒤 — 어떤 기기가 붙어 있나.
+            숫자만 보여 주면 그 2대가 내 옛 폰인지 남의 폰인지 알 수가 없다.
+            '처음 열리는 문' 의 위험을 갚기로 한 것이 바로 이 목록이다 (docs/08). */}
         {srvState ? (
           <>
-            <Row label="이어진 기기" value={`${srvState.devices.length}대`} />
-            <Row label="복구 번호" value={srvState.recovery} />
-            <Small>앱을 지우기 전에 이 번호를 적어 두세요.</Small>
-            {srvState.devices.length > 1 ? (
+            <Small muted={false}>이어진 기기 {srvState.devices.length}대</Small>
+            {srvState.devices.map((d, i) => (
+              <Row
+                key={`${d.created_at}-${i}`}
+                label={d.mine ? "이 폰" : (d.label ?? "다른 기기")}
+                value={`${dayText(d.created_at)}에 이음`}
+              />
+            ))}
+            {srvState.devices.some((d) => !d.mine) ? (
               <Button label="다른 기기 끊기" busy={srvBusy} onPress={forgetOthers} />
             ) : null}
+            <Divider />
+            {/* 복구 번호는 서버 열쇠다. 늘 띄워 두면 어깨너머로 샌다 */}
+            <Small muted={false}>복구 번호</Small>
+            <Small>앱을 지우기 전에 이 번호를 적어 두세요.</Small>
+            {showRecovery ? (
+              <Text style={codeStyle}>{srvState.recovery}</Text>
+            ) : (
+              <Button label="번호 보기" onPress={() => setShowRecovery(true)} />
+            )}
           </>
         ) : null}
 
@@ -700,30 +746,37 @@ export default function Settings() {
           onPress={() => void approveNow()}
         />
         {srvHasToken ? null : <Small>먼저 이 폰을 이어 주세요.</Small>}
-        <Divider />
 
-        {/* 앱을 지웠다 다시 깔면 열쇠가 사라진다. 승인해 줄 기기도 없을 때의 길 */}
-        <Small muted={false}>복구 번호로 잇기</Small>
-        <Small>앱을 다시 깔았을 때 쓰는 번호예요.</Small>
-        <TextInput
-          value={recoveryIn}
-          onChangeText={setRecoveryIn}
-          placeholder="ABCD-EFGH-JKLM"
-          placeholderTextColor={t.textMuted}
-          autoCapitalize="characters"
-          autoCorrect={false}
-          maxLength={14}
-          style={{
-            minHeight: TOUCH_MIN,
-            paddingHorizontal: space.md,
-            borderRadius: radius.md,
-            backgroundColor: t.surfaceAlt,
-            color: t.text,
-            fontSize: 16,
-            letterSpacing: 2,
-          }}
-        />
-        <Button label="복구로 잇기" busy={srvBusy} onPress={() => void recoverNow()} />
+        {/* 앱을 지웠다 다시 깔면 열쇠가 사라진다. 승인해 줄 기기도 없을 때의 길.
+            이어져 있을 때는 아예 안 보인다 — 바로 위에 복구 번호가 떠 있어서,
+            그 번호를 여기 넣어 보는 사람이 반드시 나온다. 그러면 적어 둔 번호가
+            그 자리에서 무효가 되고, 정작 앱을 다시 깔 때 쓸 것이 없어진다. */}
+        {srvHasToken ? null : (
+          <>
+            <Divider />
+            <Small muted={false}>복구 번호로 잇기</Small>
+            <Small>앱을 다시 깔았을 때 쓰는 번호예요.</Small>
+            <TextInput
+              value={recoveryIn}
+              onChangeText={setRecoveryIn}
+              placeholder="ABCD-EFGH-JKLM"
+              placeholderTextColor={t.textMuted}
+              autoCapitalize="characters"
+              autoCorrect={false}
+              maxLength={14}
+              style={{
+                minHeight: TOUCH_MIN,
+                paddingHorizontal: space.md,
+                borderRadius: radius.md,
+                backgroundColor: t.surfaceAlt,
+                color: t.text,
+                fontSize: 16,
+                letterSpacing: 2,
+              }}
+            />
+            <Button label="복구로 잇기" busy={srvBusy} onPress={() => void recoverNow()} />
+          </>
+        )}
       </Card>
 
       {/* 판 번호와 업데이트 */}

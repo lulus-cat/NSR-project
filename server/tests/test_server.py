@@ -490,21 +490,25 @@ def test_문은_한_번만_열린다(tmp_path, monkeypatch):
 
         second = c.post("/device/link", json={})
         assert second.status_code == 202
-        code = second.json()["code"]
+        code, poll = second.json()["code"], second.json()["poll"]
         assert len(code) == 6 and "token" not in second.json()
+        ticket = {"code": code, "poll": poll}
 
         # 승인 전에는 아무것도 안 준다
-        assert c.post("/device/link/poll", json={"code": code}).status_code == 404
+        assert c.post("/device/link/poll", json=ticket).status_code == 404
         # 이어지지 않은 기기는 승인하지 못한다
         assert c.post("/connector/approve", json={"code": code}).status_code == 401
 
         ok = c.post("/connector/approve", json={"code": code}, headers=head)
         assert ok.status_code == 200 and ok.json()["kind"] == "device"
 
-        got = c.post("/device/link/poll", json={"code": code})
+        # 번호를 맞혀도 쪽지가 없으면 열쇠는 못 가져간다
+        assert c.post("/device/link/poll", json={"code": code, "poll": "남의쪽지"}).status_code == 404
+
+        got = c.post("/device/link/poll", json=ticket)
         assert got.status_code == 200 and got.json()["token"] != token
         # 열쇠는 한 번만 준다
-        assert c.post("/device/link/poll", json={"code": code}).status_code == 404
+        assert c.post("/device/link/poll", json=ticket).status_code == 404
 
 
 def test_승인만_하고_안_가져가면_열쇠가_안_남는다(tmp_path, monkeypatch):
@@ -513,11 +517,12 @@ def test_승인만_하고_안_가져가면_열쇠가_안_남는다(tmp_path, mon
     store = app.state.store
     with _client(app) as c:
         head = {"authorization": f"Bearer {_link(c)['token']}"}
-        code = c.post("/device/link", json={}).json()["code"]
+        ticket = c.post("/device/link", json={}).json()
+        code = ticket["code"]
         assert c.post("/connector/approve", json={"code": code}, headers=head).status_code == 200
         assert store.count_device_tokens() == 1
 
-        c.post("/device/link/poll", json={"code": code})
+        c.post("/device/link/poll", json={"code": code, "poll": ticket["poll"]})
         assert store.count_device_tokens() == 2
 
 
@@ -540,14 +545,73 @@ def test_앱을_다시_깔면_복구_번호로_잇는다(tmp_path, monkeypatch):
         assert c.post("/device/recover", json={"recovery": recovery}).status_code == 400
 
 
-def test_복구_번호는_찍어_볼_수_없다(tmp_path, monkeypatch):
+def test_틀린_복구_번호는_늦게_대답한다(tmp_path, monkeypatch):
+    """잠그지는 않는다 — 잠금은 남이 대신 걸어서 주인을 막을 수 있다."""
+    import nsr_server.app as app_module
+
+    app, _ = _app(tmp_path, monkeypatch)
+    waited: list[float] = []
+
+    async def note(seconds: float) -> None:
+        waited.append(seconds)
+
+    monkeypatch.setattr(app_module.asyncio, "sleep", note)
+    with _client(app) as c:
+        good = _link(c)["recovery"]
+        for _ in range(6):
+            assert c.post("/device/recover", json={"recovery": "2222-3333-4444"}).status_code == 400
+        assert waited == [app_module.BAD_RECOVERY_DELAY] * 6
+
+        # 여러 번 틀린 뒤에도 맞는 번호는 그대로 열린다
+        assert c.post("/device/recover", json={"recovery": good}).status_code == 200
+
+
+def test_승인은_두_번_눌러도_된다(tmp_path, monkeypatch):
+    """새 폰이 3초마다 묻는 중이라 '됐나?' 하고 또 누르는 일이 흔하다."""
     app, _ = _app(tmp_path, monkeypatch)
     with _client(app) as c:
-        _link(c)
-        for _ in range(5):
-            assert c.post("/device/recover", json={"recovery": "2222-3333-4444"}).status_code == 400
-        # 다섯 번 틀리면 잠긴다 — 맞는 번호를 넣어도 안 열린다
-        assert c.post("/device/recover", json={"recovery": "2222-3333-4444"}).status_code == 429
+        head = {"authorization": f"Bearer {_link(c)['token']}"}
+        ticket = c.post("/device/link", json={}).json()
+        code = ticket["code"]
+        assert c.post("/connector/approve", json={"code": code}, headers=head).status_code == 200
+        assert c.post("/connector/approve", json={"code": code}, headers=head).status_code == 200
+        got = c.post("/device/link/poll", json={"code": code, "poll": ticket["poll"]})
+        assert got.status_code == 200 and got.json()["token"]
+
+
+def test_번호_수명은_두드린다고_늘지_않는다(tmp_path, monkeypatch):
+    """늘어나면 남이 열 자리를 잡고 두드리는 것만으로 잇기를 영영 막을 수 있다."""
+    from nsr_server.link import LIVE_LINKS, new_link_code, poll_link
+
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
+    ticket = new_link_code(store)
+    before = store.take_oauth_pending(f"link-{ticket['code']}")
+    store.put_oauth_pending(f"link-{ticket['code']}", before, expires_at=before["exp"])
+
+    poll_link(store, ticket["code"], ticket["poll"])
+    after = store.take_oauth_pending(f"link-{ticket['code']}")
+    assert after["exp"] == before["exp"]
+
+    # 자리는 유한하다. 다 차면 새 번호를 안 만든다
+    store.put_oauth_pending(f"link-{ticket['code']}", after, expires_at=after["exp"])
+    for _ in range(LIVE_LINKS - 1):
+        new_link_code(store)
+    with pytest.raises(RuntimeError):
+        new_link_code(store)
+
+
+def test_번호는_십분_뒤_죽는다(tmp_path, monkeypatch):
+    from nsr_server.link import approve_link, new_link_code, poll_link
+
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
+    ticket = new_link_code(store)
+    holder = store.take_oauth_pending(f"link-{ticket['code']}")
+    # 십분 하고 일 초가 지난 것으로 해 둔다
+    store.put_oauth_pending(f"link-{ticket['code']}", holder, expires_at=holder["exp"] - 601)
+    assert approve_link(store, ticket["code"]) is False
+    assert poll_link(store, ticket["code"], ticket["poll"]) is None
 
 
 def test_이어진_기기만_목록과_복구_번호를_본다(tmp_path, monkeypatch):
@@ -561,6 +625,8 @@ def test_이어진_기기만_목록과_복구_번호를_본다(tmp_path, monkeyp
         assert state["recovery"] == out["recovery"]
         assert len(state["devices"]) == 1
         assert all("token" not in d for d in state["devices"])
+        # 어느 줄이 내 폰인지 보여야 낯선 줄을 가릴 수 있다
+        assert state["devices"][0]["mine"] is True
 
 
 def test_다른_기기_끊기는_이_기기만_남긴다(tmp_path, monkeypatch):
@@ -633,7 +699,7 @@ def test_기기_번호와_AI_번호는_겹치지_않는다(tmp_path, monkeypatch
     store = app.state.store
     # 주사위가 늘 같은 눈만 나오게 해서 겹침을 강제로 만든다
     monkeypatch.setattr(secrets, "randbelow", lambda _n: 234567 - 100000)
-    mine = link_module.new_link_code(store)
+    mine = link_module.new_link_code(store)["code"]
     assert mine == "234567"
     with pytest.raises(RuntimeError):
         app.state.auth.new_code("p-x")

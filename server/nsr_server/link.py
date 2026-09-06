@@ -35,8 +35,12 @@ LIVE_LINKS = 10  # 동시에 살아 있을 수 있는 기기 번호
 RECOVERY_KEY = "recovery"
 # 헷갈리는 글자(0·O·1·I)를 뺀 32글자. 12자면 대충 60비트다.
 ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
-FAIL_MAX = 5  # 복구 번호를 이만큼 틀리면
-FAIL_LOCK = 60 * 10  # 이만큼 잠근다
+# 복구 번호를 틀렸을 때 대답을 늦추는 시간.
+#
+# 잠그지 않는 이유: 잠금은 **남이 대신 걸 수 있다.** 인증 없이 아무 값이나
+# 몇 번 넣어 두면 정작 주인이 못 들어온다. 번호가 32^12(대략 60비트)라 초에
+# 한 번꼴로 늦추기만 해도 찍기는 사람 수명 밖으로 나간다.
+BAD_RECOVERY_DELAY = 1.0
 
 
 def _new_recovery() -> str:
@@ -67,12 +71,18 @@ def issue_token(store: Store, label: str) -> dict[str, str]:
 
 
 def use_recovery(store: Store, given: str) -> dict[str, str] | None:
-    """복구 번호를 열쇠로 바꾼다. 맞으면 번호는 새것으로 바뀐다(한 번만 쓴다)."""
+    """
+    복구 번호를 열쇠로 바꾼다. 맞으면 번호는 새것으로 바뀐다(한 번만 쓴다).
+
+    모양이 틀린 것(오타)과 값이 틀린 것(찍기)을 가른다 — 앱을 다시 깔고 열두
+    글자를 손으로 옮겨 적는 사람에게 오타는 기본값이다. 그걸 찍기와 같이 세면
+    정작 맞게 넣을 때 서버가 늦어져 있다.
+    """
     want = store.get_meta(RECOVERY_KEY)
     given = clean_recovery(given)
-    if not want or not given:
+    if not given:
         return None
-    if not secrets.compare_digest(given, want):
+    if not want or not secrets.compare_digest(given, want):
         return None
     store.put_meta(RECOVERY_KEY, _new_recovery())
     return issue_token(store, "복구 번호로 이은 기기")
@@ -85,17 +95,26 @@ def use_recovery(store: Store, given: str) -> dict[str, str] | None:
 # 보고 만들면 사용자가 앱에 넣은 번호가 엉뚱한 쪽을 열어 줄 수 있다.
 
 
-def new_link_code(store: Store) -> str:
+def new_link_code(store: Store) -> dict[str, str]:
+    """
+    번호와, 그 번호를 들여다볼 수 있는 **쪽지**를 함께 만든다.
+
+    쪽지를 따로 두는 이유: 여섯 자리는 사람이 옮겨 적으라고 짧게 만든 값이라
+    찍어 볼 수 있다. 폴링에 쪽지까지 요구하면, 번호를 맞혀도 열쇠는 못 가져간다
+    (Nextcloud 의 Login Flow v2 가 화면 값과 폴링 값을 나누는 것과 같은 이유다).
+    """
     if store.count_oauth_pending("link-") >= LIVE_LINKS:
-        raise RuntimeError("잇기 시도가 너무 많습니다. 10분 뒤에 다시 해 주십시오.")
+        raise RuntimeError("지금은 새로 이을 수 없습니다. 10분 뒤에 다시 해 주십시오.")
+    exp = time.time() + LINK_TTL
+    poll = secrets.token_urlsafe(24)
     for _ in range(20):
         code = f"{secrets.randbelow(900000) + 100000}"
         if store.peek_oauth_pending(f"link-{code}") or store.peek_oauth_pending(f"code-{code}"):
             continue
         store.put_oauth_pending(
-            f"link-{code}", {"state": "wait"}, expires_at=time.time() + LINK_TTL
+            f"link-{code}", {"state": "wait", "poll": poll, "exp": exp}, expires_at=exp
         )
-        return code
+        return {"code": code, "poll": poll}
     raise RuntimeError("번호를 만들지 못했습니다. 잠시 뒤 다시 해 주십시오.")
 
 
@@ -106,17 +125,22 @@ def approve_link(store: Store, code: str) -> bool:
     여기서 열쇠를 만들지 않는다 — 새 기기가 주우러 올 때 만든다. 승인만 하고
     안 주워 가면 아무도 안 가진 열쇠가 표에 남고, 그 한 줄 때문에 '기기가 0대'
     라는 조건이 깨져 처음 열리는 문이 영영 닫힌다.
+
+    두 번 눌러도 된다. 새 폰이 3초마다 묻고 있으니 "됐나?" 하고 한 번 더 넣는
+    것은 아주 흔한 일인데, 그때 대기표를 없애 버리면 잇기가 조용히 죽는다.
     """
-    holder = store.take_oauth_pending(f"link-{code.strip()}")
-    if not holder or holder.get("state") != "wait":
+    key = f"link-{code.strip()}"
+    holder = store.take_oauth_pending(key)
+    if not holder:
         return False
-    store.put_oauth_pending(
-        f"link-{code.strip()}", {"state": "ok"}, expires_at=time.time() + LINK_TTL
-    )
+    # 만료 시각은 처음 정한 것을 그대로 물려준다. 여기서 다시 밀면 번호가
+    # 안 죽어서, 남이 열 개를 잡고 두드리는 것만으로 잇기를 영영 막을 수 있다.
+    exp = float(holder.get("exp") or time.time() + LINK_TTL)
+    store.put_oauth_pending(key, {**holder, "state": "ok"}, expires_at=exp)
     return True
 
 
-def poll_link(store: Store, code: str) -> dict[str, Any] | None:
+def poll_link(store: Store, code: str, poll: str) -> dict[str, Any] | None:
     """
     새 기기가 몇 초마다 들여다본다. 승인 전이면 None, 승인 뒤에는 **한 번만** 열쇠.
 
@@ -126,34 +150,14 @@ def poll_link(store: Store, code: str) -> dict[str, Any] | None:
     holder = store.take_oauth_pending(key)
     if not holder:
         return None
-    if holder.get("state") != "ok":
-        # 아직 기다리는 중이다. 꺼냈으니 도로 넣어 둔다.
-        store.put_oauth_pending(key, holder, expires_at=time.time() + LINK_TTL)
+    exp = float(holder.get("exp") or time.time() + LINK_TTL)
+    # bytes 로 견준다. compare_digest 는 ASCII 가 아닌 str 을 받으면 터지는데,
+    # 여기 들어오는 값은 바깥에서 온 아무 글자나다 (한글을 넣으면 500 이 났다).
+    mine = secrets.compare_digest(
+        str(holder.get("poll", "")).encode("utf-8"), (poll or "").encode("utf-8")
+    )
+    if not mine or holder.get("state") != "ok":
+        # 아직 기다리는 중이거나 남의 번호다. 꺼냈으니 도로 넣어 둔다.
+        store.put_oauth_pending(key, holder, expires_at=exp)
         return None
     return issue_token(store, "승인받은 기기")
-
-
-class FailLock:
-    """
-    복구 번호를 찍어 보는 것을 막는다.
-
-    ponytail: 프로세스 안에만 둔다 — 서버를 껐다 켜면 풀린다. 번호가 12자리라
-    잠금이 없어도 찍기는 사실상 불가능하고, 이건 실수로 여러 번 넣었을 때를 위한
-    안전장치다. DB 로 옮길 이유가 생기면 그때 옮긴다.
-    """
-
-    def __init__(self) -> None:
-        self.fails = 0
-        self.until = 0.0
-
-    def locked(self) -> bool:
-        return time.time() < self.until
-
-    def bad(self) -> None:
-        self.fails += 1
-        if self.fails >= FAIL_MAX:
-            self.fails = 0
-            self.until = time.time() + FAIL_LOCK
-
-    def good(self) -> None:
-        self.fails = 0

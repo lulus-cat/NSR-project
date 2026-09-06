@@ -339,12 +339,26 @@ class Store:
                 (key, value),
             )
 
-    def list_device_tokens(self) -> list[dict[str, Any]]:
-        """어떤 기기가 붙어 있나. **열쇠 자체는 주지 않는다.**"""
+    def list_device_tokens(self, current: str = "") -> list[dict[str, Any]]:
+        """
+        어떤 기기가 붙어 있나. **열쇠 자체는 주지 않는다.**
+
+        묻는 쪽의 열쇠와 같은 줄에 `mine` 을 붙인다. 이게 있어야 앱에서 "2대"가
+        내 옛 폰인지 남의 폰인지 가릴 수 있다 — 처음 열리는 문의 위험을 갚기로
+        한 것이 바로 이 목록이다(docs/08).
+        """
         rows = self.db.execute(
-            "SELECT email, label, created_at, last_seen_at FROM device_tokens ORDER BY created_at"
+            "SELECT token, label, created_at, last_seen_at FROM device_tokens ORDER BY created_at"
         ).fetchall()
-        return [dict(r) for r in rows]
+        return [
+            {
+                "label": r["label"],
+                "created_at": r["created_at"],
+                "last_seen_at": r["last_seen_at"],
+                "mine": bool(current) and r["token"] == current,
+            }
+            for r in rows
+        ]
 
     def put_oauth_client(self, client_id: str, info: dict[str, Any]) -> None:
         with self.db:

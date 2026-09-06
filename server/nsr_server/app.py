@@ -37,6 +37,7 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 import json
@@ -57,7 +58,7 @@ from starlette.responses import HTMLResponse
 from .config import Config
 from .oauth import NsrOAuthProvider
 from .link import (
-    FailLock,
+    BAD_RECOVERY_DELAY,
     approve_link,
     issue_token,
     new_link_code,
@@ -363,8 +364,6 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     # 예전에는 VPS 에서 명령을 돌려 QR 을 만들었는데, 잇고 싶을 때마다 서버에
     # 들어가야 하는 것이 벽이라 지웠다.
 
-    recovery_lock = FailLock()
-
     def bearer(request: Request) -> str:
         header = request.headers.get("authorization", "")
         return header[7:] if header.startswith("Bearer ") else ""
@@ -386,10 +385,11 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             log.info("첫 기기 연결 — 이제 문이 닫힌다")
             return JSONResponse({"open": True, **issue_token(store, "처음 이은 기기")})
         try:
-            code = new_link_code(store)
+            ticket = new_link_code(store)
         except RuntimeError as e:
             return JSONResponse({"error": str(e)}, status_code=429)
-        return JSONResponse({"open": False, "code": code}, status_code=202)
+        # code 는 사람이 옮겨 적는 여섯 자리, poll 은 이 기기만 아는 쪽지다.
+        return JSONResponse({"open": False, **ticket}, status_code=202)
 
     async def device_link_poll(request: Request) -> JSONResponse:
         """새 기기가 몇 초마다 묻는 자리. 승인 전에는 404 다."""
@@ -397,7 +397,8 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         if body is None:
             return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
         code = only_digits(body.get("code"))
-        got = poll_link(store, code) if len(code) == 6 else None
+        poll = str(body.get("poll", ""))
+        got = poll_link(store, code, poll) if len(code) == 6 else None
         if not got:
             return JSONResponse({"waiting": True}, status_code=404)
         log.info("새 기기 연결 — 승인으로")
@@ -408,16 +409,13 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         body = await json_body(request)
         if body is None:
             return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
-        if recovery_lock.locked():
-            return JSONResponse(
-                {"error": "여러 번 틀렸습니다. 10분 뒤에 다시 해 주십시오."}, status_code=429
-            )
         got = use_recovery(store, str(body.get("recovery", "")))
         if not got:
-            recovery_lock.bad()
+            # 잠그지 않고 늦춘다. 잠금은 남이 대신 걸 수 있어서, 아무 값이나 몇 번
+            # 넣어 두면 정작 주인이 못 들어온다 (link.py 의 BAD_RECOVERY_DELAY).
+            await asyncio.sleep(BAD_RECOVERY_DELAY)
             log.info("복구 번호 실패")
             return JSONResponse({"error": "복구 번호가 맞지 않습니다."}, status_code=400)
-        recovery_lock.good()
         log.info("복구 번호로 기기 연결")
         return JSONResponse(got)
 
@@ -431,7 +429,10 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         if not device_ok(request):
             return JSONResponse({"error": "이 폰은 서버에 이어져 있지 않습니다."}, status_code=401)
         return JSONResponse(
-            {"devices": store.list_device_tokens(), "recovery": recovery_code(store)}
+            {
+                "devices": store.list_device_tokens(bearer(request)),
+                "recovery": recovery_code(store),
+            }
         )
 
     async def device_forget_others(request: Request) -> JSONResponse:
@@ -491,7 +492,7 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
   .wait {{ font-size:13px; color:#8A857E; }}
 </style></head><body><main>
   <h1>폰에서 승인해 주세요</h1>
-  <p>NSR 앱 → 설정 → 분석 서버 → <b>AI 연결 승인</b> 에<br>아래 번호를 넣어 주세요.</p>
+  <p>NSR 앱 → 설정 → 분석 서버 → <b>승인 번호</b> 에<br>아래 번호를 넣어 주세요.</p>
   <div class="code">{spaced}</div>
   <p class="wait" id="wait">기다리는 중이에요… 10분 안에 해 주세요.</p>
   <p class="wait">폰이 아직 서버에 안 이어져 있으면 먼저 이어야 해요.<br>

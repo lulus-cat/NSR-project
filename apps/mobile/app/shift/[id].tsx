@@ -130,7 +130,7 @@ export default function ShiftDetail() {
     setSendNote(null);
     try {
       if (!(await serverReady())) {
-        setSendNote("설정에서 서버 주소와 토큰을 먼저 넣어 주세요.");
+        setSendNote("설정에서 주소를 넣고 잇기를 눌러 주세요.");
         return;
       }
       const out = await sendShift(shiftId, (_pct: number, note?: string) => setSendNote(note ?? null));
