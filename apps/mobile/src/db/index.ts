@@ -330,8 +330,14 @@ export async function deleteTranscript(
         shiftId,
         id,
       ]);
+      // 파일이 있는 것만 '안 보냄'으로 되돌린다. 티로에서 가져온 노트는 소리가
+      // 이 폰에 없어서, 되돌리면 보낼 수도 없는 것이 '안 보낸 녹음'에 영영 남는다.
       await db.runAsync(
-        "UPDATE recordings SET state = 'recorded' WHERE id = ? AND state = 'transcribed'",
+        `UPDATE recordings
+            SET state = CASE WHEN file_uri IS NOT NULL THEN 'recorded' ELSE 'discarded' END,
+                discard_reason = CASE WHEN file_uri IS NOT NULL THEN discard_reason
+                                      ELSE '티로에서 가져온 글자를 지웠어요' END
+          WHERE id = ? AND state = 'transcribed'`,
         [id],
       );
     }
@@ -339,7 +345,11 @@ export async function deleteTranscript(
   }
   await db.runAsync("DELETE FROM segments WHERE shift_id = ?", [shiftId]);
   await db.runAsync(
-    "UPDATE recordings SET state = 'recorded' WHERE shift_id = ? AND state = 'transcribed'",
+    `UPDATE recordings
+        SET state = CASE WHEN file_uri IS NOT NULL THEN 'recorded' ELSE 'discarded' END,
+            discard_reason = CASE WHEN file_uri IS NOT NULL THEN discard_reason
+                                  ELSE '티로에서 가져온 글자를 지웠어요' END
+      WHERE shift_id = ? AND state = 'transcribed'`,
     [shiftId],
   );
 }
@@ -578,6 +588,25 @@ export async function setSpeakerRoleForCluster(
     "UPDATE segments SET speaker_role = ? WHERE shift_id = ? AND speaker_id = ?",
     [role, shiftId, speakerId],
   );
+}
+
+/**
+ * 문장 여러 개의 화자를 한 번에 바꾼다.
+ *
+ * 예전에는 화면이 문장마다 하나씩 await 했다. 인계 구간을 넓게 잡으면 수천 번의
+ * 왕복이라 화면이 멎은 것처럼 보였고, 그동안 또 누르면 범위가 겹쳤다.
+ */
+export async function setSpeakerRoles(ids: string[], role: SpeakerRole): Promise<void> {
+  if (ids.length === 0) return;
+  const db = await getDb();
+  // SQLite 변수 상한(999)에 걸리지 않게 끊어 보낸다.
+  for (let i = 0; i < ids.length; i += 400) {
+    const part = ids.slice(i, i + 400);
+    await db.runAsync(
+      `UPDATE segments SET speaker_role = ? WHERE id IN (${part.map(() => "?").join(",")})`,
+      [role, ...part],
+    );
+  }
 }
 
 /** 사용자가 본문을 직접 고쳤을 때. 원문(raw_text)은 건드리지 않는다. */

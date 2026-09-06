@@ -27,6 +27,7 @@ import {
   getRecording,
   listRecordings,
   setRecordingState,
+  setSetting,
 } from "../db";
 import {
   TIRO_API,
@@ -205,5 +206,8 @@ export async function importTiroNote(input: {
     onProgress: input.onProgress,
   });
   await setRecordingState(id, "transcribed");
+  // 홈의 "새 전사 결과가 나왔어요" 줄이 이 값을 본다. 쓰는 곳이 없어서 그 줄은
+  // 지금까지 한 번도 뜬 적이 없었다 (쓰던 코드가 전사 경로와 함께 지워졌다).
+  await setSetting("transcribe.lastResult", { shiftId, sentences, seen: false });
   return { shiftId, recordingId: id, sentences, locked };
 }

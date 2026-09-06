@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, View } from "react-native";
 import { Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
   DEFAULT_TEMPLATES,
@@ -78,9 +78,13 @@ export default function Duty() {
     setTemps(map);
   }, []);
 
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // 근무 시간을 설정에서 고치거나 결과를 받아온 뒤에도 이 화면이 옛 숫자를
+  // 그대로 보여 주고 있었다. 들어올 때마다 다시 읽는다.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const byDate = useMemo(() => new Map(entries.map((e) => [e.date, e])), [entries]);
   // 사용자 근무 시간이 달력·통계·자동 기록 판정 모두에 같은 값으로 반영된다.
@@ -551,8 +555,16 @@ export default function Duty() {
                 <Button
                   label={`${month + 1}월 내보내기`}
                   onPress={async () => {
-                    const r = await exportMonthToCalendar(entries, year, month);
-                    setSyncMsg(r.message);
+                    try {
+                      const r = await exportMonthToCalendar(entries, year, month);
+                      setSyncMsg(r.message);
+                    } catch (e) {
+                      // 조용히 사라지면 '버튼이 안 먹는다'로 보인다
+                      // (바로 옆 가져오기 버튼은 이미 이렇게 한다).
+                      setSyncMsg(
+                        e instanceof Error ? e.message : "달력에 넣지 못했어요. 권한을 확인해 주세요.",
+                      );
+                    }
                   }}
                 />
               </View>

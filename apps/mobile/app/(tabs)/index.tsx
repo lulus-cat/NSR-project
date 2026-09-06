@@ -9,7 +9,7 @@ import {
   View,
 } from "react-native";
 import { Text } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import type { ComponentProps, ReactNode } from "react";
 import {
@@ -318,6 +318,8 @@ export default function Home() {
   >([]);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
   const [needsTiroKey, setNeedsTiroKey] = useState(false);
+  /** 기록 버튼이 도는 중. 두 번 눌러 방금 켠 것을 끄는 일을 막는다. */
+  const [micBusy, setMicBusy] = useState(false);
   const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   const [weekStrip, setWeekStrip] = useState<
@@ -380,9 +382,14 @@ export default function Home() {
   useEffect(() => {
     void checkForUpdate().then(setUpdate);
   }, []);
-  useEffect(() => {
-    void load();
-  }, [load]);
+  // 탭 화면은 한 번 뜨면 안 죽는다. 그래서 들어올 때마다 다시 읽는다 —
+  // 티로 열쇠를 방금 넣었는데 "열쇠를 넣어 주세요"가 그대로 있거나, 카드를
+  // 다 복습했는데 "복습할 카드 12장"이 남아 있던 것이 이 때문이었다.
+  useFocusEffect(
+    useCallback(() => {
+      void load();
+    }, [load]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -604,7 +611,11 @@ export default function Home() {
           <Pressable
             accessibilityRole="button"
             accessibilityLabel={app.recording ? "기록 멈추기" : "기록 시작하기"}
+            disabled={micBusy}
             onPress={async () => {
+              if (micBusy) return; // 두 번 누르면 방금 켠 기록을 자기가 끈다
+              setMicBusy(true);
+              try {
               const geo = await import("../../src/services/geofence");
               if (app.recording) {
                 // 사람이 끈 것을 위치 판정이 15분 뒤에 되살리면 안 된다.
@@ -622,6 +633,9 @@ export default function Home() {
                 await geo.markStoppedByUser(0); // 다시 켰으니 잠금을 푼다
               }
               await app.refresh();
+              } finally {
+                setMicBusy(false);
+              }
             }}
             style={({ pressed }) => ({
               width: 44,

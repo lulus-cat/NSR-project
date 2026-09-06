@@ -32,7 +32,6 @@ import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/the
 import {
   deleteShiftRecordings,
   deleteTranscript,
-  getPipelineJob,
   getSetting,
   listRecordings,
   listSegments,
@@ -42,11 +41,11 @@ import {
   saveUserTerm,
   setSetting,
   setSpeakerRole,
+  setSpeakerRoles,
   setSpeakerRoleForCluster,
   updateSegmentText,
   type RecordingRow,
 } from "../../src/db";
-import { loadLexicon } from "../../src/services/asr";
 import { redactForExport, shareText } from "../../src/services/export";
 import { exportBaseName, transcriptToText } from "../../src/services/export-bundle";
 
@@ -113,7 +112,7 @@ const SentenceRow = memo(function SentenceRow({
   isPlaying: boolean;
   onPressHeader: (id: string) => void;
   onPressSentence: (segment: TranscriptSegment) => void;
-  onPressWord: (segmentId: string, word: string) => void;
+  onPressWord: (segmentId: string, word: string, at: number) => void;
 }) {
   const t = useTheme();
   const role = segment.speakerRole ?? "unknown";
@@ -181,7 +180,7 @@ const SentenceRow = memo(function SentenceRow({
                   accessibilityRole="button"
                   accessibilityLabel={`${word} — 길게 눌러 고치기`}
                   onPress={() => onPressSentence(segment)}
-                  onLongPress={() => onPressWord(segment.id, word)}
+                  onLongPress={() => onPressWord(segment.id, word, i)}
                   delayLongPress={300}
                 >
                   <Text style={[type.body, { color: t.text }]}>{word}</Text>
@@ -279,6 +278,8 @@ export default function TranscriptView() {
 
   const [segments, setSegments] = useState<TranscriptSegment[]>([]);
   const [recordings, setRecordings] = useState<RecordingRow[]>([]);
+  // 티로에서 가져온 노트는 소리가 이 폰에 없다. 화면 문구와 문장 누르기가 그걸 알아야 한다.
+  const hasAudio = recordings.some((r) => !!r.file_uri);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -334,7 +335,7 @@ export default function TranscriptView() {
   const [rangeStart, setRangeStart] = useState<string | null>(null);
   const [pendingRole, setPendingRole] = useState<SpeakerRole>("senior");
   const [wordTarget, setWordTarget] = useState<
-    { segmentId: string; word: string; replacement: string } | null
+    { segmentId: string; word: string; replacement: string; at: number } | null
   >(null);
 
   // ── 재생 ──────────────────────────────────────────────
@@ -548,9 +549,15 @@ export default function TranscriptView() {
       const next = assignSpeakerRange(segments, rangeStart, segmentId, pendingRole);
       setRangeStart(null);
       setSegments(next);
-      const changed = next.filter((n, i) => n.speakerRole !== segments[i]?.speakerRole);
-      for (const seg of changed) {
-        if (seg.speakerRole) await setSpeakerRole(seg.id, seg.speakerRole);
+      // 한 번에 쓴다. 문장마다 왕복하던 때는 넓은 범위에서 화면이 멎었다.
+      const changed = next.filter(
+        (n, i) => n.speakerRole !== segments[i]?.speakerRole && n.speakerRole,
+      );
+      if (changed.length > 0) {
+        await setSpeakerRoles(
+          changed.map((c) => c.id),
+          pendingRole,
+        );
       }
     },
     [pendingRole, rangeStart, segments],
@@ -569,12 +576,17 @@ export default function TranscriptView() {
   // ── 단어 고치기 ───────────────────────────────────────
   const applyWordFix = useCallback(async () => {
     if (!wordTarget) return;
-    const { segmentId, word, replacement } = wordTarget;
+    const { segmentId, word, replacement, at } = wordTarget;
     const to = replacement.trim();
     const seg = segments.find((x) => x.id === segmentId);
     if (!seg || !to || to === word) return;
 
-    const nextText = seg.text.replace(word, to);
+    // 화면이 나눈 것과 같은 방식으로 쪼개서, 눌렀던 그 자리만 바꾼다.
+    const parts = seg.text.split(/(\s+)/);
+    const nextText =
+      parts[at] === word
+        ? parts.map((x, i) => (i === at ? to : x)).join("")
+        : seg.text.replace(word, to);
     setSegments((prev) =>
       prev.map((x) => (x.id === segmentId ? { ...x, text: nextText } : x)),
     );
@@ -588,7 +600,8 @@ export default function TranscriptView() {
 
   const addToMyDict = useCallback(async () => {
     if (!wordTarget) return;
-    const surface = wordTarget.word.trim();
+    // 위 칸에 고쳐 적은 말을 넣는다. 원래 말(잘못 들린 것)을 넣던 것이 버그였다.
+    const surface = (wordTarget.replacement || wordTarget.word).trim();
     if (surface.length < 2) {
       setError("두 글자 이상 적어 주세요.");
       return;
@@ -606,8 +619,10 @@ export default function TranscriptView() {
     await loadDictInfo();
   }, [loadDictInfo, wordTarget]);
 
-  const onPressWord = useCallback((segmentId: string, word: string) => {
-    setWordTarget({ segmentId, word, replacement: word });
+  const onPressWord = useCallback((segmentId: string, word: string, at: number) => {
+    // 몇 번째 조각인지 함께 들고 있는다. 같은 말이 한 문장에 두 번 나오면
+    // replace 가 늘 앞의 것을 고쳤다 ("포리 빼고 포리 다시").
+    setWordTarget({ segmentId, word, replacement: word, at });
   }, []);
 
 
@@ -708,7 +723,7 @@ export default function TranscriptView() {
           {date} · {dutyLabel} 전사{recLabel ? ` · ${recLabel}` : ""}
         </Heading>
         <Small>문장 {segments.length}개예요.</Small>
-        <Small>문장을 누르면 그 자리부터 들려요.</Small>
+        <Small>{hasAudio ? "문장을 누르면 그 자리부터 들려요." : "소리는 티로 앱에 있어요."}</Small>
         <Small>단어를 길게 누르면 고칠 수 있어요.</Small>
         {segments.length > 0 ? (
           <>

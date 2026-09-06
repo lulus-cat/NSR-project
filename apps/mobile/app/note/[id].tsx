@@ -109,16 +109,36 @@ export default function NoteEditor() {
   );
 
   // 자동 저장 — 타자 멈추고 800ms 뒤. 화면을 떠나도 마지막 상태가 남는다.
+  //
+  // 떠날 때 **기다리던 저장을 흘려보낸다.** 예전에는 타이머만 끄고 나가서,
+  // 마지막 0.8초 안에 친 글자가 조용히 사라졌다 (뒤로 가기, 앱 잠금, 탭 이동).
+  const pending = useRef<{ title?: string; body?: string } | null>(null);
   const scheduleSave = useCallback(
     (next: { title?: string; body?: string }) => {
+      pending.current = { ...pending.current, ...next };
       if (saveTimer.current) clearTimeout(saveTimer.current);
-      saveTimer.current = setTimeout(() => void persist(next), 800);
+      saveTimer.current = setTimeout(() => {
+        const queued = pending.current;
+        pending.current = null;
+        void persist(queued ?? next);
+      }, 800);
     },
     [persist],
   );
-  useEffect(() => () => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-  }, []);
+  // persist 는 최신 값을 봐야 한다. 떠나는 순간의 것을 ref 로 들고 있는다.
+  const persistRef = useRef(persist);
+  persistRef.current = persist;
+  useEffect(
+    () => () => {
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      if (pending.current) {
+        const queued = pending.current;
+        pending.current = null;
+        void persistRef.current(queued);
+      }
+    },
+    [],
+  );
 
   const changeBody = useCallback(
     (v: string) => {

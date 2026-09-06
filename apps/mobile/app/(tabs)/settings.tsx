@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert, Linking, Platform, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import type { ComponentProps, ReactNode } from "react";
 import { Text } from "react-native";
@@ -266,11 +266,21 @@ export default function Settings() {
   const [srvHasToken, setSrvHasToken] = useState(false);
   const [srvBusy, setSrvBusy] = useState(false);
   const [srvNote, setSrvNote] = useState<string | null>(null);
+  // 앱 버전·디버그 카드가 제 자리에서 말하게 한다 (예전에는 분석 서버 카드에 떴다).
+  const [cardNote, setCardNote] = useState<string | null>(null);
 
   // 화면에 들어올 때마다 다시 본다. QR 로 이은 직후에도, 401 로 열쇠가 지워진
   // 뒤에도 '이 기기' 줄이 사실과 같아야 한다 (탭 화면은 한 번 뜨면 안 죽는다).
+  // 홈의 "새 판이 나왔어요 · 받기" 로 들어오면 이 카드가 비어 있었다.
+  useEffect(() => {
+    void checkForUpdate().then(setUpdate);
+  }, []);
+
+  // 주소 칸은 사람이 고치고 있을 수 있다. 손대지 않은 동안만 서버 값으로 채운다 —
+  // 예전에는 탭을 다녀오면 치던 주소가 저장된 값으로 되돌아갔다.
+  const urlDirty = useRef(false);
   const refreshServer = useCallback(async () => {
-    setSrvUrl(await getServerUrl());
+    if (!urlDirty.current) setSrvUrl(await getServerUrl());
     setSrvHasToken((await getDeviceToken()) !== null);
   }, []);
   useFocusEffect(
@@ -456,7 +466,10 @@ export default function Settings() {
         <Small>이름 같은 민감한 말은 가리고 보내요.</Small>
         <TextInput
           value={srvUrl}
-          onChangeText={setSrvUrl}
+          onChangeText={(v) => {
+            urlDirty.current = true;
+            setSrvUrl(v);
+          }}
           placeholder="https://내서버주소"
           placeholderTextColor={t.textMuted}
           autoCapitalize="none"
@@ -519,6 +532,7 @@ export default function Settings() {
         <GroupHead icon="information-circle-outline" color="#4C7DDB" title="앱 버전" badge={<Badge text="알파" tone="warn" />} />
         <Small muted={false}>{version ? `현재 ${version}` : "개발 중 실행"}</Small>
         <Small>앱이 새 버전을 알려드려요.</Small>
+        {cardNote ? <Small muted={false}>{cardNote}</Small> : null}
 
         {update?.show && update.release ? (
           <>
@@ -543,7 +557,7 @@ export default function Settings() {
                     setUpdatePct(0);
                     const r = await downloadAndInstall(update.release, setUpdatePct);
                     setUpdatePct(null);
-                    if (!r.ok) setSrvNote(r.error ?? "내려받지 못했어요. 인터넷 연결을 확인해 주세요.");
+                    if (!r.ok) setCardNote(r.error ?? "내려받지 못했어요. 인터넷 연결을 확인해 주세요.");
                   }}
                 />
               </View>
@@ -1241,7 +1255,7 @@ export default function Settings() {
               onPress={async () => {
                 const url = await buildIssueUrl();
                 const ok = await Linking.openURL(url).then(() => true).catch(() => false);
-                if (!ok) setSrvNote("인터넷 창을 열지 못했어요. 다시 눌러 주세요.");
+                if (!ok) setCardNote("인터넷 창을 열지 못했어요. 다시 눌러 주세요.");
               }}
             />
           </View>

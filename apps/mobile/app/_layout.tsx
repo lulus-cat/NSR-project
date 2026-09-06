@@ -114,13 +114,21 @@ function Gate() {
     );
   }
 
-  if (app.locked) {
-    // 잠금화면은 실행 로딩과 같은 얼굴이다 — 가운데 로고, 아래 단추 하나.
-    // "잠겨 있습니다" 같은 상태 설명 문장은 두지 않는다.
-    return (
+  // 잠금화면은 실행 로딩과 같은 얼굴이다 — 가운데 로고, 아래 단추 하나.
+  // "잠겨 있습니다" 같은 상태 설명 문장은 두지 않는다.
+  //
+  // **Stack 대신 그리지 않고 위에 덮는다.** 대신 그리면 화면 더미가 통째로
+  // 사라져서, 30초 자리를 비웠다 돌아올 때마다 보던 전사본도, 쓰던 노트도,
+  // 스크롤 위치도 다 날아갔다.
+  const lockOverlay = app.locked ? (
       <View
         style={{
-          flex: 1,
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          zIndex: 10,
           backgroundColor: "#131312",
           alignItems: "center",
           justifyContent: "center",
@@ -150,8 +158,7 @@ function Gate() {
           </Text>
         ) : null}
       </View>
-    );
-  }
+  ) : null;
 
   return (
     <>
@@ -171,8 +178,12 @@ function Gate() {
       <Stack.Screen name="transcript/[id]" options={{ title: "전사 결과" }} />
       <Stack.Screen name="tiro-notes" options={{ title: "티로 노트 가져오기" }} />
       <Stack.Screen name="linked" options={{ title: "서버 잇기" }} />
+      {/* 없으면 머리글에 주소가 그대로 뜬다 (notes, note/[id]). */}
+      <Stack.Screen name="notes" options={{ title: "노트" }} />
+      <Stack.Screen name="note/[id]" options={{ title: "노트" }} />
     </Stack>
     <LaunchOverlay ready />
+    {lockOverlay}
     </>
   );
 }

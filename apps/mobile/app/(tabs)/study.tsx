@@ -403,7 +403,7 @@ export default function Study() {
             {sets.length === 0 ? (
               <Card>
                 <Body muted>
-                  {search ? "찾는 카드가 없어요." : "카드가 없어요. 분석을 돌리면 저절로 생겨요."}
+                  {search ? "찾는 카드가 없어요." : "카드가 없어요. 근무를 보내고 결과를 받으면 생겨요."}
                 </Body>
               </Card>
             ) : (
@@ -481,7 +481,7 @@ export default function Study() {
             <Card>
               <Body muted>
                 
-  보고서가 없어요. 전사 결과 화면에서 분석을 돌리면 생겨요.
+  보고서가 없어요. 근무 기록에서 보내고 클로드에서 분석해요.
 </Body>
             </Card>
           ) : (
@@ -554,7 +554,7 @@ export default function Study() {
         {mode === "reports" ? (
           <Small>
             
-  AI 를 켜면 보고서에 근무 평가도 들어가요.
+  클로드가 쓴 보고서는 설정에서 '결과 받기' 로 가져와요.
 </Small>
         ) : null}
       </ScrollView>

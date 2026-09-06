@@ -20,6 +20,7 @@ import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import { DEFAULT_TEMPLATES, type ShiftCode } from "@nsr/core";
 import { Badge, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { Markdown } from "../../src/components/markdown";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   countSegments,
@@ -160,6 +161,11 @@ export default function ShiftDetail() {
   /** 참이면 음성 파일 목록이 모든 날의 밀린 녹음을 보여준다. */
   const [showAll, setShowAll] = useState(false);
 
+  // 마지막 한 건이 목록에서 빠지면 '전체 보기' 토글이 사라져 빈 카드에 갇혔다.
+  useEffect(() => {
+    if (allPending.length === 0 && showAll) setShowAll(false);
+  }, [allPending.length, showAll]);
+
   const load = useCallback(async () => {
     const [count, recs, md, cfs, perRec, waiting] = await Promise.all([
       countSegments(shiftId),
@@ -177,7 +183,7 @@ export default function ShiftDetail() {
     setAllPending(waiting);
   }, [shiftId]);
 
-  // 전사 결과 화면에서 지우고(또는 분석을 걸고) 돌아오는 길 — 낡지 않게 다시 읽는다.
+  // 전사 결과 화면에서 지우고 돌아오는 길 — 낡지 않게 다시 읽는다.
   useFocusEffect(
     useCallback(() => {
       void load();
@@ -393,7 +399,7 @@ export default function ShiftDetail() {
         }
         if (kind === "report" || kind === "reportPdf") {
           if (!reportMd) {
-            setError("아직 보고서가 없어요. 전사 결과 화면에서 분석을 돌려 주세요.");
+            setError("아직 보고서가 없어요. 이 화면에서 보내고 클로드에서 분석해요.");
             return;
           }
           setPreview({
@@ -408,7 +414,7 @@ export default function ShiftDetail() {
         if (kind === "cards") {
           const cards = await listCardsForShift(shiftId);
           if (cards.length === 0) {
-            setError("이 근무에서 만든 단어가 없어요. 분석을 돌리면 생겨요.");
+            setError("이 근무에서 만든 단어가 없어요. 클로드가 넣으면 생겨요.");
             return;
           }
           setPreview({
@@ -421,7 +427,7 @@ export default function ShiftDetail() {
         }
         const rep = await getShiftReport(shiftId);
         if (!rep) {
-          setError("분석 결과가 없어요. 전사 결과 화면에서 분석을 돌려 주세요.");
+          setError("분석 결과가 없어요. 이 화면에서 보내고 클로드에서 분석해요.");
           return;
         }
         setPreview({
@@ -526,6 +532,27 @@ export default function ShiftDetail() {
             </Text>
           </View>
           <Badge text={badge.text} tone={badge.tone} />
+          {/* 보냈다고 표시 — 안드로이드는 공유 창에서 무엇을 했는지 안 알려 준다.
+              그래서 사람이 누른다. 안 누르면 목록에 그대로 남는다(안전한 쪽). */}
+          {r.state === "recorded" && r.file_uri ? (
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="티로에 보냈다고 표시"
+              onPress={async () => {
+                await setRecordingState(r.id, "sent");
+                await load();
+              }}
+              style={({ pressed }) => ({
+                width: TOUCH_MIN,
+                height: TOUCH_MIN,
+                alignItems: "center",
+                justifyContent: "center",
+                opacity: pressed ? 0.5 : 1,
+              })}
+            >
+              <Ionicons name="checkmark-done-outline" size={18} color={t.textMuted} />
+            </Pressable>
+          ) : null}
           {/* 티로 앱으로 보내기 — 소리를 넘기는 자리 */}
           {r.file_uri ? (
             <Pressable
@@ -757,6 +784,33 @@ export default function ShiftDetail() {
       {/* ── 내보내기 — 전사본·보고서·단어장·분석 원본을 파일로 ──
           보고서·단어장·분석 원본은 심층 분석이 만든 것이다. 분석 전에는 눌러도 나올 게
           없어서 아예 감춘다 — 예전엔 분석 버튼 바로 아래에 같이 서 있어 순서가 어긋났다. */}
+      {/* 클로드·GPT 가 써 보낸 보고서. 받아 두고 볼 자리가 없어서, 설정에서
+          '결과 받기' 를 눌러도 읽을 방법이 없었다. */}
+      {reportMd && !preview ? (
+        <Card>
+          <Heading>근무 보고서</Heading>
+          <Small>클로드·GPT 가 읽고 쓴 글이에요.</Small>
+          <Divider />
+          <Markdown text={reportMd} />
+          {confirmations.length > 0 ? (
+            <>
+              <Divider />
+              <Heading>확인 필요</Heading>
+              <Small>AI 가 확실하지 않다고 표시한 것들이에요.</Small>
+              {confirmations.slice(0, 12).map((c) => (
+                <Small key={c.id} muted={false}>
+                  · {c.question}
+                  {c.candidate ? ` (${c.candidate})` : ""}
+                </Small>
+              ))}
+              {confirmations.length > 12 ? (
+                <Small>외 {confirmations.length - 12}건이 더 있어요.</Small>
+              ) : null}
+            </>
+          ) : null}
+        </Card>
+      ) : null}
+
       {sentenceCount > 0 && !preview ? (
         <Card>
           <Heading>파일로 내보내기</Heading>
@@ -784,7 +838,7 @@ export default function ShiftDetail() {
           ) : (
             <>
               <Small>보고서와 단어장은 분석을 돌려야 생겨요.</Small>
-              <Small>분석은 전사 결과 화면에서 시작해요.</Small>
+              <Small>보낸 뒤 클로드·GPT 에서 분석하고, 설정에서 결과를 받아요.</Small>
             </>
           )}
         </Card>
