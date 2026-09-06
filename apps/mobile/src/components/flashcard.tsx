@@ -204,8 +204,9 @@ export function Flashcard({
   const faceBox = {
     borderRadius: radius.lg,
     borderWidth: 1,
-    padding: space.lg,
-    minHeight: 260,
+    padding: space.xl,
+    // 부모가 준 자리를 다 쓴다. 외우는 동안 화면에 카드 말고 읽을 것이 없어야 한다.
+    flex: 1,
     justifyContent: "center" as const,
     gap: space.md,
   };
@@ -227,18 +228,17 @@ export function Flashcard({
           else if (what === "더 볼래요") onAnswer(false);
           else flip();
         }}
-        style={[{ minHeight: 260 }, card]}
+        style={[{ flex: 1 }, card]}
       >
         <Animated.View style={[faceBox, { backgroundColor: t.surface, borderColor: t.border }, frontFace]}>
           <Text
             style={[
               type.body,
-              { color: t.text, fontSize: 20, lineHeight: 30, textAlign: "center", fontWeight: "600" },
+              { color: t.text, fontSize: 26, lineHeight: 38, textAlign: "center", fontWeight: "700" },
             ]}
           >
             {front}
           </Text>
-          <Text style={[type.small, { color: t.textMuted, textAlign: "center" }]}>누르면 답</Text>
         </Animated.View>
 
         <Animated.View
@@ -249,21 +249,31 @@ export function Flashcard({
             backFace,
           ]}
         >
-          <Text style={[type.body, { color: t.text, fontSize: 18, lineHeight: 28, textAlign: "center" }]}>
+          <Text style={[type.body, { color: t.text, fontSize: 22, lineHeight: 34, textAlign: "center" }]}>
             {back}
           </Text>
           {hint ? (
             <Text style={[type.small, { color: t.textMuted, textAlign: "center" }]}>“{hint}”</Text>
           ) : null}
-          <Text style={[type.small, { color: t.textMuted, textAlign: "center" }]}>누르면 앞면</Text>
         </Animated.View>
 
-        {/* 손을 떼기 전에 무슨 일이 날지 보이게 하는 도장. 미는 값에 그대로 매인다 */}
-        <Animated.View style={[{ position: "absolute", top: space.md, right: space.md }, yes]}>
-          <Text style={{ fontSize: 15, fontWeight: "800", color: t.ok }}>외웠어요</Text>
+        {/* 손을 떼기 전에 무슨 일이 날지 보이게 하는 도장. 미는 값에 그대로 매인다.
+            세로 가운데에 둔다 — 미는 손이 가리지 않고, 눈이 카드 글에서 멀리 안 간다. */}
+        <Animated.View
+          style={[
+            { position: "absolute", top: 0, bottom: 0, right: space.lg, justifyContent: "center" },
+            yes,
+          ]}
+        >
+          <Text style={{ fontSize: 26, fontWeight: "800", color: t.ok }}>외웠어요</Text>
         </Animated.View>
-        <Animated.View style={[{ position: "absolute", top: space.md, left: space.md }, no]}>
-          <Text style={{ fontSize: 15, fontWeight: "800", color: t.warn }}>더 볼래요</Text>
+        <Animated.View
+          style={[
+            { position: "absolute", top: 0, bottom: 0, left: space.lg, justifyContent: "center" },
+            no,
+          ]}
+        >
+          <Text style={{ fontSize: 26, fontWeight: "800", color: t.warn }}>더 볼래요</Text>
         </Animated.View>
       </Animated.View>
     </GestureDetector>

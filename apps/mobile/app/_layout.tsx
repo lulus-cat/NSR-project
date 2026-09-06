@@ -182,6 +182,7 @@ function Gate() {
       <Stack.Screen name="tiro-notes" options={{ title: "티로 노트 가져오기" }} />
       {/* 없으면 머리글에 주소가 그대로 뜬다 (notes, note/[id]). */}
       <Stack.Screen name="notes" options={{ title: "노트" }} />
+      <Stack.Screen name="cards/[set]" options={{ title: "카드" }} />
       <Stack.Screen name="note/[id]" options={{ title: "노트" }} />
     </Stack>
     <LaunchOverlay ready />
