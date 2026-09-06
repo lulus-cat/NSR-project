@@ -33,25 +33,20 @@ python3 -m venv venv
 ./venv/bin/pip install -r requirements.txt
 ```
 
-## 3. 토큰 두 개 만들기
+## 3. 토큰 하나 만들기
 
-둘을 나눠 둔 이유는 하나가 새도 다른 하나는 멀쩡하기 때문이다. 기기 토큰이 새도
-남이 전사본을 읽지는 못하고, MCP 토큰이 새도 남이 자료를 올리지는 못한다.
+평소에는 이걸 쓸 일이 없다. 폰은 QR 로 잇고(7번), AI 연결은 폰이 승인한다.
+이 토큰은 그 두 길이 다 막혔을 때 `curl` 로 직접 넣을 수 있는 비상문이다.
 
 ```bash
-python3 -c "import secrets;print('NSR_MCP_TOKEN=' + secrets.token_urlsafe(32))"
 python3 -c "import secrets;print('NSR_DEVICE_TOKEN=' + secrets.token_urlsafe(32))"
 ```
 
-`NSR_MCP_TOKEN` 은 **커넥터를 연결할 때 로그인 화면에 넣는 비밀번호**다. 주소에는
-안 들어간다. `NSR_DEVICE_TOKEN` 은 폰이 자료를 올릴 때 쓴다.
-
-두 줄을 `/home/nsr/nsr.env` 에 적고 주인만 읽게 잠근다. **도메인도 함께 적는다** —
+`/home/nsr/nsr.env` 에 적고 주인만 읽게 잠근다. **도메인도 함께 적는다** —
 이게 없으면 커넥터가 421 로 막힌다(아래 5번 설명).
 
 ```bash
 cat > /home/nsr/nsr.env <<'EOF'
-NSR_MCP_TOKEN=...
 NSR_DEVICE_TOKEN=...
 NSR_DB=/home/nsr/nsr.db
 NSR_PUBLIC_HOST=nsr.example.com
@@ -172,16 +167,13 @@ https://nsr.example.com/mcp
 - **클로드** — 설정 → 커넥터 → 사용자 지정 커넥터 추가 → 위 주소.
 - **GPT** — 설정 → 커넥터(개발자 모드) → 새 커넥터 → 위 주소.
 
-주소를 넣으면 **로그인 화면**이 뜬다.
+주소를 넣으면 **번호 화면**이 뜬다. 여섯 자리 숫자가 보이고, 그 화면은 폰을
+기다린다. NSR 앱 → 설정 → 분석 서버 → **AI 연결 승인** 에 그 번호를 넣으면
+화면이 저절로 넘어간다. 그 뒤로는 다시 묻지 않는다(토큰 30일, 자동 갱신).
 
-- 구글 로그인을 켜 뒀으면(8번) 구글 계정을 고르면 끝난다.
-- 안 켜 뒀으면 `nsr.env` 의 `NSR_MCP_TOKEN` 을 붙여넣는다.
-
-```bash
-sudo grep NSR_MCP_TOKEN /home/nsr/nsr.env   # 열쇠로 들어갈 때만 필요하다
-```
-
-어느 쪽이든 그 뒤로는 다시 묻지 않는다(토큰 30일, 자동 갱신).
+**열쇠를 넣는 칸은 없다.** 열쇠를 묻는 화면은 결국 사람이 어딘가에 그 열쇠를
+적어 두게 만든다. 번호는 10분이면 사라지고 그 자체로는 힘이 없다 — 승인할 폰이
+없으면 아무것도 안 열린다. 그래서 이 서버로 들어오는 길은 둘 다 폰을 거친다.
 
 붙으면 대화에서 `list_shifts` 같은 도구가 보인다. "9월 3일 근무 뭐 있었는지 봐 줘"
 처럼 말하면 AI 가 알아서 도구를 쓴다.
@@ -222,53 +214,11 @@ QR 이 안 찍히면 폰 브라우저에 `https://nsr.example.com/pair/<쪽지>`
 폰마다 열쇠가 따로 발급된다. 폰을 하나 더 쓰면 명령을 한 번 더 돌리면 되고, 한
 대를 잃어버리면 DB 의 `device_tokens` 에서 그 줄만 지우면 된다.
 
-### 다른 방법 두 가지
+### QR 이 안 될 때
 
-- **구글 로그인** — 8번을 켜 두면 앱에서 '구글로 로그인' 만 누르면 된다. 준비가
-  한 번 필요하지만(구글 콘솔), 그 뒤로는 서버에 손대지 않고 폰을 이을 수 있다.
-- **열쇠 붙여넣기** — 앱 설정의 '열쇠로 잇기' 를 펴서 3번의 `NSR_DEVICE_TOKEN` 을
-  넣는다. 위 둘이 다 막혔을 때의 비상문이다.
-
-## 8. 구글 로그인 켜기 (선택)
-
-7번의 QR 로 폰은 이미 이을 수 있다. 이걸 켜면 **커넥터(클로드·GPT) 로그인**까지
-구글 계정으로 바뀌고, 서버에 손대지 않고도 폰을 이을 수 있다. 준비는 한 번이다.
-
-**구글 클라우드 콘솔에서** (https://console.cloud.google.com)
-
-1. 프로젝트를 하나 만든다 (이름은 아무거나, 예: `nsr`).
-2. **API 및 서비스 → OAuth 동의 화면** → 사용자 유형 **외부** → 앱 이름·지원
-   이메일만 채운다. 범위(scope)는 **아무것도 추가하지 않는다.**
-   - 여기서 받는 것은 이메일 하나뿐이라 **구글 심사가 필요 없다.** 심사는
-     드라이브 같은 민감한 권한을 받을 때 이야기다. 게시(프로덕션) 상태로 두면
-     "확인되지 않은 앱" 경고도 안 뜬다.
-3. **사용자 인증 정보 → 사용자 인증 정보 만들기 → OAuth 클라이언트 ID**
-   - 유형: **웹 애플리케이션** (안드로이드 아니다 — 그래야 서명 지문이 필요 없다)
-   - 승인된 리디렉션 URI: `https://nsr.example.com/oauth/google/callback`
-     (도메인만 내 것으로 바꾸고 **글자 그대로** 넣는다)
-4. 만들어진 **클라이언트 ID** 와 **클라이언트 보안 비밀번호**를 복사한다.
-
-**서버에서**
-
-```bash
-sudo nano /home/nsr/nsr.env
-```
-
-```
-NSR_GOOGLE_CLIENT_ID=1234-abcd.apps.googleusercontent.com
-NSR_GOOGLE_CLIENT_SECRET=붙여넣은-비밀번호
-NSR_ALLOWED_EMAILS=my.name@gmail.com
-```
-
-```bash
-sudo systemctl restart nsr
-```
-
-`NSR_ALLOWED_EMAILS` 를 빼먹으면 서버가 **시작하지 않는다.** 일부러 그렇게 했다 —
-그 줄이 없으면 구글 계정이 있는 누구나 내 근무 기록을 읽는다.
-
-세 값이 다 있어야 켜진다. 하나라도 빠지면 예전처럼 열쇠 화면이 뜨므로, 설정이
-틀려도 서버에 못 들어가는 일은 없다.
+앱에는 열쇠를 넣는 칸이 없다. 그래도 자료를 올려야 하면 3번의 토큰으로 직접
+넣을 수 있다 — `curl -H "authorization: Bearer <NSR_DEVICE_TOKEN>" …`. 사람이 쓰는
+길은 아니고, QR 이 깨졌을 때 확인용이다.
 
 ---
 
@@ -339,7 +289,8 @@ cd server && ./venv/bin/python -m pytest -q
 | `421 Invalid Host header` | 서버가 도메인을 모른다 | `nsr.env` 에 `NSR_PUBLIC_HOST` 를 넣고 재시작 |
 | `403` (커넥터에서만) | 그 앱의 Origin 이 목록에 없다 | `journalctl -u nsr` 에서 값을 보고 `NSR_ALLOWED_ORIGINS` 에 더한다 |
 | "로그인 서비스에 등록할 수 없습니다" | 옛 주소(`/t/…/mcp`)를 넣었다 | 주소를 `https://도메인/mcp` 로 바꾼다 |
-| 로그인 화면에서 계속 튕긴다 | 열쇠가 다르다 | `sudo grep NSR_MCP_TOKEN /home/nsr/nsr.env` 값을 그대로 붙여넣는다 |
+| 번호 화면이 안 넘어간다 | 폰이 아직 승인하지 않았다 | 앱 → 설정 → 분석 서버 → AI 연결 승인에 번호를 넣는다 (10분 안에) |
+| 앱이 "이 폰은 이어져 있지 않습니다" | 폰이 아직 QR 로 안 이어졌다 | 7번의 `python -m nsr_server.pair` 를 먼저 돌린다 |
 | `400 Invalid HTTP request` | 프록시가 `Host` 를 두 번 넣었다 | `proxy_set_header Host $host;` 하나만 남긴다 |
 | 인증서 발급 실패 | `/.well-known/acme-challenge/` 가 프록시로 넘어간다 | 그 위치를 프록시 규칙보다 먼저 빼 준다 |
 | 응답이 중간에 끊긴다 | 프록시 버퍼링 | `proxy_buffering off` |

@@ -11,14 +11,21 @@ OAuth — 대화 AI 커넥터가 요구하는 로그인 절차.
 주소는 공개돼도 되고, **열쇠는 로그인 화면에서 한 번 입력**한다. 화면 공유나
 캡처로 새는 길이 사라진다.
 
-한 사람이 쓰는 서버라 사용자 계정은 없다. 로그인 화면이 묻는 것은 하나다 —
-`NSR_MCP_TOKEN` 을 아는가. 그것이 이 서버의 비밀번호다.
+신분 확인은 **폰이 한다**
+------------------------
+로그인 화면은 열쇠를 묻지 않는다. 여섯 자리 번호를 보여 주고, 이미 이어진 폰에서
+그 번호를 승인하면 열린다 (`POST /connector/approve`, 기기 열쇠 필요).
+
+이렇게 한 이유: 열쇠를 묻는 화면은 결국 사람이 열쇠를 어딘가에 적어 두게 만든다.
+번호는 10분이면 사라지고 그 자체로는 아무 힘이 없다 — 승인할 폰이 없으면 못 연다.
+폰은 QR 로 잇는다(`python -m nsr_server.pair`). 그래서 이 서버로 들어오는 길은
+둘 다 폰을 거친다.
 
 절차 (SDK 가 대부분 처리한다)
 ---------------------------
-  1. 커넥터가 /register 로 자기를 등록한다 (누구든 등록은 된다. 열쇠가 없으면
-     다음 단계를 못 넘는다)
-  2. 사람이 /authorize 로 온다 → 우리 로그인 화면 → 열쇠 확인 → 코드 발급
+  1. 커넥터가 /register 로 자기를 등록한다 (누구든 등록은 된다. 폰이 승인하지
+     않으면 다음 단계를 못 넘는다)
+  2. 사람이 /authorize 로 온다 → 번호 화면 → 폰이 승인 → 코드 발급
   3. 커넥터가 /token 으로 코드를 바꿔 간다 (PKCE 검사는 SDK 가 한다)
   4. 그 뒤 모든 MCP 요청에 그 토큰이 붙는다
 
@@ -48,17 +55,11 @@ PENDING_TTL = 60 * 10  # 로그인 화면을 열어 둔 채 자리를 비울 수
 
 
 class NsrOAuthProvider:
-    """한 사람만 쓰는 서버의 인증 담당. 아는 열쇠가 곧 신분이다."""
+    """한 사람만 쓰는 서버의 인증 담당. 폰이 승인해야 열린다."""
 
-    def __init__(
-        self, store: Store, mcp_token: str, public_host: str, use_google: bool = False
-    ) -> None:
+    def __init__(self, store: Store, public_host: str) -> None:
         self.store = store
-        self.mcp_token = mcp_token
         self.public_host = public_host
-        # 구글 로그인이 켜져 있으면 열쇠를 묻지 않고 구글로 보낸다. 꺼져 있으면
-        # 예전처럼 열쇠 화면이다 — 구글 설정이 잘못돼도 서버에 못 들어가는 일은 없다.
-        self.use_google = use_google
 
     # ── 커넥터 등록 ───────────────────────────────────────
 
@@ -93,33 +94,50 @@ class NsrOAuthProvider:
             },
             expires_at=time.time() + PENDING_TTL,
         )
-        if self.use_google:
-            return f"https://{self.public_host}/oauth/google/begin?p={pending}"
-        return f"https://{self.public_host}/oauth/login?p={pending}"
+        code = self.new_code(pending)
+        return f"https://{self.public_host}/oauth/login?p={pending}&c={code}"
 
-    def approve(self, pending_id: str, key: str) -> str | None:
+    def new_code(self, pending_id: str) -> str:
         """
-        로그인 화면이 부른다. 열쇠가 맞으면 코드를 만들어 돌아갈 주소를 준다.
-        틀리면 None — 화면은 "열쇠가 맞지 않아요" 라고만 적는다.
+        화면에 띄울 여섯 자리 번호. 폰이 이 번호로 대기표를 찾아 승인한다.
+
+        번호가 짧아도 되는 이유: 승인하려면 이미 이어진 폰의 열쇠가 있어야 하고,
+        번호는 10분 뒤 사라진다. 번호만 알아서는 아무것도 못 연다.
         """
-        pending = self.store.take_oauth_pending(pending_id)
+        for _ in range(20):
+            code = f"{secrets.randbelow(900000) + 100000}"
+            if not self.store.peek_oauth_pending(f"code-{code}"):
+                self.store.put_oauth_pending(
+                    f"code-{code}", {"p": pending_id}, expires_at=time.time() + PENDING_TTL
+                )
+                return code
+        raise RuntimeError("연결 번호를 만들지 못했습니다. 잠시 뒤 다시 해 주십시오.")
+
+    def approve_from_phone(self, code: str) -> bool:
+        """
+        폰이 번호를 승인한다. 성공하면 화면이 주워 갈 자리에 돌아갈 주소를 둔다.
+
+        커넥터 화면은 이 자리를 2초마다 들여다보다가(`/oauth/login/status`) 주소가
+        생기면 그리로 간다. 폰과 화면이 서로 직접 이야기하지 않아도 되는 이유다.
+        """
+        holder = self.store.take_oauth_pending(f"code-{code.strip()}")
+        if not holder:
+            return False
+        pending = self.store.take_oauth_pending(str(holder.get("p", "")))
         if not pending:
-            return None
-        # 길이가 달라도 같은 시간이 걸리게 비교한다. **바이트로 비교한다** —
-        # compare_digest 는 아스키가 아닌 글자가 든 문자열을 받으면 TypeError 를
-        # 던진다. 한글을 넣어 본 사람이 서버를 500 으로 넘어뜨릴 수 있었다.
-        if not secrets.compare_digest(key.strip().encode("utf-8"), self.mcp_token.encode("utf-8")):
-            # 열쇠가 틀렸으면 대기표를 되살려 다시 시도할 수 있게 둔다.
-            self.store.put_oauth_pending(pending_id, pending, expires_at=time.time() + PENDING_TTL)
-            return None
-        return self.grant(pending)
+            return False
+        self.store.put_oauth_pending(
+            f"approved-{holder['p']}",
+            {"back": self.grant(pending)},
+            expires_at=time.time() + CODE_TTL,
+        )
+        return True
 
     def grant(self, pending: dict[str, Any]) -> str:
         """
-        신분 확인이 끝난 뒤 — 코드를 만들어 커넥터가 돌아갈 주소를 준다.
+        승인이 끝난 뒤 — 코드를 만들어 커넥터가 돌아갈 주소를 준다.
 
-        누가 확인했는지는 여기서 묻지 않는다. 열쇠를 맞힌 사람일 수도 있고
-        (`approve`), 허용된 구글 계정일 수도 있다 (`/oauth/google/callback`).
+        부르는 곳은 하나다: 폰이 번호를 승인했을 때(`approve_from_phone`).
         """
         code = secrets.token_urlsafe(32)
         self.store.put_oauth_code(

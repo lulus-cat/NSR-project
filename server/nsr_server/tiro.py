@@ -47,12 +47,35 @@ def _get(path: str, api_key: str) -> Any:
         raise TiroError(f"티로에 물어보지 못했습니다 ({path.split('?')[0]}): {type(e).__name__}") from e
 
 
+# 소리에서 만들어진 노트만 근무 기록이다 (티로 OpenAPI 의 sourceType 목록).
+SOUND_NOTES = ("live-voice", "recording", "offline-mode", "video")
+
+
+def workspace_guid(api_key: str) -> str | None:
+    """이 열쇠가 쓰는 워크스페이스. 목록 주소를 만들 때 필요하다."""
+    try:
+        return (_get("/v1/external/workspaces/me", api_key) or {}).get("guid")
+    except TiroError:
+        return None
+
+
 def list_notes(api_key: str, limit: int = 30) -> list[dict[str, Any]]:
-    """녹음 노트 목록. 제목·날짜·길이만 준다 — 글자는 여기서 안 준다."""
-    body = _get(f"/v1/external/notes?size={limit}", api_key)
+    """
+    녹음 노트 목록. 제목·날짜·길이만 준다 — 글자는 여기서 안 준다.
+
+    워크스페이스 주소가 정본이다. `/v1/external/notes` 는 티로가 폐기 예정으로
+    표시한 옛 주소라, 워크스페이스를 못 찾았을 때만 쓴다.
+    """
+    guid = workspace_guid(api_key)
+    path = (
+        f"/v1/external/workspaces/{guid}/notes?size={limit}"
+        if guid
+        else f"/v1/external/notes?size={limit}"
+    )
+    body = _get(path, api_key)
     out = []
     for n in body.get("content", []):
-        if not n.get("guid") or n.get("sourceType") in ("text", "onboarding"):
+        if not n.get("guid") or n.get("sourceType") not in SOUND_NOTES:
             continue
         out.append(
             {
@@ -69,8 +92,8 @@ def fetch_paragraphs(api_key: str, note_guid: str) -> list[dict[str, Any]]:
     """노트의 문단 전부. 커서로 나눠 오므로 끝까지 따라간다."""
     out: list[dict[str, Any]] = []
     cursor = ""
-    for _ in range(50):  # 200개씩 50쪽 — 8시간 녹음도 이 안에 들어온다
-        path = f"/v1/external/notes/{note_guid}/paragraphs?size=200"
+    for _ in range(40):  # 500개씩 40쪽 — 티로 상한이 1000이라 500은 안전한 한 입이다
+        path = f"/v1/external/notes/{note_guid}/paragraphs?size=500"
         if cursor:
             path += f"&cursor={cursor}"
         body = _get(path, api_key)

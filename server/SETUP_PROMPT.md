@@ -38,9 +38,8 @@ VPS 에 접속한 클로드(클로드 코드 등)에게 그대로 붙여 넣는 
    설치해라 (우분투 24.04 는 기본이 3.12 다).
 2. **내려받기.** `nsr` 사용자를 만들고 그 홈에 저장소를 clone 한 뒤,
    `server/` 에서 venv 를 만들고 `requirements.txt` 를 설치해라.
-3. **환경변수 파일.** `NSR_MCP_TOKEN`(대화 AI 용), `NSR_DEVICE_TOKEN`(폰 용),
-   그리고 **`NSR_PUBLIC_HOST`(내 도메인)**. README 의 명령으로 만들어
-   `/home/nsr/nsr.env` 에 넣어라. 권한 600. 두 토큰은 서로 달라야 하고 32자 이상이다.
+3. **환경변수 파일.** `NSR_DEVICE_TOKEN`(비상용)과 **`NSR_PUBLIC_HOST`(내 도메인)**.
+   README 의 명령으로 만들어 `/home/nsr/nsr.env` 에 넣어라. 권한 600. 토큰은 32자 이상이다.
    `NSR_PUBLIC_HOST` 가 없으면 서버가 이유를 말하며 시작을 거부한다 — 그게 정상이다.
 4. **systemd 등록.** README 의 서비스 파일을 그대로 쓰고, `systemctl enable --now nsr`
    한 뒤 `systemctl status nsr` 로 돌고 있는지 봐라.
@@ -56,7 +55,7 @@ VPS 에 접속한 클로드(클로드 코드 등)에게 그대로 붙여 넣는 
 ## 마지막 점검 — 진짜 도는지 본다
 
 서버 안에서 아래를 돌려, 대화 AI 가 붙었을 때와 같은 왕복이 되는지 확인해라.
-`$T` 는 `nsr.env` 의 `NSR_MCP_TOKEN`, `$D` 는 `NSR_DEVICE_TOKEN` 이다.
+`$D` 는 `nsr.env` 의 `NSR_DEVICE_TOKEN` 이다.
 **출력에 토큰이 섞여 나오지 않게** 조심해라.
 
 ```bash

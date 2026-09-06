@@ -32,10 +32,13 @@ import {
   TIRO_API,
   autoPushTiroWords,
   getTiroKey,
-  saveAsrSegments,
+  saveImportedSegments,
   tiroError,
   tiroWorkspaceGuid,
 } from "./asr";
+
+/** 소리에서 만들어진 노트만 가져온다 (티로 OpenAPI 의 sourceType 목록). */
+const SOUND_NOTES = ["live-voice", "recording", "offline-mode", "video"];
 
 export interface TiroNote {
   guid: string;
@@ -66,6 +69,8 @@ export async function listTiroNotes(limit = 50): Promise<TiroNote[]> {
   // 티로 앱으로 녹음할 때 그 말을 알아듣는다. 실패해도 목록은 그대로 나온다.
   if (key) void autoPushTiroWords(key);
 
+  // 워크스페이스 목록이 정본이다. `/v1/external/notes` 는 티로가 **폐기 예정**으로
+  // 표시해 둔 옛 주소라, 열쇠가 옛것일 때의 대비로만 남겨 둔다 (OpenAPI: deprecated).
   const urls = [
     guid ? `${TIRO_API}/v1/external/workspaces/${guid}/notes?size=${limit}` : "",
     `${TIRO_API}/v1/external/notes?size=${limit}`,
@@ -89,7 +94,9 @@ export async function listTiroNotes(limit = 50): Promise<TiroNote[]> {
       }[];
     };
     return (body.content ?? [])
-      .filter((n) => !!n.guid && n.sourceType !== "text" && n.sourceType !== "onboarding")
+      // 소리가 있는 노트만. 나머지(글로 쓴 노트·웹페이지·안내용 견본)는 근무 기록이
+      // 아니다. sourceType 값은 티로 OpenAPI 의 목록을 그대로 따른다.
+      .filter((n) => !!n.guid && SOUND_NOTES.includes(n.sourceType ?? ""))
       .map((n) => ({
         guid: n.guid!,
         title: (n.title || "제목 없는 노트").trim(),
@@ -105,10 +112,11 @@ async function fetchParagraphs(noteGuid: string): Promise<TiroParagraph[]> {
   const headers = await tiroHeaders();
   const out: TiroParagraph[] = [];
   let cursor = "";
-  // 문단 200개씩, 최대 50쪽. 8시간 녹음도 이 안에 들어온다.
-  for (let page = 0; page < 50; page++) {
+  // 한 쪽에 500개씩, 최대 40쪽. 티로 상한이 1000이라 500은 안전한 한 입이고,
+  // 8시간 녹음(문단 수천 개)도 요청 몇 번이면 끝난다.
+  for (let page = 0; page < 40; page++) {
     const url =
-      `${TIRO_API}/v1/external/notes/${encodeURIComponent(noteGuid)}/paragraphs?size=200` +
+      `${TIRO_API}/v1/external/notes/${encodeURIComponent(noteGuid)}/paragraphs?size=500` +
       (cursor ? `&cursor=${encodeURIComponent(cursor)}` : "");
     const res = await fetch(url, { headers });
     if (!res.ok) throw new Error(await tiroError(res, "노트 내용 가져오기"));
@@ -190,12 +198,10 @@ export async function importTiroNote(input: {
     durationSec,
   });
 
-  // 티로 전사본에 휘스퍼 오인식 목록을 들이대면 안 된다 — 다르게 틀린다.
-  const sentences = await saveAsrSegments({
+  const sentences = await saveImportedSegments({
     recordingId: id,
     shiftId,
     segments,
-    asrEngine: "other",
     onProgress: input.onProgress,
   });
   await setRecordingState(id, "transcribed");

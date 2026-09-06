@@ -29,7 +29,7 @@ import {
   pullFromServer,
   setDeviceToken,
   setServerUrl,
-  startGoogleLink,
+  approveConnector,
 } from "../../src/services/nsr-server";
 import {
   clearWorkplace,
@@ -260,7 +260,6 @@ export default function Settings() {
   }, [tiroKeyInput]);
   // 분석 서버 (VPS). 주소는 비밀이 아니고, 기기 토큰은 보안 저장소에만 둔다.
   const [srvUrl, setSrvUrl] = useState("");
-  const [srvToken, setSrvToken] = useState("");
   const [srvHasToken, setSrvHasToken] = useState(false);
   const [srvBusy, setSrvBusy] = useState(false);
   const [srvNote, setSrvNote] = useState<string | null>(null);
@@ -270,32 +269,27 @@ export default function Settings() {
     void getDeviceToken().then((t) => setSrvHasToken(!!t));
   }, []);
 
-  const [srvManual, setSrvManual] = useState(false);
+  // AI(클로드·GPT) 연결 승인 — 커넥터 화면에 뜬 여섯 자리 번호.
+  const [srvCode, setSrvCode] = useState("");
 
-  /** 구글 로그인 — 주소를 먼저 저장하고 브라우저를 연다. */
-  const loginWithGoogle = useCallback(async () => {
+  const approveAi = useCallback(async () => {
     setSrvBusy(true);
     setSrvNote(null);
     try {
-      await setServerUrl(srvUrl);
-      await startGoogleLink();
-      setSrvNote("브라우저에서 구글 로그인을 마치면 앱으로 돌아와요.");
+      await approveConnector(srvCode);
+      setSrvCode("");
+      setSrvNote("승인했어요. 커넥터 화면이 곧 연결돼요.");
     } catch (e) {
-      setSrvNote(e instanceof Error ? e.message : "열지 못했어요. 다시 눌러 주세요.");
+      setSrvNote(e instanceof Error ? e.message : "승인하지 못했어요. 다시 해 주세요.");
     } finally {
       setSrvBusy(false);
     }
-  }, [srvUrl]);
+  }, [srvCode]);
 
   const saveServer = useCallback(async () => {
     setSrvBusy(true);
     try {
       await setServerUrl(srvUrl);
-      if (srvToken.trim()) {
-        await setDeviceToken(srvToken);
-        setSrvHasToken(true);
-        setSrvToken("");
-      }
       const out = await checkServer();
       setSrvNote(out.message);
     } catch (e) {
@@ -303,7 +297,7 @@ export default function Settings() {
     } finally {
       setSrvBusy(false);
     }
-  }, [srvToken, srvUrl]);
+  }, [srvUrl]);
 
   const pullResults = useCallback(async () => {
     setSrvBusy(true);
@@ -457,42 +451,34 @@ export default function Settings() {
         {srvNote ? <Small muted={false}>{srvNote}</Small> : null}
         <Small>보낸 뒤에는 클로드·GPT 에서 분석해요.</Small>
         <Divider />
-        {/* QR 이 기본이다. 아래는 그게 막혔을 때의 두 갈래라 접어 둔다. */}
-        <Row
-          label="다른 방법으로 잇기"
-          value={srvManual ? "접기" : "열기 ›"}
-          onPress={() => setSrvManual((v) => !v)}
+        {/* AI 연결은 이 폰이 연다. 서버 화면에는 열쇠를 넣는 칸이 없다. */}
+        <Small muted={false}>AI 연결 승인</Small>
+        <Small>클로드·GPT 에 서버를 붙이면 번호 여섯 자리가 떠요.</Small>
+        <Small>그 번호를 여기 넣으면 연결돼요.</Small>
+        <TextInput
+          value={srvCode}
+          onChangeText={setSrvCode}
+          placeholder="번호 여섯 자리"
+          placeholderTextColor={t.textMuted}
+          keyboardType="number-pad"
+          maxLength={7}
+          style={{
+            minHeight: TOUCH_MIN,
+            paddingHorizontal: space.md,
+            borderRadius: radius.md,
+            backgroundColor: t.surfaceAlt,
+            color: t.text,
+            fontSize: 18,
+            letterSpacing: 4,
+          }}
         />
-        {srvManual ? (
-          <>
-            <Small>서버에 구글 로그인을 켜 뒀으면 이걸로 이어요.</Small>
-            <Button
-              label={srvHasToken ? "구글로 다시 로그인" : "구글로 로그인"}
-              busy={srvBusy}
-              onPress={() => void loginWithGoogle()}
-            />
-            <Divider />
-            <Small>둘 다 안 되면 서버의 NSR_DEVICE_TOKEN 을 넣어요.</Small>
-            <TextInput
-              value={srvToken}
-              onChangeText={setSrvToken}
-              placeholder="기기 열쇠 붙여넣기"
-              placeholderTextColor={t.textMuted}
-              autoCapitalize="none"
-              autoCorrect={false}
-              secureTextEntry
-              style={{
-                minHeight: TOUCH_MIN,
-                paddingHorizontal: space.md,
-                borderRadius: radius.md,
-                backgroundColor: t.surfaceAlt,
-                color: t.text,
-                fontSize: 15,
-              }}
-            />
-            <Button label="열쇠 저장" busy={srvBusy} onPress={() => void saveServer()} />
-          </>
-        ) : null}
+        <Button
+          label="승인하기"
+          busy={srvBusy}
+          disabled={!srvHasToken}
+          onPress={() => void approveAi()}
+        />
+        {srvHasToken ? null : <Small>먼저 이 폰을 QR 로 이어 주세요.</Small>}
       </Card>
 
       {/* 판 번호와 업데이트 */}

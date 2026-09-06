@@ -200,8 +200,7 @@ def test_도메인을_안_적으면_이유를_말하고_멈춘다():
 def test_토큰이_짧으면_거부한다():
     import pytest
 
-    os.environ["NSR_MCP_TOKEN"] = "짧다"
-    os.environ["NSR_DEVICE_TOKEN"] = "b" * 40
+    os.environ["NSR_DEVICE_TOKEN"] = "짧다"
     import importlib
 
     config_module = importlib.import_module("nsr_server.config")
@@ -229,14 +228,11 @@ def test_시작_문구에_토큰이_안_들어간다():
 
 import asyncio  # noqa: E402
 
-KEY = "K" * 40
-
-
 def _provider(tmp_path):
     from nsr_server.oauth import NsrOAuthProvider
 
     store = Store(str(tmp_path / "o.db"))
-    return NsrOAuthProvider(store, KEY, "nsr.example.com"), store
+    return NsrOAuthProvider(store, "nsr.example.com"), store
 
 
 def _pending(provider, store):
@@ -261,42 +257,43 @@ def _pending(provider, store):
             ),
         )
     )
-    return client, url.split("p=")[1]
+    pending = url.split("p=")[1].split("&")[0]
+    code = url.split("c=")[1]
+    return client, pending, code
 
 
-def test_로그인_화면으로_보낸다(tmp_path):
+def _approved_back(provider, store, pending, code):
+    """폰이 승인한 뒤 화면이 주워 가는 주소."""
+    assert provider.approve_from_phone(code)
+    return store.take_oauth_pending(f"approved-{pending}")["back"]
+
+
+def test_곧바로_코드를_주지_않는다(tmp_path):
     provider, store = _provider(tmp_path)
-    _, pending = _pending(provider, store)
-    assert pending  # 곧바로 코드를 주지 않는다 — 사람이 열쇠를 대야 한다
+    _, pending, code = _pending(provider, store)
+    assert pending and len(code) == 6  # 화면은 번호만 보여 주고 기다린다
 
 
-def test_열쇠가_맞아야_코드를_준다(tmp_path):
+def test_폰이_승인해야_코드를_준다(tmp_path):
     provider, store = _provider(tmp_path)
-    _, pending = _pending(provider, store)
-    assert provider.approve(pending, "틀린열쇠") is None
-    back = provider.approve(pending, KEY)
+    _, pending, code = _pending(provider, store)
+    assert provider.approve_from_phone("000000") is False  # 지어낸 번호는 안 열린다
+    back = _approved_back(provider, store, pending, code)
     assert back.startswith("https://claude.ai/cb?code=")
     assert "state=xyz" in back
 
 
-def test_한글_열쇠에도_안_죽는다(tmp_path):
-    """compare_digest 는 아스키 아닌 문자열에 TypeError 를 던진다 — 실제로 500 이 났다."""
+def test_번호는_한_번만_쓴다(tmp_path):
     provider, store = _provider(tmp_path)
-    _, pending = _pending(provider, store)
-    assert provider.approve(pending, "한글로 찍어보기") is None
-
-
-def test_열쇠를_틀려도_다시_해볼_수_있다(tmp_path):
-    provider, store = _provider(tmp_path)
-    _, pending = _pending(provider, store)
-    provider.approve(pending, "틀림")
-    assert provider.approve(pending, KEY) is not None  # 대기표가 살아 있다
+    _, pending, code = _pending(provider, store)
+    assert provider.approve_from_phone(code)
+    assert provider.approve_from_phone(code) is False
 
 
 def test_코드는_한_번만_쓴다(tmp_path):
     provider, store = _provider(tmp_path)
-    client, pending = _pending(provider, store)
-    code = provider.approve(pending, KEY).split("code=")[1].split("&")[0]
+    client, pending, number = _pending(provider, store)
+    code = _approved_back(provider, store, pending, number).split("code=")[1].split("&")[0]
     loaded = asyncio.run(provider.load_authorization_code(client, code))
     assert loaded is not None
     asyncio.run(provider.exchange_authorization_code(client, loaded))
@@ -305,8 +302,8 @@ def test_코드는_한_번만_쓴다(tmp_path):
 
 def test_받은_토큰으로만_들어온다(tmp_path):
     provider, store = _provider(tmp_path)
-    client, pending = _pending(provider, store)
-    code = provider.approve(pending, KEY).split("code=")[1].split("&")[0]
+    client, pending, number = _pending(provider, store)
+    code = _approved_back(provider, store, pending, number).split("code=")[1].split("&")[0]
     loaded = asyncio.run(provider.load_authorization_code(client, code))
     token = asyncio.run(provider.exchange_authorization_code(client, loaded))
 
@@ -316,8 +313,8 @@ def test_받은_토큰으로만_들어온다(tmp_path):
 
 def test_토큰을_거두면_못_쓴다(tmp_path):
     provider, store = _provider(tmp_path)
-    client, pending = _pending(provider, store)
-    code = provider.approve(pending, KEY).split("code=")[1].split("&")[0]
+    client, pending, number = _pending(provider, store)
+    code = _approved_back(provider, store, pending, number).split("code=")[1].split("&")[0]
     loaded = asyncio.run(provider.load_authorization_code(client, code))
     token = asyncio.run(provider.exchange_authorization_code(client, loaded))
     access = asyncio.run(provider.load_access_token(token.access_token))
@@ -433,88 +430,15 @@ def test_단어장_오류에_본문을_안_옮긴다(monkeypatch):
         assert "403" in str(e) and "열쇠" not in str(e)
 
 
-# ── 구글 로그인 ────────────────────────────────────────────
-#
-# 열쇠를 사람이 붙여넣지 않게 하는 길이다. 여기서 지키는 것은 하나 —
-# **허용한 계정만** 들어온다. 그 검사가 빠지면 구글 계정이 있는 누구나
-# 내 근무 기록을 읽는다.
-
-import time as _time  # noqa: E402
-
-
-def _claims(**over):
-    base = {
-        "aud": "client-1",
-        "iss": "https://accounts.google.com",
-        "exp": _time.time() + 600,
-        "email": "Me@Gmail.com",
-        "email_verified": True,
-    }
-    base.update(over)
-    return base
-
-
-def test_내_표만_받는다():
-    from nsr_server.google import GoogleError, check
-
-    assert check(_claims(), "client-1") == "me@gmail.com"  # 소문자로 맞춘다
-    for bad in (
-        _claims(aud="남의-앱"),
-        _claims(iss="https://evil.example"),
-        _claims(exp=_time.time() - 1),
-        _claims(email_verified=False),
-        _claims(email=""),
-    ):
-        try:
-            check(bad, "client-1")
-            raise AssertionError("막았어야 한다")
-        except GoogleError:
-            pass
-
-
-def test_계정_목록을_안_적으면_시작하지_않는다(monkeypatch):
-    import importlib
-
-    import pytest
-
-    monkeypatch.setenv("NSR_MCP_TOKEN", "a" * 40)
-    monkeypatch.setenv("NSR_DEVICE_TOKEN", "b" * 40)
-    monkeypatch.setenv("NSR_GOOGLE_CLIENT_ID", "client-1")
-    monkeypatch.setenv("NSR_GOOGLE_CLIENT_SECRET", "s" * 20)
-    monkeypatch.delenv("NSR_ALLOWED_EMAILS", raising=False)
-    config_module = importlib.import_module("nsr_server.config")
-    with pytest.raises(SystemExit):
-        config_module.Config()
-
-
-def test_기기_열쇠는_발급되고_취소된다(tmp_path):
-    store = Store(str(tmp_path / "t.db"))
-    store.put_device_token("tok-1", "me@gmail.com", "폰")
-    assert store.device_token_ok("tok-1")
-    assert not store.device_token_ok("남의-열쇠")
-    assert not store.device_token_ok("")
-    rows = store.list_device_tokens()
-    assert len(rows) == 1 and rows[0]["email"] == "me@gmail.com"
-    assert "tok-1" not in str(rows)  # 목록에 열쇠 자체는 안 준다
-
-
 # ── 실제 주소로 (앱이 밟는 순서 그대로) ──────────────────
 
 
-def _app(tmp_path, monkeypatch, google=True):
+def _app(tmp_path, monkeypatch):
     import importlib
 
-    monkeypatch.setenv("NSR_MCP_TOKEN", "m" * 40)
     monkeypatch.setenv("NSR_DEVICE_TOKEN", "d" * 40)
     monkeypatch.setenv("NSR_DB", str(tmp_path / "app.db"))
     monkeypatch.setenv("NSR_PUBLIC_HOST", "nsr.example.com")
-    if google:
-        monkeypatch.setenv("NSR_GOOGLE_CLIENT_ID", "client-1")
-        monkeypatch.setenv("NSR_GOOGLE_CLIENT_SECRET", "s" * 20)
-        monkeypatch.setenv("NSR_ALLOWED_EMAILS", "me@gmail.com")
-    else:
-        for k in ("NSR_GOOGLE_CLIENT_ID", "NSR_GOOGLE_CLIENT_SECRET", "NSR_ALLOWED_EMAILS"):
-            monkeypatch.delenv(k, raising=False)
     config_module = importlib.import_module("nsr_server.config")
     app_module = importlib.import_module("nsr_server.app")
     config = config_module.Config()
@@ -527,61 +451,54 @@ def _client(app):
     return TestClient(app, base_url="https://nsr.example.com")
 
 
-def test_폰_잇기는_구글로_보낸다(tmp_path, monkeypatch):
+def test_없는_쪽지는_열쇠가_안_된다(tmp_path, monkeypatch):
     app, _ = _app(tmp_path, monkeypatch)
     with _client(app) as c:
-        res = c.get("/device/start", follow_redirects=False)
-        assert res.status_code == 302
-        assert res.headers["location"].startswith("https://accounts.google.com/o/oauth2/v2/auth")
+        assert c.post("/device/claim", json={"code": "지어낸쪽지"}).status_code == 400
+        assert c.post("/device/claim", json={"code": ""}).status_code == 400
 
 
-def test_구글이_꺼져_있으면_안_열린다(tmp_path, monkeypatch):
-    app, _ = _app(tmp_path, monkeypatch, google=False)
+def test_AI_연결은_이어진_폰만_승인한다(tmp_path, monkeypatch):
+    """열쇠를 묻는 화면이 없어졌다. 여는 것은 폰이다."""
+    from nsr_server.pair import new_pairing
+
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
     with _client(app) as c:
-        assert c.get("/device/start", follow_redirects=False).status_code == 400
+        # 폰을 먼저 잇는다 (QR)
+        token = c.post("/device/claim", json={"code": new_pairing(store)}).json()["token"]
 
+        # 커넥터가 사람을 보내는 자리 — 대기표와 번호를 만든다
+        pending, number = "p-1", app.state.auth.new_code("p-1")
+        store.put_oauth_pending(
+            pending,
+            {
+                "client_id": "c1",
+                "redirect_uri": "https://claude.ai/cb",
+                "redirect_uri_provided_explicitly": True,
+                "code_challenge": "chal",
+                "state": "xyz",
+                "scopes": [],
+            },
+            expires_at=__import__("time").time() + 600,
+        )
 
-def _link(c, app_module, monkeypatch, email="me@gmail.com"):
-    """구글 로그인을 흉내 내어 쪽지(claim)까지 받아 온다."""
-    start = c.get("/device/start", follow_redirects=False)
-    state = start.headers["location"].split("state=")[1].split("&")[0]
-    monkeypatch.setattr(app_module.google, "email_of", lambda *a, **k: email)
-    return c.get(f"/oauth/google/callback?code=x&state={state}", follow_redirects=False)
+        # 화면은 번호를 보여 주고 기다린다
+        screen = c.get(f"/oauth/login?p={pending}&c={number}")
+        assert screen.status_code == 200 and number[:3] in screen.text
+        assert c.get(f"/oauth/login/status?p={pending}").json() == {}
 
+        # 이어지지 않은 폰은 승인하지 못한다
+        assert c.post("/connector/approve", json={"code": number}).status_code == 401
+        head = {"authorization": f"Bearer {token}"}
+        assert c.post("/connector/approve", json={"code": "000000"}, headers=head).status_code == 400
 
-def test_허용된_계정만_기기를_잇는다(tmp_path, monkeypatch):
-    app, app_module = _app(tmp_path, monkeypatch)
-    with _client(app) as c:
-        bad = _link(c, app_module, monkeypatch, email="stranger@gmail.com")
-        assert bad.status_code == 400
-        ok = _link(c, app_module, monkeypatch)
-        assert ok.status_code == 302
-        assert ok.headers["location"].startswith("nsr://linked?c=")
-
-
-def test_쪽지는_한_번만_열쇠가_된다(tmp_path, monkeypatch):
-    app, app_module = _app(tmp_path, monkeypatch)
-    with _client(app) as c:
-        back = _link(c, app_module, monkeypatch)
-        claim = back.headers["location"].split("c=")[1]
-        first = c.post("/device/claim", json={"code": claim})
-        assert first.status_code == 200 and first.json()["token"]
-        assert c.post("/device/claim", json={"code": claim}).status_code == 400
-        assert c.post("/device/claim", json={"code": "지어낸-쪽지"}).status_code == 400
-
-        # 받은 열쇠로 실제로 올릴 수 있어야 한다.
-        token = first.json()["token"]
-        bundle = {
-            "shiftId": "2026-09-06:D",
-            "date": "2026-09-06",
-            "code": "D",
-            "masked": True,
-            "sentences": [{"t": 0, "text": "[이름]님 폴리 확인했어요."}],
-        }
-        good = c.post("/ingest", json=bundle, headers={"authorization": f"Bearer {token}"})
-        assert good.status_code == 200
-        bad = c.post("/ingest", json=bundle, headers={"authorization": "Bearer not-a-real-token"})
-        assert bad.status_code == 401
+        # 이어진 폰이 승인하면 화면이 돌아갈 주소를 받아 간다
+        assert c.post("/connector/approve", json={"code": number}, headers=head).status_code == 200
+        back = c.get(f"/oauth/login/status?p={pending}").json()["back"]
+        assert back.startswith("https://claude.ai/cb?code=")
+        # 주소는 한 번만 준다
+        assert c.get(f"/oauth/login/status?p={pending}").json() == {}
 
 
 # ── QR 로 폰 잇기 ──────────────────────────────────────────
@@ -590,7 +507,7 @@ def test_쪽지는_한_번만_열쇠가_된다(tmp_path, monkeypatch):
 def test_QR_로_이으면_열쇠가_생긴다(tmp_path, monkeypatch):
     from nsr_server.pair import new_pairing
 
-    app, app_module = _app(tmp_path, monkeypatch, google=False)
+    app, app_module = _app(tmp_path, monkeypatch)
     store = app.state.store
     code = new_pairing(store)
 

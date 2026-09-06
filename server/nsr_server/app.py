@@ -10,11 +10,10 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
   *    /mcp                     대화 AI 커넥터 주소 (클로드·GPT 공통)
   GET  /pair/<쪽지>            QR 로 폰 잇기 (VPS 에서 python -m nsr_server.pair)
   GET  /pair/<쪽지>/qr         컴퓨터 화면에 띄우는 큰 QR
-  GET  /device/start           폰을 잇는다 — 구글 로그인으로 보내고 열쇠를 만들어 준다
-  POST /device/claim           폰이 그 열쇠를 한 번만 받아 간다 (일회용 쪽지)
-  GET  /oauth/google/begin     커넥터를 구글 로그인으로 보낸다
-  GET  /oauth/google/callback  구글이 돌아오는 자리 (구글 콘솔에 적는 주소)
-  GET  /oauth/login            구글이 꺼져 있을 때 열쇠를 넣는 화면 (비상문)
+  POST /device/claim           폰이 열쇠를 한 번만 받아 간다 (일회용 쪽지)
+  POST /connector/approve      폰이 AI 연결을 승인한다 (여섯 자리 번호). 기기 열쇠 필요
+  GET  /oauth/login            커넥터 화면 — 번호를 보여 주고 폰의 승인을 기다린다
+  GET  /oauth/login/status     그 화면이 2초마다 들여다보는 자리
   *    /.well-known/oauth-*     커넥터가 로그인 방법을 찾아보는 자리 (SDK 가 만든다)
   *    /register /authorize /token   OAuth 절차 (SDK 가 만든다)
 
@@ -25,8 +24,8 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
 등록할 수 없습니다"로 멈춘다. 인증 없는 서버로 넘어가 주지 않았다.
 
 바꾸고 나니 더 안전해졌다. **주소가 더 이상 열쇠가 아니다.** 주소는 남에게 보여도
-되고, 열쇠는 로그인 화면에서 한 번 넣는다. 화면 공유·캡처로 새는 길이 사라졌다.
-자세한 절차는 oauth.py 에 적혀 있다.
+되고, 연결은 **폰이 승인**해야 열린다 — 화면에 뜬 여섯 자리 번호를 앱에 넣는 식이다.
+사람이 어딘가에 적어 둘 열쇠가 아예 없다. 자세한 절차는 oauth.py 에 적혀 있다.
 
 기록에 대하여
 ------------
@@ -37,6 +36,7 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
 from __future__ import annotations
 
 import logging
+import json
 import secrets
 import time
 from typing import Any
@@ -53,7 +53,6 @@ from pydantic import AnyHttpUrl
 from starlette.responses import HTMLResponse, RedirectResponse
 
 from .config import Config
-from . import google
 from .oauth import NsrOAuthProvider
 from .pair import svg_qr
 from .tiro import TiroError, fetch_paragraphs, list_notes, mask, push_word, word_reject
@@ -101,9 +100,7 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     config = config or Config()
     store = store or Store(config.db_path)
 
-    auth = NsrOAuthProvider(
-        store, config.mcp_token, config.public_host, use_google=config.google_ready
-    )
+    auth = NsrOAuthProvider(store, config.public_host)
     base = f"https://{config.public_host}"
     mcp = MCPServer(
         name="NSR 근무 기록",
@@ -325,112 +322,6 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         store.mark_pulled(list(body.get("shiftIds") or []), list(body.get("entries") or []))
         return JSONResponse({"ok": True})
 
-    # ── 구글 로그인 ───────────────────────────────────────
-    #
-    # 폰과 커넥터가 같은 문을 쓴다. 다른 것은 끝에 어디로 돌아가느냐뿐이다.
-    #   폰:     /device/start → 구글 → /oauth/google/callback → nsr://linked?c=…
-    #   커넥터: /oauth/google/begin → 구글 → /oauth/google/callback → 커넥터 주소
-    #
-    # 대기표(pending)에 무엇을 하려던 것인지 적어 두고, 돌아왔을 때 그것을 보고 나눈다.
-
-    GOOGLE_TTL = 60 * 10  # 로그인 화면을 열어 둔 채 잠깐 자리를 비울 수 있는 시간
-    CLAIM_TTL = 60 * 5  # 앱이 쪽지를 주우러 올 시간
-
-    def google_off_page(why: str) -> HTMLResponse:
-        return HTMLResponse(
-            f"<!doctype html><meta charset=utf-8>"
-            f"<p style=\"font:16px system-ui;padding:24px\">{why}</p>",
-            status_code=400,
-        )
-
-    async def device_start(request: Request) -> Any:
-        """폰이 브라우저로 여는 자리. 구글로 넘긴다."""
-        if not config.google_ready:
-            return google_off_page("이 서버에는 구글 로그인이 켜져 있지 않아요.")
-        pending = "g-" + secrets.token_urlsafe(24)
-        store.put_oauth_pending(pending, {"kind": "device"}, expires_at=time.time() + GOOGLE_TTL)
-        return RedirectResponse(
-            google.auth_url(config.google_client_id, config.google_redirect, pending),
-            status_code=302,
-        )
-
-    async def google_begin(request: Request) -> Any:
-        """커넥터를 구글로 넘긴다. p 는 MCP 쪽이 만들어 둔 대기표다."""
-        if not config.google_ready:
-            return google_off_page("이 서버에는 구글 로그인이 켜져 있지 않아요.")
-        pending = request.query_params.get("p", "")
-        if not pending:
-            return google_off_page("연결 정보가 없어요. 커넥터에서 다시 시작해 주세요.")
-        return RedirectResponse(
-            google.auth_url(config.google_client_id, config.google_redirect, pending),
-            status_code=302,
-        )
-
-    async def google_callback(request: Request) -> Any:
-        """구글이 돌려보내는 자리. 여기서 계정을 보고 문을 연다."""
-        if not config.google_ready:
-            return google_off_page("이 서버에는 구글 로그인이 켜져 있지 않아요.")
-        code = request.query_params.get("code", "")
-        state = request.query_params.get("state", "")
-        if not code or not state:
-            return google_off_page("구글이 준 정보가 모자라요. 다시 로그인해 주세요.")
-
-        pending = store.take_oauth_pending(state)
-        if not pending:
-            return google_off_page("시간이 지났어요. 앱이나 커넥터에서 다시 시작해 주세요.")
-
-        try:
-            email = google.email_of(
-                code, config.google_client_id, config.google_client_secret, config.google_redirect
-            )
-        except google.GoogleError as e:
-            log.info("구글 로그인 실패")  # 이메일도 사유 원문도 로그에 안 남긴다
-            return google_off_page(f"로그인하지 못했어요. {e}")
-
-        if not config.email_allowed(email):
-            # 어떤 계정이 시도했는지는 남기지 않는다. 남기면 그것이 곧 개인정보다.
-            log.info("허용되지 않은 계정의 로그인 시도")
-            return google_off_page("이 계정은 들어올 수 없어요. 서버에 등록된 계정으로 해 주세요.")
-
-        if pending.get("kind") == "device":
-            # 앱이 주워 갈 일회용 쪽지만 남긴다. 열쇠를 주소에 직접 실어 보내면
-            # 브라우저 기록에 남는다 — 쪽지는 한 번 쓰면 사라지고 15분이면 만료된다.
-            claim = secrets.token_urlsafe(24)
-            store.put_oauth_pending(
-                f"claim-{claim}",
-                {"email": email, "label": request.headers.get("user-agent", "")[:60]},
-                expires_at=time.time() + CLAIM_TTL,
-            )
-            log.info("폰 연결 — 구글 로그인 성공")
-            return RedirectResponse(f"nsr://linked?c={claim}", status_code=302)
-
-        # 커넥터 — MCP 쪽 대기표다. 코드를 만들어 커넥터에게 돌려보낸다.
-        try:
-            back = auth.grant(pending)
-        except KeyError:
-            return google_off_page("연결 정보가 상했어요. 커넥터에서 다시 시작해 주세요.")
-        log.info("커넥터 연결 — 구글 로그인 성공")
-        return RedirectResponse(back, status_code=302)
-
-    async def device_claim(request: Request) -> JSONResponse:
-        """앱이 쪽지를 열쇠로 바꾼다. 한 번만 된다."""
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
-        claim = str(body.get("code", "")).strip()
-        pending = store.take_oauth_pending(f"claim-{claim}") if claim else None
-        if not pending:
-            return JSONResponse(
-                {"error": "쪽지가 없거나 시간이 지났습니다. 다시 이어 주십시오."},
-                status_code=400,
-            )
-        # 열쇠는 주우러 온 지금 만든다. 안 주워 가면 아무것도 안 남는다.
-        token = secrets.token_urlsafe(32)
-        store.put_device_token(token, pending.get("email", "(qr)"), pending.get("label"))
-        log.info("기기 연결 — 새 열쇠 발급")
-        return JSONResponse({"token": token})
-
     # ── QR 로 폰 잇기 ─────────────────────────────────────
     #
     # VPS 에서 `python -m nsr_server.pair` 를 돌리면 쪽지가 하나 생기고 주소 두 개가
@@ -484,13 +375,45 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             f'<a class="go" href="nsr://linked?c={code}">앱 열기</a>',
         )
 
-    # ── 로그인 화면 ───────────────────────────────────────
-    #
-    # 커넥터가 사람을 여기로 보낸다. 묻는 것은 하나다 — 서버 열쇠를 아는가.
-    # 한 사람이 쓰는 서버라 계정도 비밀번호도 따로 두지 않는다.
+    async def device_claim(request: Request) -> JSONResponse:
+        """앱이 쪽지를 열쇠로 바꾼다. 한 번만 된다."""
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
+        claim = str(body.get("code", "")).strip()
+        pending = store.take_oauth_pending(f"claim-{claim}") if claim else None
+        if not pending:
+            return JSONResponse(
+                {"error": "쪽지가 없거나 시간이 지났습니다. 다시 이어 주십시오."},
+                status_code=400,
+            )
+        # 열쇠는 주우러 온 지금 만든다. 안 주워 가면 아무것도 안 남는다.
+        token = secrets.token_urlsafe(32)
+        store.put_device_token(token, pending.get("email", "(qr)"), pending.get("label"))
+        log.info("기기 연결 — 새 열쇠 발급")
+        return JSONResponse({"token": token})
 
-    def login_page(pending: str, message: str = "") -> HTMLResponse:
-        note = f'<p class="bad">{message}</p>' if message else ""
+    # ── 커넥터 연결 화면 ──────────────────────────────────
+    #
+    # 커넥터(클로드·GPT)가 사람을 여기로 보낸다. 이 화면은 아무것도 묻지 않는다 —
+    # 여섯 자리 번호를 보여 주고, **폰이 승인할 때까지** 기다린다.
+    #
+    # 열쇠를 묻지 않는 이유: 화면에 열쇠를 넣게 하면 사람이 그 열쇠를 어딘가에
+    # 적어 두게 된다. 번호는 10분이면 사라지고 그 자체로는 힘이 없다. 승인은
+    # 이미 이어진 폰(기기 열쇠를 가진 폰)만 할 수 있다.
+
+    async def oauth_login_form(request: Request) -> HTMLResponse:
+        pending = request.query_params.get("p", "")
+        code = request.query_params.get("c", "")
+        if not pending or not code:
+            return HTMLResponse(
+                "<!doctype html><meta charset=utf-8>"
+                "<p style=\"font:16px system-ui;padding:24px\">"
+                "연결 정보가 없어요. 커넥터에서 다시 시작해 주세요.</p>",
+                status_code=400,
+            )
+        spaced = f"{code[:3]} {code[3:]}"
         return HTMLResponse(
             f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -498,40 +421,62 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
 <style>
   body {{ font-family: system-ui, -apple-system, sans-serif; background:#F7F6F3; color:#23211E;
          display:flex; min-height:100vh; margin:0; align-items:center; justify-content:center; }}
-  form {{ background:#fff; padding:28px; border-radius:16px; width:min(360px,90vw);
-          box-shadow:0 1px 3px rgba(0,0,0,.08); }}
+  main {{ background:#fff; padding:28px; border-radius:16px; width:min(380px,92vw);
+          box-shadow:0 1px 3px rgba(0,0,0,.08); text-align:center; }}
   h1 {{ font-size:18px; margin:0 0 6px; }}
-  p {{ font-size:14px; color:#6B6660; margin:0 0 18px; line-height:1.5; }}
-  .bad {{ color:#B3261E; }}
-  input {{ width:100%; padding:12px; font-size:15px; border:1px solid #DDD8D0;
-           border-radius:10px; box-sizing:border-box; }}
-  button {{ width:100%; margin-top:12px; padding:12px; font-size:15px; font-weight:600;
-            color:#fff; background:#2F6F4E; border:0; border-radius:10px; }}
-</style></head><body>
-<form method="post" action="/oauth/login">
-  <h1>NSR 에 연결해요</h1>
-  <p>서버 열쇠를 넣어 주세요. 서버의 nsr.env 파일에 있는 NSR_MCP_TOKEN 이에요.</p>
-  {note}
-  <input type="password" name="key" autofocus autocomplete="off" placeholder="열쇠 붙여넣기">
-  <input type="hidden" name="p" value="{pending}">
-  <button type="submit">연결하기</button>
-</form></body></html>"""
+  p {{ font-size:14px; color:#6B6660; margin:0 0 18px; line-height:1.6; }}
+  .code {{ font-size:38px; font-weight:800; letter-spacing:6px; margin:18px 0;
+           font-variant-numeric:tabular-nums; }}
+  .wait {{ font-size:13px; color:#8A857E; }}
+</style></head><body><main>
+  <h1>폰에서 승인해 주세요</h1>
+  <p>NSR 앱 → 설정 → 분석 서버 → <b>AI 연결 승인</b> 에<br>아래 번호를 넣어 주세요.</p>
+  <div class="code">{spaced}</div>
+  <p class="wait" id="wait">기다리는 중이에요… 10분 안에 해 주세요.</p>
+<script>
+  // 폰이 승인하면 서버가 돌아갈 주소를 놓아 둔다. 2초마다 들여다본다.
+  const p = {json.dumps(pending)};
+  let tries = 0;
+  const timer = setInterval(async () => {{
+    if (++tries > 300) {{ clearInterval(timer);
+      document.getElementById('wait').textContent = '시간이 지났어요. 커넥터에서 다시 시작해 주세요.';
+      return; }}
+    try {{
+      const res = await fetch('/oauth/login/status?p=' + encodeURIComponent(p));
+      const body = await res.json();
+      if (body.back) {{ clearInterval(timer); location.replace(body.back); }}
+    }} catch (e) {{ /* 잠깐 끊긴 것은 다음 차례에 다시 본다 */ }}
+  }}, 2000);
+</script>
+</main></body></html>"""
         )
 
-    async def oauth_login_form(request: Request) -> HTMLResponse:
-        return login_page(request.query_params.get("p", ""))
+    async def oauth_login_status(request: Request) -> JSONResponse:
+        """화면이 2초마다 묻는 자리. 폰이 승인했으면 돌아갈 주소를 준다."""
+        pending = request.query_params.get("p", "")
+        done = store.take_oauth_pending(f"approved-{pending}") if pending else None
+        return JSONResponse({"back": done["back"]} if done else {})
 
-    async def oauth_login_submit(request: Request):
-        form = await request.form()
-        pending = str(form.get("p", ""))
-        back = auth.approve(pending, str(form.get("key", "")))
-        if not back:
-            # 왜 틀렸는지는 나누지 않는다 — 대기표가 없는 건지 열쇠가 틀린 건지
-            # 알려 주면 찍어 보는 사람에게 단서가 된다.
-            log.info("연결 로그인 실패")
-            return login_page(pending, "열쇠가 맞지 않아요. 다시 넣어 주세요.")
-        log.info("연결 로그인 성공")
-        return RedirectResponse(back, status_code=302)
+    async def connector_approve(request: Request) -> JSONResponse:
+        """폰이 번호를 승인한다. 이어진 폰만 할 수 있다."""
+        if not device_ok(request):
+            return JSONResponse({"error": "이 폰은 서버에 이어져 있지 않습니다."}, status_code=401)
+        try:
+            body = await request.json()
+        except Exception:
+            return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
+        code = "".join(ch for ch in str(body.get("code", "")) if ch.isdigit())
+        if len(code) != 6:
+            return JSONResponse({"error": "여섯 자리 번호를 넣어 주십시오."}, status_code=400)
+        if not auth.approve_from_phone(code):
+            # 번호가 틀렸는지 시간이 지났는지는 나누지 않는다 — 찍어 보는 사람에게
+            # 단서가 된다. 어차피 사람이 할 일은 같다: 커넥터에서 다시 시작.
+            log.info("AI 연결 승인 실패")
+            return JSONResponse(
+                {"error": "번호가 맞지 않거나 시간이 지났습니다."}, status_code=400
+            )
+        log.info("AI 연결 승인 — 폰이 열었다")
+        return JSONResponse({"ok": True})
 
     # MCP 창구와 OAuth 주소는 SDK 가 만든다. well-known 은 도메인 뿌리에 있어야
     # 커넥터가 찾으므로, 이 앱을 뿌리에 둔다.
@@ -551,12 +496,10 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             Route("/pulled", pulled, methods=["POST"]),
             Route("/pair/{code}", pair_open, methods=["GET"]),
             Route("/pair/{code}/qr", pair_qr, methods=["GET"]),
-            Route("/device/start", device_start, methods=["GET"]),
             Route("/device/claim", device_claim, methods=["POST"]),
-            Route("/oauth/google/begin", google_begin, methods=["GET"]),
-            Route("/oauth/google/callback", google_callback, methods=["GET"]),
+            Route("/connector/approve", connector_approve, methods=["POST"]),
+            Route("/oauth/login/status", oauth_login_status, methods=["GET"]),
             Route("/oauth/login", oauth_login_form, methods=["GET"]),
-            Route("/oauth/login", oauth_login_submit, methods=["POST"]),
             # 나머지는 전부 MCP 앱이 받는다 (mcp · well-known · register · authorize · token)
             Mount("/", app=mcp_app),
         ],
@@ -564,6 +507,7 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     )
     app.state.store = store
     app.state.config = config
+    app.state.auth = auth  # 시험이 번호를 만들 때 쓴다
     return app
 
 
@@ -578,7 +522,8 @@ def main() -> None:
     # 토큰은 앞자리도 찍지 않는다. systemd 가 stdout 을 journal 로 받으므로
     # 여기 적히는 것은 곧 로그에 남는 것이다. 주소는 nsr.env 를 보고 만든다.
     print(f"커넥터 주소: https://{config.public_host or '<도메인>'}/mcp")
-    print("로그인: " + ("구글 계정" if config.google_ready else "열쇠(NSR_MCP_TOKEN) — 구글은 README 8번"))
+    print("폰 잇기: python -m nsr_server.pair  (QR)")
+    print("AI 연결: 커넥터 화면의 여섯 자리 번호를 앱에서 승인")
     # 접근 로그를 끈다 — 주소에 토큰이 들어 있어 로그에 남으면 그게 유출이다.
     uvicorn.run(app, host=config.host, port=config.port, access_log=False)
 

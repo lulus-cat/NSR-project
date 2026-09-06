@@ -70,23 +70,6 @@ export async function setDeviceToken(token: string | null): Promise<void> {
   else await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
-/**
- * 구글 로그인 화면을 연다. 돌아오는 것은 `nsr://linked?c=…` 딥링크이고,
- * 그건 `app/linked.tsx` 가 받는다.
- */
-export async function startGoogleLink(): Promise<void> {
-  const url = await getServerUrl();
-  if (!url) throw new Error("서버 주소가 없어요. 위 칸에 넣고 저장해 주세요.");
-  const { Linking } = await import("react-native");
-  // canOpenURL 로 먼저 묻지 않는다 — 안드로이드에서는 앱 목록 권한 때문에
-  // 멀쩡한 주소에도 false 가 오는 일이 있다. 열어 보고 실패하면 그때 말한다.
-  try {
-    await Linking.openURL(`${url}/device/start`);
-  } catch {
-    throw new Error("브라우저를 열지 못했어요. 주소를 확인해 주세요.");
-  }
-}
-
 /** 일회용 쪽지를 이 폰의 열쇠로 바꾼다. 성공하면 보안 저장소에 넣는다. */
 export async function claimDeviceToken(code: string): Promise<void> {
   const url = await getServerUrl();
@@ -103,6 +86,26 @@ export async function claimDeviceToken(code: string): Promise<void> {
   const { token } = (await res.json()) as { token?: string };
   if (!token) throw new Error("서버가 열쇠를 주지 않았어요. 다시 로그인해 주세요.");
   await setDeviceToken(token);
+}
+
+/**
+ * AI(클로드·GPT) 연결을 승인한다.
+ *
+ * 커넥터를 연결하면 화면에 여섯 자리 번호가 뜬다. 그 번호를 여기 넣으면 서버가
+ * 연결을 연다. **이어진 폰만 승인할 수 있다** — 이 요청에 이 폰의 열쇠가 실린다.
+ * 그래서 서버로 들어오는 길은 둘 다 폰을 거친다: 폰은 QR 로 잇고, AI 는 폰이 연다.
+ */
+export async function approveConnector(code: string): Promise<void> {
+  const digits = code.replace(/\D/g, "");
+  if (digits.length !== 6) throw new Error("번호 여섯 자리를 넣어 주세요.");
+  const res = await call("/connector/approve", {
+    method: "POST",
+    body: JSON.stringify({ code: digits }),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? "승인하지 못했어요. 번호를 다시 봐 주세요.");
+  }
 }
 
 export async function serverReady(): Promise<boolean> {

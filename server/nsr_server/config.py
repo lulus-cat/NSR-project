@@ -1,23 +1,18 @@
 """
 설정. 전부 환경변수로 받는다 — 저장소에 값이 들어가면 안 된다.
 
-  NSR_MCP_TOKEN     대화 AI(클로드·GPT) 가 붙을 때 쓰는 토큰. 주소에 들어간다.
-  NSR_DEVICE_TOKEN  폰이 자료를 올릴 때 쓰는 토큰. 헤더에 들어간다.
+  NSR_DEVICE_TOKEN  폰이 자료를 올릴 때 쓰는 비상용 토큰. 평소에는 QR 로 잇는다
+                    (python -m nsr_server.pair). 헤더에 들어간다.
   NSR_DB            SQLite 파일 경로 (기본 ./nsr.db)
   NSR_HOST/NSR_PORT 붙일 주소 (기본 127.0.0.1:8787 — 바깥은 nginx·caddy 가 받는다)
   NSR_PUBLIC_HOST   바깥에서 부르는 도메인 (예: nsr.example.com). **없으면 붙지 않는다.**
   NSR_ALLOWED_ORIGINS  커넥터의 Origin 목록. 쉼표로 나눈다. 비우면 기본값을 쓴다.
   NSR_TIRO_KEY      티로 API 열쇠. 있으면 서버가 티로에서 직접 노트를 가져온다.
-  NSR_GOOGLE_CLIENT_ID / NSR_GOOGLE_CLIENT_SECRET
-                    구글 로그인. 넣으면 폰과 커넥터가 **열쇠 대신 구글 계정**으로
-                    들어온다. 구글 클라우드 콘솔의 '웹 애플리케이션' 클라이언트다
-                    (안드로이드 클라이언트가 아니다 — 서명 지문이 필요 없다).
-  NSR_ALLOWED_EMAILS  들어올 수 있는 구글 계정. 쉼표로 나눈다. **구글 로그인을
-                    켜면 반드시 넣어야 한다** — 없으면 아무 구글 계정이나 들어온다.
   NSR_REPO          저장소 경로 (기본 ../ — 가리기 스크립트를 여기서 찾는다)
 
-두 토큰을 나눠 둔 이유: 하나가 새면 그 하나만 갈면 된다. 폰 토큰이 새도 남이
-전사본을 읽지는 못하고, MCP 토큰이 새도 남이 자료를 올리지는 못한다.
+대화 AI(클로드·GPT) 쪽에는 토큰이 없다. 커넥터를 연결할 때 화면에 여섯 자리
+번호가 뜨고, **이미 이어진 폰에서** 그 번호를 승인해야 열린다. 그래서 이 서버에
+들어오는 길은 둘 다 폰을 거친다 — 폰은 QR 로 잇고, AI 는 폰이 승인한다.
 """
 
 from __future__ import annotations
@@ -51,14 +46,10 @@ DEFAULT_ORIGINS = (
 
 class Config:
     def __init__(self) -> None:
-        self.mcp_token = _need("NSR_MCP_TOKEN")
         self.device_token = _need("NSR_DEVICE_TOKEN")
         self.db_path = os.environ.get("NSR_DB", "nsr.db")
         self.host = os.environ.get("NSR_HOST", "127.0.0.1")
         self.port = int(os.environ.get("NSR_PORT", "8787"))
-        if self.mcp_token == self.device_token:
-            raise SystemExit("두 토큰은 서로 달라야 합니다.")
-
         # 프록시(nginx·caddy) 뒤에서는 이것이 없으면 MCP 가 421 로 막힌다.
         # MCP SDK 가 "127.0.0.1 에 붙었으니 로컬 서버겠지" 하고 DNS 리바인딩
         # 보호를 자동으로 켜서, 프록시가 넘긴 진짜 도메인 Host 를 거부하기 때문이다.
@@ -69,37 +60,8 @@ class Config:
         )
         self.public_host = os.environ.get("NSR_PUBLIC_HOST", "").strip()
 
-        # 구글 로그인 (선택). 셋이 다 있어야 켜진다.
-        self.google_client_id = os.environ.get("NSR_GOOGLE_CLIENT_ID", "").strip()
-        self.google_client_secret = os.environ.get("NSR_GOOGLE_CLIENT_SECRET", "").strip()
-        emails = os.environ.get("NSR_ALLOWED_EMAILS", "").strip()
-        self.allowed_emails = [e.strip().lower() for e in emails.split(",") if e.strip()]
-        if (self.google_client_id or self.google_client_secret) and not self.allowed_emails:
-            # 이걸 빠뜨리면 구글 계정이 있는 **누구나** 내 근무 기록을 읽는다.
-            raise SystemExit(
-                "NSR_ALLOWED_EMAILS 가 비어 있습니다. 구글 로그인을 켤 때는 들어올 수 있는\n"
-                "계정을 반드시 적으십시오:\n"
-                "  NSR_ALLOWED_EMAILS=my.name@gmail.com"
-            )
         origins = os.environ.get("NSR_ALLOWED_ORIGINS", "").strip()
         self.allowed_origins = [o.strip() for o in origins.split(",") if o.strip()] or list(
             DEFAULT_ORIGINS
         )
 
-    @property
-    def google_ready(self) -> bool:
-        """구글 로그인을 쓸 수 있는가. 하나라도 빠지면 열쇠 화면으로 돌아간다."""
-        return bool(
-            self.google_client_id
-            and self.google_client_secret
-            and self.allowed_emails
-            and self.public_host
-        )
-
-    @property
-    def google_redirect(self) -> str:
-        """구글 콘솔의 '승인된 리디렉션 URI' 에 **글자 그대로** 넣을 주소."""
-        return f"https://{self.public_host}/oauth/google/callback"
-
-    def email_allowed(self, email: str) -> bool:
-        return email.strip().lower() in self.allowed_emails

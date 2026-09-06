@@ -19,9 +19,6 @@
  */
 
 import {
-  DEFAULT_ASR_OPTIONS,
-  buildHotwords,
-  buildInitialPrompt,
   buildLexicon,
   collapseRepeatedSentences,
   correctTranscript,
@@ -31,7 +28,6 @@ import {
   reportToMarkdown,
   scoreShift,
   type TaeumScore,
-  type AsrOptions,
   type Lexicon,
   type TranscriptSegment,
   type CardSourceSegment,
@@ -54,20 +50,12 @@ import {
 import { getSetting, setSetting } from "../db";
 import { logDebug } from "./debug";
 
-export interface AsrResult {
-  segments: {
-    startSec: number;
-    endSec: number;
-    text: string;
-    speakerId?: string;
-    confidence?: number;
-  }[];
-  durationSec: number;
-  /**
-   * 서버가 끝까지 못 가고 죽었지만 받은 데까지는 건진 경우의 안내문.
-   * 이 값이 있으면 전사본은 저장하되 기록은 '전사할 기록'에 남겨야 한다.
-   */
-  partial?: string;
+/** 티로에서 가져온 문장 한 토막. 앱이 만드는 것이 아니라 받아 오는 것이다. */
+export interface ImportedSegment {
+  startSec: number;
+  endSec: number;
+  text: string;
+  speakerId?: string;
 }
 
 // 티로는 전사만 한다 — 대화 LLM 공급자가 아니므로 키도 여기 따로 둔다.
@@ -100,28 +88,16 @@ export async function loadLexicon(): Promise<Lexicon> {
   return buildLexicon({ userTerms, packs });
 }
 
-/** 이 근무에서 쓸 ASR 옵션. 사전과 사용 이력으로 프롬프트를 만든다. */
-export async function buildAsrOptions(lexicon: Lexicon): Promise<AsrOptions> {
-  const usageCounts = await getSetting<Record<string, number>>("lexicon.usageCounts", {});
-  return {
-    ...DEFAULT_ASR_OPTIONS,
-    initialPrompt: buildInitialPrompt(lexicon, { usageCounts }),
-    hotwords: buildHotwords(lexicon, { usageCounts }),
-  };
-}
-
 /**
  * ASR 이 준 덩어리를 문장으로 펴고, 교정하고, 저장한다.
  *
  * 지금 들어오는 길은 하나뿐이다 — 티로 노트 가져오기(`tiro-notes.ts`). 파일 없이
  * 전사본만 들어온다. 교정 규칙과 문장 나누기를 한 곳에 두려고 함수는 남겨 둔다.
  */
-export async function saveAsrSegments(input: {
+export async function saveImportedSegments(input: {
   recordingId: string;
   shiftId: string | null;
-  segments: AsrResult["segments"];
-  /** 오인식 목록을 들이댈지. 휘스퍼 전사본에만 맞는다. */
-  asrEngine: "whisper" | "other";
+  segments: ImportedSegment[];
   onProgress?: (pct: number, note?: string) => void;
 }): Promise<number> {
   const lexicon = await loadLexicon();
@@ -129,7 +105,7 @@ export async function saveAsrSegments(input: {
 
   // 1) ASR 덩어리를 문장으로 편다.
   //
-  //    Whisper 가 주는 것은 30초짜리 덩어리이지 문장이 아니다. 문장으로 나눠야
+  //    티로가 주는 것은 문단(화자 한 차례)이지 문장이 아니다. 문장으로 나눠야
   //    화자를 문장별로 지정하고, 한 문장만 골라 고치고, 카드 예문이 문단째로
   //    들어가지 않는다. **교정보다 먼저** 나눠야 교정 위치가 문장 기준으로 잡힌다.
   const rawSegments: TranscriptSegment[] = input.segments.map((s, i) => ({
@@ -139,7 +115,6 @@ export async function saveAsrSegments(input: {
     rawText: s.text,
     text: s.text,
     speakerId: s.speakerId,
-    asrConfidence: s.confidence,
   }));
   // 같은 문장이 세 번 이상 연달아 나오면 디코더 환각으로 보고 접는다
   // ("네. 네. 네." 수십 줄이 1,600문장을 만든 실사례). 재생 구간은 넓혀 둔다.
@@ -161,11 +136,9 @@ export async function saveAsrSegments(input: {
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     const sentence = sentences[i];
-    const corrected = correctTranscript(sentence.text, {
-      lexicon,
-      memory,
-      asrEngine: input.asrEngine,
-    });
+    // asrEngine: "other" — 휘스퍼 오인식 목록은 티로 전사본에 안 맞는다.
+    // 티로는 다르게 틀리기 때문이다. 들이대면 멀쩡한 말을 엉뚱하게 바꾼다.
+    const corrected = correctTranscript(sentence.text, { lexicon, memory, asrEngine: "other" });
     segments.push({ ...sentence, text: corrected.text });
     perSegment.push({ edits: corrected.edits, annotations: corrected.annotations });
   }
@@ -480,7 +453,12 @@ export async function checkTiroConnection(): Promise<{ ok: boolean; message: str
     }
 
     // 2) 노트를 읽어 올 수 있는지 — 한 개만 받아 본다.
-    const probe = await fetch(`${TIRO_API}/v1/external/notes?size=1`, { headers });
+    //    워크스페이스 주소로 묻는다. `/v1/external/notes` 는 티로가 폐기 예정으로
+    //    표시한 옛 주소다 (OpenAPI: deprecated).
+    const probe = await fetch(
+      `${TIRO_API}/v1/external/workspaces/${encodeURIComponent(guid)}/notes?size=1`,
+      { headers },
+    );
     if (!probe.ok) return { ok: false, message: await tiroError(probe, "연결 확인") };
     return { ok: true, message: "연결됐어요. 노트를 가져올 수 있어요." };
   } catch {
