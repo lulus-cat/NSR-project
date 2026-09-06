@@ -1,5 +1,6 @@
 import { describe, it, expect } from "vitest";
 import {
+  cardsFromReport,
   generateCards,
   countByKind,
   newCardState,
@@ -209,5 +210,48 @@ describe("오늘의 한 줄", () => {
       Array.from({ length: 30 }, (_, i) => dailyQuote(`2026-09-${String(i + 1).padStart(2, "0")}`).text),
     );
     expect(texts.size).toBeGreaterThan(10);
+  });
+});
+
+describe("보고서에서 카드 뽑기", () => {
+  const report = `# 2026-09-06 데이 근무
+
+## 배운 것
+Q: 이건 카드 절이 아니라 잡글입니다
+A: 여기 것은 카드가 되면 안 됩니다
+
+## 카드
+Q: 폴리 유치 중 소변주머니를 방광보다 높이 두면 안 되는 이유는 무엇입니까?
+A: 소변이 방광으로 거꾸로 흘러 요로감염 위험이 커지기 때문입니다.
+
+Q: 인계 때 반드시 확인하는 세 가지는 무엇입니까?
+A: 활력징후, 투약 상태,
+그리고 라인 상태입니다.
+
+Q: 답이 없는 물음
+## 복습
+Q: 여기도 카드가 아닙니다
+A: 아닙니다
+`;
+
+  it("카드 절만 읽고 Q/A 쌍만 만든다", () => {
+    const cards = cardsFromReport("2026-09-06:D", report, 1000);
+    expect(cards).toHaveLength(2);
+    expect(cards[0].front).toContain("소변주머니");
+    expect(cards[0].shiftId).toBe("2026-09-06:D");
+    // 여러 줄에 걸친 답을 이어 붙인다
+    expect(cards[1].back).toBe("활력징후, 투약 상태, 그리고 라인 상태입니다.");
+    // 답이 없는 물음은 버린다 — 반쪽 카드는 복습에서 답을 못 맞힌다
+    expect(cards.some((c) => c.front === "답이 없는 물음")).toBe(false);
+  });
+
+  it("같은 보고서를 두 번 받아도 카드가 겹치지 않는다", () => {
+    const a = cardsFromReport("2026-09-06:D", report, 1000);
+    const b = cardsFromReport("2026-09-06:D", report, 2000);
+    expect(a.map((c) => c.id)).toEqual(b.map((c) => c.id));
+  });
+
+  it("카드 절이 없으면 아무것도 안 만든다", () => {
+    expect(cardsFromReport("2026-09-06:D", "# 근무\n\n## 한 줄\n조용했습니다.")).toEqual([]);
   });
 });

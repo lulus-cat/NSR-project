@@ -1037,8 +1037,15 @@ export async function getTaeumScore(shiftId: string): Promise<TaeumScore | null>
   }
 }
 
+/**
+ * 근무별 태움 점수.
+ *
+ * `measured` 를 함께 준다. 규칙 채점은 **화자 이름표가 없으면 아무것도 안 재고
+ * 0점을 내놓는데**, 그걸 화면이 35.8도 저체온으로 그리면 "태움 없음"이라는
+ * 정반대의 말이 된다. 안 잰 것은 안 잰 것으로 보여야 한다.
+ */
 export async function listTaeumScores(limit = 60): Promise<
-  { shiftId: string; score: number; level: string; createdAt: number }[]
+  { shiftId: string; score: number; level: string; createdAt: number; measured: boolean }[]
 > {
   const db = await getDb();
   const rows = await db.getAllAsync<{
@@ -1046,16 +1053,28 @@ export async function listTaeumScores(limit = 60): Promise<
     score: number;
     level: string;
     created_at: number;
+    payload: string;
   }>(
-    "SELECT shift_id, score, level, created_at FROM taeum_scores ORDER BY shift_id DESC LIMIT ?",
+    "SELECT shift_id, score, level, created_at, payload FROM taeum_scores ORDER BY shift_id DESC LIMIT ?",
     [limit],
   );
-  return rows.map((r) => ({
-    shiftId: r.shift_id,
-    score: r.score,
-    level: r.level,
-    createdAt: r.created_at,
-  }));
+  return rows.map((r) => {
+    let measured = true;
+    try {
+      const p = JSON.parse(r.payload) as TaeumScore;
+      // 옛 기록에는 labeledRatio 가 없다. 그때는 잰 것으로 본다.
+      measured = p.source === "ai" || (p.signals?.labeledRatio ?? 1) > 0;
+    } catch {
+      // 읽을 수 없으면 건드리지 않는다.
+    }
+    return {
+      shiftId: r.shift_id,
+      score: r.score,
+      level: r.level,
+      createdAt: r.created_at,
+      measured,
+    };
+  });
 }
 
 export async function saveShiftReport(

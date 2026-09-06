@@ -318,6 +318,8 @@ export default function Home() {
     }[]
   >([]);
   const [temps, setTemps] = useState<Map<string, ReturnType<typeof taeumTemperature>>>(new Map());
+  /** 근무는 있는데 잰 것이 하나도 없다 — 화자 이름표가 아직 없어서다. */
+  const [tempUnmeasured, setTempUnmeasured] = useState(false);
   const [needsTiroKey, setNeedsTiroKey] = useState(false);
   /** 기록 버튼이 도는 중. 두 번 눌러 방금 켠 것을 끄는 일을 막는다. */
   const [micBusy, setMicBusy] = useState(false);
@@ -360,10 +362,14 @@ export default function Home() {
     const scores = await listTaeumScores(30);
     const map = new Map<string, ReturnType<typeof taeumTemperature>>();
     for (const sc of scores) {
+      // 안 잰 것은 그리지 않는다. 0점을 저체온으로 그리면 '태움 없음' 이 된다.
+      if (!sc.measured) continue;
       const date = sc.shiftId.split(":")[0];
       if (!map.has(date)) map.set(date, taeumTemperature(sc.score));
     }
     setTemps(map);
+    // 잰 것은 없는데 근무는 있는 상태 — 화자를 아직 안 정했다는 뜻이다.
+    setTempUnmeasured(scores.length > 0 && scores.every((sc) => !sc.measured));
     // 티로 노트를 가져오려면 열쇠가 있어야 한다. 없으면 가져오기 줄 위에 안내한다.
     // (앱이 티로에 파일을 올리던 길은 없앴다 — 티로가 그걸 안 열어 준다.)
     const { getTiroKey } = await import("../../src/services/asr");
@@ -504,6 +510,12 @@ export default function Home() {
             </Text>
             {latestTemp ? (
               <Badge text={latestTemp.label} tone={latestTemp.tone} />
+            ) : tempUnmeasured ? (
+              <>
+                <Badge text="아직 못 쟀어요" tone="warn" />
+                <Small muted={false}>누가 누구인지 정해야 잴 수 있어요.</Small>
+                <Small>AI 에게 화자를 정해 달라고 해 주세요.</Small>
+              </>
             ) : (
               <Small>근무를 분석하면 병동 온도를 보여드려요.</Small>
             )}

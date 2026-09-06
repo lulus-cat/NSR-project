@@ -59,11 +59,29 @@ export interface TaeumSignals {
   longestSeniorRun: number;
   /** 어휘 근거로 잡힌 이벤트 총수. */
   totalEvents: number;
+  /**
+   * 채점 대상이 된 문장의 비율 (0~1).
+   *
+   * 역할이 안 붙은 화자는 채점하지 않는다(`unknownSpeaker: "ignore"`). 그래서
+   * 이름표를 아직 안 붙인 근무는 **무조건 0점**이 나오는데, 화면이 그걸 "태움
+   * 없음"으로 보여 주면 정반대의 거짓말이 된다. 이 값이 0 이면 "못 쟀다"고
+   * 말해야 한다.
+   */
+  labeledRatio: number;
 }
 
 export interface TaeumScore {
   /** 0~100. */
   score: number;
+  /**
+   * 누가 매겼나. 규칙(`rule`)인가 사람이 읽은 것을 받아 적은 것(`ai`)인가.
+   *
+   * 규칙은 낱말 목록이라 비꼬는 말투와 앞뒤 맥락을 못 본다. 문장을 다 읽은
+   * 쪽이 매긴 값이 있으면 그쪽이 낫다 — 다만 어느 쪽인지는 화면이 밝힌다.
+   */
+  source?: "rule" | "ai";
+  /** ai 가 매겼을 때 한 줄 설명. */
+  note?: string;
   level: TaeumLevel;
   levelLabel: string;
   events: HarassmentEvent[];
@@ -175,6 +193,7 @@ function computeSignals(
 ): TaeumSignals {
   let superiorChars = 0;
   let allChars = 0;
+  let labeled = 0;
   let run = 0;
   let longestRun = 0;
   const superiorQuestionTimes: number[] = [];
@@ -182,6 +201,7 @@ function computeSignals(
   for (const seg of segments) {
     const text = seg.text || seg.rawText;
     const role = resolveRole(seg, unknownSpeaker);
+    if (role !== "unknown") labeled += 1;
     allChars += text.length;
     if (SUPERIOR_ROLES.has(role)) {
       superiorChars += text.length;
@@ -216,6 +236,7 @@ function computeSignals(
     questionBursts: bursts,
     longestSeniorRun: longestRun,
     totalEvents,
+    labeledRatio: segments.length > 0 ? labeled / segments.length : 0,
   };
 }
 
@@ -255,6 +276,10 @@ function levelOf(score: number): TaeumLevel {
 
 /**
  * 근무 한 건의 전사본을 채점한다.
+ *
+ * **화자 이름표가 안 붙어 있으면 0점이 나온다.** 역할을 모르는 화자는 채점하지
+ * 않기 때문이다(안전한 쪽). 그래서 결과의 `signals.labeledRatio` 를 반드시 함께
+ * 본다 — 0 이면 "태움 없음"이 아니라 "아직 못 쟀다"이고, 화면은 그렇게 말해야 한다.
  */
 export function scoreShift(
   segments: TranscriptSegment[],
@@ -299,12 +324,68 @@ export function scoreShift(
 
   return {
     score,
+    source: "rule",
     level,
     levelLabel: LEVEL_LABELS[level],
     events: events.sort((a, b) => b.severity * b.confidence - a.severity * a.confidence),
     patientAggression,
     byCategory,
     signals,
+    disclaimer: DISCLAIMER,
+  };
+}
+
+/**
+ * 문장을 다 읽은 쪽(대화 AI)이 매긴 값을 TaeumScore 로 만든다.
+ *
+ * 규칙 채점은 낱말 목록이라 비꼬는 말투·앞뒤 맥락·되풀이되는 무시를 못 본다.
+ * 그리고 화자 이름표가 없으면 아예 0점이 된다. 문장을 다 읽고 판단한 값이 있으면
+ * 그쪽을 쓴다 — 다만 `source: "ai"` 로 남겨서 화면이 누가 매겼는지 밝힐 수 있게 한다.
+ */
+export function taeumFromReading(input: {
+  score: number;
+  note?: string;
+  events?: {
+    atSec: number;
+    category: HarassmentCategory;
+    label: string;
+    quote?: string;
+  }[];
+}): TaeumScore {
+  const score = Math.round(Math.min(100, Math.max(0, Number(input.score) || 0)));
+  const level = levelOf(score);
+  const events: HarassmentEvent[] = (input.events ?? []).map((e, i) => ({
+    segmentId: `ai-${i}`,
+    category: e.category,
+    categoryLabel: CATEGORY_LABELS[e.category] ?? e.category,
+    label: e.label,
+    // 사람이 읽고 고른 것이라 어휘 규칙의 확신도와 같은 눈금에 두지 않는다.
+    severity: 1,
+    confidence: 1,
+    matched: "",
+    quote: e.quote ?? "",
+    atSec: Number(e.atSec) || 0,
+    speakerRole: "senior",
+  }));
+  const byCategory: Partial<Record<HarassmentCategory, number>> = {};
+  for (const e of events) byCategory[e.category] = (byCategory[e.category] ?? 0) + 1;
+  return {
+    score,
+    source: "ai",
+    note: input.note,
+    level,
+    levelLabel: LEVEL_LABELS[level],
+    events,
+    patientAggression: [],
+    byCategory,
+    signals: {
+      seniorSpeechRatio: 0,
+      questionBursts: 0,
+      longestSeniorRun: 0,
+      totalEvents: events.length,
+      // 문장을 다 읽고 매긴 값이다. '못 쟀다' 로 보이면 안 된다.
+      labeledRatio: 1,
+    },
     disclaimer: DISCLAIMER,
   };
 }

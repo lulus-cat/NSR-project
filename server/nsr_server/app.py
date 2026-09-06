@@ -266,6 +266,70 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         log.info("교정 %d개 — 폰이 가져갑니다", len(clean))
         return f"교정 {len(clean)}개를 넘겼습니다. 폰이 다음에 가져가 전사본을 고칩니다."
 
+    # 태움 갈래 — 앱의 규칙 채점이 쓰는 것과 같은 이름이어야 화면에서 짝이 맞는다.
+    TAEUM_CATEGORIES = (
+        "verbal_abuse",
+        "public_humiliation",
+        "information_withholding",
+        "excessive_workload",
+        "threat",
+        "exclusion",
+    )
+
+    @mcp.tool()
+    def set_taeum(shift_id: str, score: int, note: str = "", events: str = "") -> str:
+        """
+        문장을 다 읽고 매긴 근무 체온을 앱에 넘긴다. 폰이 그 값으로 바꾼다.
+
+        앱의 규칙 채점은 낱말 목록이라 비꼬는 말투와 앞뒤 맥락을 못 보고,
+        **화자 이름표가 안 붙어 있으면 아예 0점**이 나온다. 문장을 다 읽었으면
+        그 판단을 여기로 넘긴다.
+
+        score 는 0~100 이다. 눈금은 앱과 같다 —
+        10 미만 특이사항 없음 · 10 관찰 · 30 주의 · 60 이상 심각.
+
+        events 는 걸린 대목이다(JSON 배열, 없으면 비워도 된다):
+          [{"atSec":4127,"category":"verbal_abuse","label":"인격 모독","quote":"짧게"}]
+
+        갈래: verbal_abuse(폭언·인격 모독)·public_humiliation(공개 망신)·
+        information_withholding(정보 차단)·excessive_workload(과한 업무)·
+        threat(위협)·exclusion(따돌림).
+
+        인용은 **짧게** 적는다. 이 값은 폰으로 돌아가 화면에 그대로 뜬다.
+        """
+        try:
+            score_n = int(score)
+        except (TypeError, ValueError):
+            return "score 는 0~100 사이의 숫자여야 합니다."
+        score_n = max(0, min(100, score_n))
+        rows = []
+        if events.strip():
+            try:
+                parsed = json.loads(events)
+            except Exception:
+                return "events 는 JSON 배열이어야 합니다."
+            if not isinstance(parsed, list):
+                return "events 는 JSON 배열이어야 합니다."
+            for e in parsed:
+                if not isinstance(e, dict):
+                    continue
+                cat = str(e.get("category", ""))
+                if cat not in TAEUM_CATEGORIES:
+                    continue
+                rows.append(
+                    {
+                        "atSec": float(e.get("atSec") or 0),
+                        "category": cat,
+                        "label": str(e.get("label", "")).strip() or "확인 필요",
+                        "quote": str(e.get("quote", "")).strip()[:120],
+                    }
+                )
+        store.put_ai_action(
+            shift_id, "taeum", {"score": score_n, "note": note.strip(), "events": rows}
+        )
+        log.info("근무 체온 %d점, 대목 %d개 — 폰이 가져갑니다", score_n, len(rows))
+        return f"근무 체온 {score_n}점으로 넘겼습니다. 폰이 다음에 가져갑니다."
+
     @mcp.tool()
     def get_taeum_summary(limit: int = 12) -> str:
         """근무별 태움 점수와 등급. 숫자만 준다 — 그 점수를 만든 문장은 주지 않는다."""
@@ -718,6 +782,7 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     app.state.tools = {
         "set_speaker_roles": set_speaker_roles,
         "put_corrections": put_corrections,
+        "set_taeum": set_taeum,
         "add_term": add_term,
     }
     return app

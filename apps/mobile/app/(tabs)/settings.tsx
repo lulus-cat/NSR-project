@@ -470,6 +470,8 @@ export default function Settings() {
       const parts = [
         got.reports ? `보고서 ${got.reports}개` : "",
         got.terms ? `새 용어 ${got.terms}개` : "",
+        got.cards ? `카드 ${got.cards}장` : "",
+        got.taeum ? "근무 체온" : "",
         got.roles ? `화자 ${got.roles}줄` : "",
         got.fixes ? `교정 ${got.fixes}곳` : "",
       ].filter(Boolean);

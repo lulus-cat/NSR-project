@@ -41,12 +41,14 @@ import {
   applySpeakerRoles,
   listUserTerms,
   shiftsWithSegments,
+  saveCards,
   saveShiftReport,
+  saveTaeumScore,
   saveUserTerm,
   setSetting,
 } from "../db";
 import { redactForNetwork } from "./export";
-import { deidentify } from "@nsr/core";
+import { cardsFromReport, deidentify, taeumFromReading } from "@nsr/core";
 import { logDebug } from "./debug";
 
 const URL_KEY = "nsr.server.url";
@@ -478,8 +480,10 @@ export async function sendShift(
 export async function pullFromServer(): Promise<{
   reports: number;
   terms: number;
+  cards: number;
   roles: number;
   fixes: number;
+  taeum: number;
 }> {
   const res = await call("/pull");
   if (!res.ok) throw new Error(await serverError(res, "결과 받기"));
@@ -492,11 +496,16 @@ export async function pullFromServer(): Promise<{
 
   const reports = body.reports ?? [];
   const terms = body.terms ?? [];
+  let cards = 0;
   for (const r of reports) {
     // payload 에 마크다운을 함께 남긴다. `{source:"server"}` 만 넣던 것이
     // 로컬 분석 결과를 지웠고, 임상 모드의 '카드 추가' 는 payload 안에서
     // 근거 id 를 찾기 때문에 그 뒤로 아무것도 못 넣었다.
     await saveShiftReport(r.shiftId, r.markdown, { source: "server", markdown: r.markdown });
+    // 보고서의 '## 카드' 절을 학습 카드로 만든다. 예전에는 AI 가 카드 15장을
+    // 만들었다고 말해도 복습 탭에는 한 장도 없었다 — 글로만 있었기 때문이다.
+    const made = cardsFromReport(r.shiftId, r.markdown);
+    if (made.length) cards += await saveCards(made, Date.now());
   }
   const mine = new Set((await listUserTerms()).map((u) => u.ko));
   for (const t of terms) {
@@ -523,12 +532,19 @@ export async function pullFromServer(): Promise<{
   const done: { shiftId: string; kind: string }[] = [];
   let roles = 0;
   let fixes = 0;
+  let taeum = 0;
   for (const a of actions) {
     try {
       if (a.kind === "speakers") {
         roles += await applySpeakerRoles(a.shiftId, a.payload as Record<string, string>);
       } else if (a.kind === "corrections") {
         fixes += await applyCorrections(a.shiftId, a.payload as never);
+      } else if (a.kind === "taeum") {
+        // 문장을 다 읽은 쪽이 매긴 값이다. 규칙 점수를 덮어쓴다 —
+        // 규칙은 화자 이름표가 없으면 무조건 0점이라 '태움 없음'으로 거짓말을 한다.
+        const p = a.payload as { score: number; note?: string; events?: never[] };
+        await saveTaeumScore(a.shiftId, taeumFromReading(p));
+        taeum += 1;
       } else {
         // 모르는 갈래는 건드리지 않고 그대로 둔다 (서버가 앞서 나갔을 때).
         continue;
@@ -552,5 +568,5 @@ export async function pullFromServer(): Promise<{
     // 그때 같은 보고서를 다시 덮어쓰지 않게 기록해 둔다.
     if (!told.ok) void logDebug("받았다고 알리지 못했어요 — 다음에 다시 받습니다.");
   }
-  return { reports: reports.length, terms: terms.length, roles, fixes };
+  return { reports: reports.length, terms: terms.length, cards, roles, fixes, taeum };
 }
