@@ -28,6 +28,8 @@ class NsrWorkService : Service() {
     const val ACTION_START = "start"
     const val EXTRA_TITLE = "title"
     const val EXTRA_BODY = "body"
+    /** 참이면 마이크 유형까지 잡는다 (녹음 중). */
+    const val EXTRA_MIC = "mic"
     private const val NOTIF_ID = 41100
     private const val CHANNEL_ID = "nsr-work"
 
@@ -51,10 +53,21 @@ class NsrWorkService : Service() {
   override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
     val title = intent?.getStringExtra(EXTRA_TITLE) ?: "작업 진행 중"
     val body = intent?.getStringExtra(EXTRA_BODY) ?: ""
+    val mic = intent?.getBooleanExtra(EXTRA_MIC, false) ?: false
     ensureChannel()
     val notification = build(title, body)
     if (Build.VERSION.SDK_INT >= 29) {
-      startForeground(NOTIF_ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC)
+      // 녹음 중에는 microphone 유형이 있어야 화면을 꺼도 마이크가 살아 있다
+      // (안드로이드 14+). 그 유형은 RECORD_AUDIO 를 받은 뒤에만 쓸 수 있으므로
+      // 녹음이 아닌 작업(내려받기)에는 dataSync 만 준다 — 아니면 SecurityException.
+      val type =
+        if (mic) {
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC or
+            ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+        } else {
+          ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        }
+      startForeground(NOTIF_ID, notification, type)
     } else {
       startForeground(NOTIF_ID, notification)
     }

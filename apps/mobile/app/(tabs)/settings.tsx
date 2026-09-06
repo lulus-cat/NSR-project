@@ -6,6 +6,7 @@ import { useFocusEffect, useRouter } from "expo-router";
 import {
   DEFAULT_RECORDING_POLICY,
   DEFAULT_TEMPLATES,
+  GEOFENCE_RADII,
   type ShiftCode,
   type ShiftTemplate,
 } from "@nsr/core";
@@ -37,8 +38,10 @@ import {
   getWorkplace,
   searchWorkplace,
   setGeofence,
+  setRadius,
   setWorkplaceHere,
   setWorkplacePlace,
+  whereAmI,
   type PlaceHit,
   type Workplace,
 } from "../../src/services/geofence";
@@ -816,6 +819,64 @@ export default function Settings() {
                   }}
                 />
                 <Small>누르면 풀려요.</Small>
+
+                {/* 병원 규모가 제각각이라 사람이 고른다. 의원은 100m, 대학병원은 1km. */}
+                <Small muted={false}>얼마나 가까워야 켤까요</Small>
+                <View style={{ flexDirection: "row", gap: space.sm }}>
+                  {GEOFENCE_RADII.map((r) => {
+                    const on = workplace.radius === r;
+                    return (
+                      <Pressable
+                        key={r}
+                        accessibilityRole="button"
+                        accessibilityState={{ selected: on }}
+                        onPress={async () => {
+                          const next = await setRadius(r);
+                          if (next) setWorkplace(next);
+                          setGeoMsg(`반경을 ${r}m 로 바꿨어요.`);
+                        }}
+                        style={{
+                          flex: 1,
+                          minHeight: TOUCH_MIN,
+                          borderRadius: radius.md,
+                          backgroundColor: on ? t.accent : t.surfaceAlt,
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Text
+                          style={[
+                            type.small,
+                            { color: on ? "#FFFFFF" : t.text, fontWeight: "700" },
+                          ]}
+                        >
+                          {r >= 1000 ? "1km" : `${r}m`}
+                        </Text>
+                      </Pressable>
+                    );
+                  })}
+                </View>
+                <Small>건물만이면 100m, 부지가 넓으면 500m 이상으로 해요.</Small>
+
+                {/* 폰에서 실제로 되는지 볼 수 있는 유일한 자리 */}
+                <Button
+                  label="지금 여기서 확인"
+                  onPress={async () => {
+                    setGeoMsg("위치를 보는 중이에요…");
+                    const now = await whereAmI();
+                    if (!now) {
+                      setGeoMsg("근무지가 없어요.");
+                    } else if (now.distance === null) {
+                      setGeoMsg("위치를 못 읽었어요. 하늘이 보이는 곳에서 다시 눌러 주세요.");
+                    } else {
+                      setGeoMsg(
+                        now.inside
+                          ? `근무지에서 ${now.distance}m — 안이에요. 여기서 기록이 켜져요.`
+                          : `근무지에서 ${now.distance}m — 밖이에요. 여기서는 안 켜져요.`,
+                      );
+                    }
+                  }}
+                />
                 <Button
                   label="지도에서 위치 확인 (카카오맵)"
                   onPress={() =>

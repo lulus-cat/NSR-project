@@ -48,7 +48,7 @@ class NsrAudioDecodeModule : Module() {
     // 얼리기(app freezer)·네트워크 차단에서 면제된다.
     // 시작은 사용자가 버튼을 누른 포그라운드 시점이라 인텐트로,
     // 갱신·중지는 백그라운드에서도 안전하도록 인스턴스 직접 호출로.
-    Function("workStart") { title: String, body: String ->
+    Function("workStart") { title: String, body: String, mic: Boolean ->
       val context = appContext.reactContext ?: return@Function
       val running = NsrWorkService.instance
       if (running != null) {
@@ -59,6 +59,7 @@ class NsrAudioDecodeModule : Module() {
         .setAction(NsrWorkService.ACTION_START)
         .putExtra(NsrWorkService.EXTRA_TITLE, title)
         .putExtra(NsrWorkService.EXTRA_BODY, body)
+        .putExtra(NsrWorkService.EXTRA_MIC, mic)
       ContextCompat.startForegroundService(context, intent)
     }
     Function("workUpdate") { title: String, body: String ->

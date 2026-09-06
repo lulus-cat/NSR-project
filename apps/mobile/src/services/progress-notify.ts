@@ -31,10 +31,10 @@ export async function ensureNotifPermission(): Promise<void> {
  * 작업 시작 — 포그라운드 서비스를 잡는다(가능한 환경에서).
  * 사용자가 버튼을 누른 직후(앱이 포그라운드일 때) 불러야 한다.
  */
-export async function beginWork(title: string, body: string): Promise<void> {
+export async function beginWork(title: string, body: string, mic = false): Promise<void> {
   await ensureNotifPermission();
   workRefs += 1;
-  if (workRefs === 1) fgsActive = workStart(title, body);
+  if (workRefs === 1) fgsActive = workStart(title, body, mic);
   else if (fgsActive) workUpdate(title, body);
 }
 

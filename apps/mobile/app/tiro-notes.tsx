@@ -6,7 +6,6 @@
  * 올릴 것이 없으니 기다림도, 파일 나누기도 없다.
  *
  * 고르는 것은 세 가지다. 노트 하나 → 어느 근무 → 합칠지 따로 둘지.
- * 화면 짜임새는 '음성 가져오기'(import-audio.tsx)와 일부러 같게 두었다.
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, Text, View } from "react-native";

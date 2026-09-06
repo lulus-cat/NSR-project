@@ -10,7 +10,7 @@ const Native = requireOptionalNativeModule<{
   decodeToWav16k(srcPath: string, dstPath: string): Promise<string>;
   audioDurationSec(srcPath: string): Promise<number>;
   splitAudio(srcPath: string, dstDir: string, chunkSec: number): Promise<AudioPart[]>;
-  workStart(title: string, body: string): void;
+  workStart(title: string, body: string, mic: boolean): void;
   workUpdate(title: string, body: string): void;
   workStop(): void;
 }>("NsrAudioDecode");
@@ -50,10 +50,17 @@ export async function decodeToWav16k(srcUri: string, dstUri: string): Promise<st
  * 다운로드·전사가 얼리지 않게 한다 (Android 전용, 없으면 조용히 무시).
  * 알림 제목/본문이 곧 진행 표시다.
  */
-export function workStart(title: string, body: string): boolean {
+/**
+ * 포그라운드 서비스를 잡는다.
+ *
+ * `mic` 를 켜면 microphone 유형까지 잡는다 — **녹음 중에는 반드시 켜야 한다.**
+ * 안드로이드 14+ 는 화면이 꺼진 뒤의 마이크 접근을 이 유형으로만 허용한다.
+ * 녹음이 아닌 작업(내려받기)에 켜면 RECORD_AUDIO 가 없을 때 서비스가 죽는다.
+ */
+export function workStart(title: string, body: string, mic = false): boolean {
   if (!Native?.workStart) return false;
   try {
-    Native.workStart(title, body);
+    Native.workStart(title, body, mic);
     return true;
   } catch {
     return false;

@@ -24,6 +24,10 @@ import {
 } from "expo-audio";
 import type { RecordingPolicy } from "@nsr/core";
 import { fileSize, moveIntoRecordings, recordingFileUri } from "./files";
+import { beginWork, endWork } from "./progress-notify";
+
+/** 이 기록이 잡고 있는 작업의 이름. begin 과 end 가 같은 이름을 써야 짝이 맞는다. */
+const RECORDING_WORK_ID = "recording";
 
 export interface AudioBackend {
   /** 마이크 권한. 이미 있으면 즉시 true. */
@@ -198,6 +202,17 @@ export function createExpoAudioBackend(): AudioBackend {
         // 다른 앱 소리를 끊지 않는다. 통화나 알람이 죽으면 바로 들킨다.
         interruptionMode: "mixWithOthers",
       });
+
+      // **포그라운드 서비스를 잡는다 (안드로이드).**
+      //
+      // 이게 없으면 화면을 끄거나 다른 앱으로 넘어간 순간 시스템이 우리를
+      // 얼리고(cached app freezer), 안드로이드 14+ 는 아예 마이크를 끊는다.
+      // 사용자는 기록되는 줄 알고 근무를 다 보낸 뒤에야 파일이 없는 것을 안다.
+      // 유형은 microphone 이어야 한다 — dataSync 만으로는 마이크가 안 산다.
+      //
+      // 알림 하나가 상시 떠 있는 것은 OS 요구사항이라 우회할 수 없다. 대신
+      // 최소 중요도 채널이고 문구는 거짓말하지 않는다 (docs/01).
+      await beginWork("기록 중", "화면을 꺼도 계속 기록해요", true);
       // 시작음·종료음은 애초에 재생하지 않는다.
       // 이 플래그는 정책을 코드에 남겨두기 위한 것이고, 여기서 할 일은 없다.
       void silent;
@@ -232,6 +247,7 @@ export function createExpoAudioBackend(): AudioBackend {
 
     async releaseSession() {
       await setAudioModeAsync({ allowsRecording: false, shouldPlayInBackground: false });
+      await endWork(RECORDING_WORK_ID);
     },
 
     isRecording() {

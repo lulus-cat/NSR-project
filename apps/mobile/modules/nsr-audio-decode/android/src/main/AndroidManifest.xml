@@ -1,11 +1,14 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
   <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+  <!-- 안드로이드 14+ 는 화면이 꺼진 뒤 마이크를 쓰려면 microphone 유형의
+       포그라운드 서비스를 요구한다. dataSync 만으로는 녹음이 끊긴다. -->
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
   <uses-permission android:name="android.permission.WAKE_LOCK" />
   <application>
     <service
       android:name="expo.modules.nsraudiodecode.NsrWorkService"
       android:exported="false"
-      android:foregroundServiceType="dataSync" />
+      android:foregroundServiceType="dataSync|microphone" />
   </application>
 </manifest>

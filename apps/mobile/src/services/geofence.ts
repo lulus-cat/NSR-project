@@ -26,7 +26,7 @@
  */
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import { resolveAll, toDateString } from "@nsr/core";
+import { distanceMeters, reallyLeft, resolveAll, toDateString } from "@nsr/core";
 import { getSetting, listDutyEntries, setSetting } from "../db";
 import { searchHospitalsHira, searchPlacesKakao } from "./publicdata";
 import { buildSchedule, currentSession, startManual, stopManual } from "./scheduler";
@@ -37,6 +37,9 @@ export const GEO_KEYS = {
   workplace: "geofence.workplace",
   enabled: "geofence.enabled",
 } as const;
+
+/** 병원 부지를 감안한 기본값. 사람이 설정에서 바꾼다 (GEOFENCE_RADII). */
+export const DEFAULT_RADIUS = 250;
 
 export interface Workplace {
   latitude: number;
@@ -77,7 +80,13 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
       if (!currentSession()) await startManual(day.shiftId);
       await setSetting("geofence.lastEnterAt", Date.now());
     } else if (eventType === Location.GeofencingEventType.Exit) {
-      // 나가면 무조건 끈다. 근무지 밖의 대화는 이 앱이 다룰 것이 아니다.
+      // 나갔다는 신호를 그대로 믿지 않는다. 안드로이드는 실내에서 위치가 수백
+      // 미터씩 튀고, 그 한 번에 근무 중 기록이 끊기면 그날 근무는 통째로 없다.
+      // 지금 어디인지 한 번 더 재 보고, 확실히 벗어났을 때만 끊는다.
+      if (await stillInside()) {
+        await setSetting("geofence.ignoredExitAt", Date.now());
+        return;
+      }
       await stopManual();
       await setSetting("geofence.lastExitAt", Date.now());
     }
@@ -85,6 +94,34 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
     console.error("[앗] 위치 감지기 뻗음", e);
   }
 });
+
+/**
+ * 지금 근무지 안에 있는가. 이탈 신호를 되짚어 볼 때와, 사용자가 화면에서
+ * "지금 위치로 확인"을 누를 때 같은 함수를 쓴다.
+ *
+ * 위치를 못 읽으면 **안에 있다고 본다.** 못 읽었다는 이유로 기록을 끊는 것이
+ * 잘못 끊는 것보다 나쁘다 (녹음은 다시 만들 수 없다).
+ */
+export async function whereAmI(): Promise<{
+  inside: boolean;
+  distance: number | null;
+  radius: number;
+} | null> {
+  const wp = await getWorkplace();
+  if (!wp) return null;
+  try {
+    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    const distance = Math.round(distanceMeters(pos.coords, wp));
+    return { inside: !reallyLeft(distance, wp.radius), distance, radius: wp.radius };
+  } catch {
+    return { inside: true, distance: null, radius: wp.radius };
+  }
+}
+
+async function stillInside(): Promise<boolean> {
+  const now = await whereAmI();
+  return now?.inside ?? false;
+}
 
 export async function getWorkplace(): Promise<Workplace | null> {
   return getSetting<Workplace | null>(GEO_KEYS.workplace, null);
@@ -99,7 +136,7 @@ export async function geofenceEnabled(): Promise<boolean> {
  * 주소 검색을 넣지 않은 이유: 병동에서 이 버튼을 한 번 누르는 것이
  * 지도에서 병원을 찾아 찍는 것보다 정확하고 빠르다.
  */
-export async function setWorkplaceHere(radius = 150): Promise<Workplace | null> {
+export async function setWorkplaceHere(radius = DEFAULT_RADIUS): Promise<Workplace | null> {
   const fg = await Location.requestForegroundPermissionsAsync();
   if (!fg.granted) return null;
   const pos = await Location.getCurrentPositionAsync({
@@ -157,8 +194,8 @@ export async function searchWorkplace(
   );
 }
 
-/** 검색 결과를 근무지로 저장한다. 반경은 병원 부지를 감안해 넉넉히 250m. */
-export async function setWorkplacePlace(hit: PlaceHit, radius = 250): Promise<Workplace> {
+/** 검색 결과를 근무지로 저장한다. 반경은 설정 화면에서 고른 값이다. */
+export async function setWorkplacePlace(hit: PlaceHit, radius = DEFAULT_RADIUS): Promise<Workplace> {
   const wp: Workplace = {
     latitude: hit.latitude,
     longitude: hit.longitude,
@@ -167,6 +204,22 @@ export async function setWorkplacePlace(hit: PlaceHit, radius = 250): Promise<Wo
   };
   await setSetting(GEO_KEYS.workplace, wp);
   return wp;
+}
+
+/**
+ * 반경만 바꾼다. 병원 규모가 제각각이라(작은 의원부터 대학병원 부지까지)
+ * 사람이 고르는 값이다. 켜져 있으면 새 반경으로 다시 건다.
+ */
+export async function setRadius(radius: number): Promise<Workplace | null> {
+  const wp = await getWorkplace();
+  if (!wp) return null;
+  const next = { ...wp, radius };
+  await setSetting(GEO_KEYS.workplace, next);
+  if (await geofenceEnabled()) {
+    await setGeofence(false);
+    await setGeofence(true);
+  }
+  return next;
 }
 
 export async function clearWorkplace(): Promise<void> {

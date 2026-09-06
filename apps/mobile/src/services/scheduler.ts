@@ -129,7 +129,18 @@ export async function upcomingWindows(now = Date.now()): Promise<RecordingWindow
 // 앱 프로세스 안에서 유일한 세션. 두 개가 동시에 마이크를 잡으면 둘 다 실패한다.
 let activeSession: RecordingSession | null = null;
 let activeShiftId: string | null = null;
-// 수동 시작 시각. 수동 세션은 듀티표 판정 밖이라 tick 이 못 끄는 대신 12시간 상한을 둔다.
+/**
+ * tick 이 아닌 곳에서 시작한 세션의 시작 시각 (0 이면 tick 이 시작한 것이다).
+ *
+ * 홈의 기록 버튼과 지오펜스가 여기 해당한다. 이 세션들은 듀티표 판정의 대상이
+ * 아니다 — tick 이 "지금은 기록 구간이 아니다"라며 꺼 버리면 안 된다.
+ *
+ * 예전에는 이것을 `activeShiftId.endsWith(":MANUAL")` 로 판정했다. 그래서 홈
+ * 버튼은 지켜졌지만 **지오펜스로 켜진 기록은 안 지켜졌다** — 지오펜스는 근무
+ * id(2026-09-06:D)로 시작하기 때문이다. 출근 40분 전에 병동에 도착해 기록이
+ * 켜져도, 근무 시각이 아직 안 됐으니 다음 tick(대개 15분 안)이 꺼 버렸다.
+ * 자동 기록을 꺼 두고 지오펜스만 쓰면 아예 15분마다 끊겼다.
+ */
 let manualStartedAt = 0;
 
 export function currentSession(): { session: RecordingSession; shiftId: string } | null {
@@ -158,7 +169,8 @@ export async function tick(now = Date.now()): Promise<{
   const window = policy.enabled ? activeWindowAt(windows, now) : null;
   const next = nextWindowAfter(windows, now);
 
-  const manual = activeShiftId?.endsWith(":MANUAL") ?? false;
+  // tick 밖에서 켜진 기록인가 (홈 버튼·지오펜스). 이름이 아니라 시작한 경로로 본다.
+  const manual = manualStartedAt > 0;
   if (window && !manual) {
     if (!activeSession || activeShiftId !== window.shiftId) {
       await stopActive(now);
@@ -167,9 +179,8 @@ export async function tick(now = Date.now()): Promise<{
   } else if (activeSession && !manual) {
     await stopActive(now);
   } else if (activeSession && manual && now - manualStartedAt > 12 * 3600_000) {
-    // 홈 버튼으로 시작한 기록은 사용자가 끄는 것이 원칙이다. tick 이 "지금은
-    // 기록 구간이 아니다"라며 몇 초 만에 꺼 버리던 것이 바로 그 버그 —
-    // 수동 세션은 듀티표 판정의 대상이 아니다. 12시간 상한만 지킨다.
+    // 끄는 것은 사람(또는 지오펜스 이탈)이다. 다만 12시간 상한은 둔다 —
+    // 끄는 것을 잊고 잠들면 폰이 하루 종일 듣는다.
     await stopActive(now);
   }
 
@@ -223,6 +234,7 @@ async function stopActive(now: number): Promise<void> {
   await activeSession.stop(now);
   activeSession = null;
   activeShiftId = null;
+  manualStartedAt = 0;
 }
 
 /** 사용자가 화면에서 직접 시작/정지할 때. 듀티표와 무관하게 동작한다. */

@@ -559,13 +559,6 @@ export default function Home() {
             <Small>외 {pendingCount - 3}건은 근무 기록 화면에서 봐요.</Small>
           ) : null}
           <DashedDivider />
-          <BriefRow
-            icon="folder-open-outline"
-            label="다른 앱에서 음성 가져오기"
-            value="고르기"
-            onPress={() => router.push("/import-audio")}
-          />
-          <DashedDivider />
           {needsTiroKey ? (
             <BriefRow
               icon="cloud-download-outline"
