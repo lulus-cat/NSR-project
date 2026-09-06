@@ -31,7 +31,7 @@ import {
   getServerUrl,
   linkDevice,
   pollLink,
-  pullFromServer,
+  syncWithServer,
   recoverDevice,
   serverState,
   setDeviceToken,
@@ -314,10 +314,40 @@ export default function Settings() {
       setSrvHasToken((await getDeviceToken()) !== null);
     }
   }, []);
+  /**
+   * 화면에 들어올 때마다 서버와 한 번 맞춘다. 누를 버튼은 없다.
+   *
+   * 예전에는 '결과 받기' 버튼이었다. 안 누르면 AI 가 써 둔 보고서도 카드도 폰에
+   * 영영 안 들어왔고, 그 사실이 화면 어디에도 없었다.
+   */
+  const syncNow = useCallback(async () => {
+    try {
+      const out = await syncWithServer();
+      if (!out?.got) return;
+      const got = out.got;
+      const parts = [
+        got.reports ? `보고서 ${got.reports}개` : "",
+        got.terms ? `새 용어 ${got.terms}개` : "",
+        got.cards ? `카드 ${got.cards}장` : "",
+        got.taeum ? "근무 체온" : "",
+        got.roles ? `화자 ${got.roles}줄` : "",
+        got.fixes ? `교정 ${got.fixes}곳` : "",
+      ].filter(Boolean);
+      // 새로 온 것이 없으면 아무 말도 안 한다 — 화면에 들어올 때마다 말하면 잔소리다.
+      if (parts.length > 0) {
+        setSrvNote(`${parts.join(", ")}를 받았어요.`);
+        await refreshServer();
+      }
+    } catch {
+      // 서버가 잠깐 안 되는 것으로 설정 화면이 시끄러워지면 안 된다. 다음에 다시 온다.
+    }
+  }, [refreshServer]);
+
   useFocusEffect(
     useCallback(() => {
       void refreshServer();
-    }, [refreshServer]),
+      void syncNow();
+    }, [refreshServer, syncNow]),
   );
 
   // 승인 번호 — AI 커넥터 화면에 뜬 것과, 새로 잇는 기기가 띄운 것 둘 다 여기 넣는다.
@@ -463,26 +493,6 @@ export default function Settings() {
     }
   }, [refreshServer, srvUrl]);
 
-  const pullResults = useCallback(async () => {
-    setSrvBusy(true);
-    try {
-      const got = await pullFromServer();
-      const parts = [
-        got.reports ? `보고서 ${got.reports}개` : "",
-        got.terms ? `새 용어 ${got.terms}개` : "",
-        got.cards ? `카드 ${got.cards}장` : "",
-        got.taeum ? "근무 체온" : "",
-        got.roles ? `화자 ${got.roles}줄` : "",
-        got.fixes ? `교정 ${got.fixes}곳` : "",
-      ].filter(Boolean);
-      setSrvNote(parts.length === 0 ? "새로 온 것이 없어요." : `${parts.join(", ")}를 받았어요.`);
-    } catch (e) {
-      setSrvNote(e instanceof Error ? e.message : "받지 못했어요. 다시 눌러 주세요.");
-    } finally {
-      setSrvBusy(false);
-      void refreshServer();
-    }
-  }, [refreshServer]);
   const policy = app.policy;
   // 번호는 옮겨 적는 값이라 크고 넓게 둔다 (여섯 자리, 복구 번호 둘 다).
   const codeStyle = {
@@ -717,9 +727,9 @@ export default function Settings() {
           </>
         ) : null}
 
-        <Button label="결과 받기" disabled={!srvHasToken} busy={srvBusy} onPress={() => void pullResults()} />
         {srvNote ? <Small muted={false}>{srvNote}</Small> : null}
         <Small>보낸 뒤에는 클로드·GPT 에서 분석해요.</Small>
+        <Small>결과는 앱을 열 때마다 저절로 들어와요.</Small>
         <Divider />
 
         {/* 승인 번호 — AI 연결과 새 기기가 같은 칸을 쓴다. 서버가 알아서 가른다 */}

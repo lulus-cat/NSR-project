@@ -1,22 +1,26 @@
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useFocusEffect, useRouter } from "expo-router";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import {
+  answerDrill,
+  drillProgress,
   dueStates,
   newCardState,
   resolveAll,
   review,
   shiftDueDateOffDuty,
+  startDrill,
   studyStats,
   type Card as StudyCard,
-  type Grade,
+  type Drill,
   type ReviewState,
   type ShiftReport,
 } from "@nsr/core";
 import { Badge, Body, Button, Card, ChipRow, Divider, Small } from "../../src/components/ui";
+import { Flashcard } from "../../src/components/flashcard";
 import { CONTENT_MAX, TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import { getNoteByTitle, getShiftReportMarkdown, saveNote } from "../../src/db";
 import { buildSchedule } from "../../src/services/scheduler";
@@ -39,13 +43,10 @@ const KIND_LABELS: Record<StudyCard["kind"], string> = {
   formal: "기록 표현",
 };
 
-/** SM-2의 0~5를 사람이 고를 수 있는 4개로 줄인다. 6개는 너무 많다. */
-const GRADES: { grade: Grade; label: string; hint: string }[] = [
-  { grade: 1, label: "몰랐다", hint: "내일 다시" },
-  { grade: 3, label: "겨우", hint: "곧 다시" },
-  { grade: 4, label: "맞음", hint: "" },
-  { grade: 5, label: "쉬움", hint: "한참 뒤" },
-];
+// 등급을 넷에서 둘로 줄였다. 카드를 미는 손은 "외웠다 / 더 볼래" 두 갈래뿐이고,
+// 그 둘을 간격 반복의 등급으로 옮긴다 (외웠다 4점, 더 볼래 1점).
+const GRADE_KNOWN = 4 as const;
+const GRADE_AGAIN = 1 as const;
 
 type Mode = "review" | "sets" | "reports" | "transcripts";
 
@@ -66,10 +67,14 @@ export default function Study() {
   const [mode, setMode] = useState<Mode>("transcripts");
   const [cards, setCards] = useState<StudyCard[]>([]);
   const [states, setStates] = useState<ReviewState[]>([]);
-  const [queue, setQueue] = useState<string[]>([]);
-  const [revealed, setRevealed] = useState(false);
+  /** 지금 돌리고 있는 묶음. 다 외우면 처음부터 다시 돈다. */
+  const [drill, setDrill] = useState<Drill | null>(null);
+  /** 어느 묶음을 돌리나 — "due" 는 오늘 볼 카드, 그 밖은 근무 번호. */
+  const [deck, setDeck] = useState<string>("due");
   const [nightDays, setNightDays] = useState<Set<number>>(new Set());
   const [done, setDone] = useState(0);
+  /** 오늘 볼 카드 (간격 반복이 고른 것). 묶음 하나로 쓴다. */
+  const [dueIds, setDueIds] = useState<string[]>([]);
   const [reports, setReports] = useState<ShiftReportRow[]>([]);
   const [transcripts, setTranscripts] = useState<TranscribedRecordingRow[]>([]);
   const [search, setSearch] = useState("");
@@ -99,9 +104,7 @@ export default function Study() {
     }
     setNightDays(nights);
 
-    const due = dueStates(allStates, Date.now(), 40);
-    setQueue(due.map((s) => s.cardId));
-    setRevealed(false);
+    setDueIds(dueStates(allStates, Date.now(), 200).map((st) => st.cardId));
   }, []);
 
   // 화면에 돌아올 때마다 다시 읽는다 — 전사 기록을 지우고 돌아오면 목록이 낡아 있다.
@@ -114,22 +117,51 @@ export default function Study() {
   const cardById = useMemo(() => new Map(cards.map((c) => [c.id, c])), [cards]);
   const stateById = useMemo(() => new Map(states.map((s) => [s.cardId, s])), [states]);
 
-  const currentId = queue[0];
-  const current = currentId ? cardById.get(currentId) : undefined;
   const stats = studyStats(states, Date.now());
 
-  const grade = useCallback(
-    async (g: Grade) => {
+  // ── 날짜별 묶음 — 어느 날 근무에서 나온 카드인지로 나눈다 ──
+  const decks = useMemo(() => {
+    const byDate = new Map<string, string[]>();
+    for (const c of cards) {
+      const date = c.shiftId?.split(":")[0] ?? "직접";
+      if (!byDate.has(date)) byDate.set(date, []);
+      byDate.get(date)!.push(c.id);
+    }
+    return [...byDate.entries()].sort((a, b) => (a[0] < b[0] ? 1 : -1));
+  }, [cards]);
+
+  const deckIds = useMemo(() => {
+    if (deck === "due") return dueIds;
+    if (deck === "all") return cards.map((c) => c.id);
+    return decks.find(([d]) => d === deck)?.[1] ?? [];
+  }, [cards, deck, decks, dueIds]);
+
+  // 묶음이 바뀌면 처음부터. 같은 묶음이면 돌던 것을 이어 간다.
+  useEffect(() => {
+    setDrill(deckIds.length > 0 ? startDrill(deckIds) : null);
+  }, [deck, deckIds.length]);
+
+  const currentId = drill?.queue[0];
+  const current = currentId ? cardById.get(currentId) : undefined;
+
+  /**
+   * 한 장에 답한다.
+   *
+   * 눈앞의 되풀이(drill)와 며칠 뒤 다시 볼 날짜(간격 반복)를 **둘 다** 움직인다.
+   * 앉은 자리에서 다 외웠다고 카드가 영영 사라지면 안 되고, 반대로 며칠 뒤 날짜만
+   * 잡고 지금 안 보여 주면 지금 못 외운다.
+   */
+  const answer = useCallback(
+    async (known: boolean) => {
       if (!currentId) return;
       const now = Date.now();
       const prev = stateById.get(currentId) ?? newCardState(currentId, now);
-      const next = review(prev, g, now);
+      const next = review(prev, known ? GRADE_KNOWN : GRADE_AGAIN, now);
       next.dueAt = shiftDueDateOffDuty(next.dueAt, (dayStart) => !nightDays.has(dayStart));
       await saveReviewState(next);
-      setStates((prevStates) => [...prevStates.filter((s) => s.cardId !== currentId), next]);
-      setQueue((q) => q.slice(1));
-      setRevealed(false);
-      setDone((d) => d + 1);
+      setStates((prevStates) => [...prevStates.filter((st) => st.cardId !== currentId), next]);
+      setDrill((d) => (d ? answerDrill(d, known) : d));
+      if (known) setDone((v) => v + 1);
     },
     [currentId, nightDays, stateById],
   );
@@ -219,7 +251,7 @@ export default function Study() {
         <ChipRow
           items={[
             { key: "transcripts", label: "전사 기록" },
-            { key: "review", label: queue.length > 0 ? `복습 ${queue.length}` : "복습" },
+            { key: "review", label: dueIds.length > 0 ? `암기 ${dueIds.length}` : "암기" },
             { key: "sets", label: "카드 세트" },
             { key: "reports", label: "근무 보고서" },
             { key: "notes", label: "노트" },
@@ -235,7 +267,7 @@ export default function Study() {
           }}
         />
 
-        {/* ── 복습 ── */}
+        {/* ── 암기 ── */}
         {mode === "review" ? (
           cards.length === 0 ? (
             <Card>
@@ -244,74 +276,86 @@ export default function Study() {
                 바로 쓸 말이에요.
               </Body>
             </Card>
-          ) : !current ? (
-            <>
-              <Card tone="accent">
-                <Body>{done > 0 ? `오늘 ${done}장을 복습했어요.` : "지금 복습할 카드가 없어요."}</Body>
-                <Small>
-                  전체 {stats.total}장 · 익숙해진 카드 {stats.mature}장
-                </Small>
-              </Card>
-              {stats.leeches > 0 ? (
-                <Card>
-                  <Badge text={`계속 틀리는 카드 ${stats.leeches}장`} tone="warn" />
-                  <Small>
-                    자꾸 틀리는 말은 기초가 흔들린다는 뜻일 수 있어요. 그 말의 공식 자료를
-                    한 번 찾아봐요.
-                  </Small>
-                </Card>
-              ) : null}
-            </>
           ) : (
             <>
-              <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
-                <Badge text={KIND_LABELS[current.kind]} tone="muted" />
-                <Small>남은 {queue.length}장</Small>
-              </View>
-              <Card>
-                <Text style={[type.body, { color: t.text, fontSize: 18, lineHeight: 27 }]}>
-                  {current.front}
-                </Text>
-              </Card>
-              {revealed ? (
+              {/* 어느 묶음을 돌릴까 — 오늘 볼 것, 전체, 그리고 날짜마다 하나씩 */}
+              <ChipRow
+                items={[
+                  { key: "due", label: `오늘 ${dueIds.length}` },
+                  { key: "all", label: `전체 ${cards.length}` },
+                  ...decks.map(([date, ids]) => ({
+                    key: date,
+                    label:
+                      date === "직접"
+                        ? `직접 ${ids.length}`
+                        : `${Number(date.slice(5, 7))}/${Number(date.slice(8, 10))} ${ids.length}`,
+                  })),
+                ]}
+                active={deck}
+                onSelect={setDeck}
+              />
+
+              {!current || !drill ? (
                 <>
                   <Card tone="accent">
-                    <Text style={[type.body, { color: t.text }]}>{current.back}</Text>
+                    <Body>
+                      {deck === "due" && dueIds.length === 0
+                        ? "오늘 볼 카드가 없어요. 위에서 날짜를 골라 보세요."
+                        : "이 묶음에는 카드가 없어요."}
+                    </Body>
+                    <Small>
+                      전체 {stats.total}장 · 익숙해진 카드 {stats.mature}장
+                    </Small>
                   </Card>
-                  {current.context && current.kind !== "cloze" ? (
+                  {stats.leeches > 0 ? (
                     <Card>
-                      <Small>그날 들은 문장</Small>
-                      <Body muted>&ldquo;{current.context}&rdquo;</Body>
+                      <Badge text={`계속 틀리는 카드 ${stats.leeches}장`} tone="warn" />
+                      <Small>
+                        자꾸 틀리는 말은 기초가 흔들린다는 뜻일 수 있어요. 그 말의 공식 자료를
+                        한 번 찾아봐요.
+                      </Small>
                     </Card>
                   ) : null}
-                  {sources.length > 0 ? (
-                    <Card>
-                      <Small>더 볼 자료</Small>
-                      {sources.map((s) =>
-                        s ? (
-                          <View key={s.id} style={{ gap: 2, paddingVertical: space.xs }}>
-                            <Body>{s.name}</Body>
-                            <Small>
-                              {s.publisher} · {s.url}
-                            </Small>
-                          </View>
-                        ) : null,
-                      )}
-                    </Card>
-                  ) : null}
-                  <View style={{ gap: space.sm }}>
-                    {GRADES.map((g) => (
-                      <Button
-                        key={g.grade}
-                        label={g.hint ? `${g.label} · ${g.hint}` : g.label}
-                        tone={g.grade >= 4 ? "primary" : "default"}
-                        onPress={() => void grade(g.grade)}
-                      />
-                    ))}
-                  </View>
                 </>
               ) : (
-                <Button label="답 보기" tone="primary" onPress={() => setRevealed(true)} />
+                <>
+                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                    <Badge text={KIND_LABELS[current.kind]} tone="muted" />
+                    <Small>
+                      {drill.round > 1 ? `${drill.round}회차 · ` : ""}남은 {drill.queue.length}장
+                    </Small>
+                  </View>
+
+                  {/* 이번 회차가 얼마나 남았나. 숫자보다 이 막대가 먼저 읽힌다 */}
+                  <View style={{ height: 4, borderRadius: 2, backgroundColor: t.surfaceAlt }}>
+                    <View
+                      style={{
+                        height: 4,
+                        borderRadius: 2,
+                        backgroundColor: t.accent,
+                        width: `${Math.round(drillProgress(drill) * 100)}%`,
+                      }}
+                    />
+                  </View>
+
+                  <Flashcard
+                    front={current.front}
+                    back={current.back}
+                    hint={current.kind !== "cloze" ? (current.context ?? undefined) : undefined}
+                    onAnswer={(known) => void answer(known)}
+                  />
+
+                  <Small>누르면 뒤집혀요. 오른쪽으로 밀면 외웠어요.</Small>
+                  {/* 미는 것만으로는 못 쓰는 손이 있다. 같은 일을 하는 버튼을 함께 둔다 */}
+                  <View style={{ flexDirection: "row", gap: space.sm }}>
+                    <View style={{ flex: 1 }}>
+                      <Button label="더 볼래요" onPress={() => void answer(false)} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Button label="외웠어요" tone="primary" onPress={() => void answer(true)} />
+                    </View>
+                  </View>
+                </>
               )}
             </>
           )

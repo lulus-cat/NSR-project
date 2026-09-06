@@ -313,6 +313,25 @@ export async function autoSendPending(): Promise<number> {
   return sent;
 }
 
+/**
+ * 보낸 것도 챙기고 온 것도 받아 온다. 화면이 열릴 때마다 한 번.
+ *
+ * 예전에는 설정에 '결과 받기' 버튼이 있었다. 누르지 않으면 AI 가 써 둔 보고서도
+ * 카드도 폰에 영영 안 들어왔고, 그 사실이 화면 어디에도 없었다. 누를 것을 없앤다.
+ *
+ * 서버가 안 이어졌거나 저절로 보내기를 껐으면 아무 일도 안 하고 바로 돌아온다.
+ */
+export async function syncWithServer(): Promise<{ sent: number; got: PullResult } | null> {
+  if (!(await serverReady())) return null;
+  const sent = await autoSendPending();
+  try {
+    return { sent, got: await pullFromServer() };
+  } catch (e) {
+    void logDebug(`결과 받기 실패: ${e instanceof Error ? e.message : ""}`);
+    return null;
+  }
+}
+
 /** 이 근무를 서버에 보낸 시각(초). 안 보냈으면 null. */
 export async function shiftSentAt(shiftId: string): Promise<number | null> {
   return (await getSetting<number>(sentKey(shiftId), 0)) || null;
@@ -477,14 +496,16 @@ export async function sendShift(
  * 서버에 쌓인 결과를 받아온다 — AI 가 쓴 보고서와 새 병동 용어.
  * 받은 것은 알려 줘서 다음에 또 오지 않게 한다.
  */
-export async function pullFromServer(): Promise<{
+export interface PullResult {
   reports: number;
   terms: number;
   cards: number;
   roles: number;
   fixes: number;
   taeum: number;
-}> {
+}
+
+export async function pullFromServer(): Promise<PullResult> {
   const res = await call("/pull");
   if (!res.ok) throw new Error(await serverError(res, "결과 받기"));
   const body = await readJson<{

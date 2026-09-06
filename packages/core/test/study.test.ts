@@ -1,5 +1,8 @@
 import { describe, it, expect } from "vitest";
 import {
+  startDrill,
+  answerDrill,
+  drillProgress,
   cardsFromReport,
   generateCards,
   countByKind,
@@ -253,5 +256,41 @@ A: 아닙니다
 
   it("카드 절이 없으면 아무것도 안 만든다", () => {
     expect(cardsFromReport("2026-09-06:D", "# 근무\n\n## 한 줄\n조용했습니다.")).toEqual([]);
+  });
+});
+
+describe("암기 반복", () => {
+  it("오른쪽은 빼고 왼쪽은 뒤로 보낸다", () => {
+    let d = startDrill(["a", "b", "c"]);
+    d = answerDrill(d, true); // a 외웠다
+    expect(d.queue).toEqual(["b", "c"]);
+    expect(d.known).toBe(1);
+
+    d = answerDrill(d, false); // b 더 볼래
+    expect(d.queue).toEqual(["c", "b"]);
+    expect(d.known).toBe(1);
+  });
+
+  it("다 외우면 묶음 전체로 다시 시작한다", () => {
+    let d = startDrill(["a", "b"]);
+    d = answerDrill(d, true);
+    d = answerDrill(d, true);
+    expect(d.queue).toEqual(["a", "b"]);
+    expect(d.round).toBe(2);
+    expect(d.known).toBe(0);
+  });
+
+  it("마지막 한 장을 '더 볼래'로 넘겨도 회차가 끝난다", () => {
+    // 안 그러면 그 한 장만 혼자 무한히 돈다 — 빠져나갈 길이 없다.
+    let d = startDrill(["a"]);
+    d = answerDrill(d, false);
+    expect(d.round).toBe(2);
+    expect(d.queue).toEqual(["a"]);
+  });
+
+  it("빈 묶음은 아무 일도 안 한다", () => {
+    const d = startDrill([]);
+    expect(answerDrill(d, true)).toBe(d);
+    expect(drillProgress(d)).toBe(1);
   });
 });

@@ -3,6 +3,9 @@ import { Animated, Text, View } from "react-native";
 import { Stack, useRouter, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
+// 제스처(카드 넘기기)는 이 뿌리 View 안에서만 잡힌다. 없으면 안드로이드에서
+// 미는 동작이 통째로 무시된다 — 화면은 멀쩡해 보이고 손만 안 먹는다.
+import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { AppProvider, useApp } from "../src/state/AppContext";
 import { Button } from "../src/components/ui";
 import { useTheme } from "../src/theme";
@@ -193,11 +196,13 @@ export default function RootLayout() {
     void import("../src/services/debug").then((m) => m.installGlobalErrorLog());
   }, []);
   return (
-    <SafeAreaProvider>
-      <AppProvider>
-        <StatusBar style="auto" />
-        <Gate />
-      </AppProvider>
-    </SafeAreaProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <AppProvider>
+          <StatusBar style="auto" />
+          <Gate />
+        </AppProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
   );
 }
