@@ -433,6 +433,8 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
   <p>NSR 앱 → 설정 → 분석 서버 → <b>AI 연결 승인</b> 에<br>아래 번호를 넣어 주세요.</p>
   <div class="code">{spaced}</div>
   <p class="wait" id="wait">기다리는 중이에요… 10분 안에 해 주세요.</p>
+  <p class="wait">폰이 아직 서버에 안 이어져 있으면 먼저 이어야 해요.<br>
+     서버에서 <code>python -m nsr_server.pair</code> 로 QR 을 만들어 찍으세요.</p>
 <script>
   // 폰이 승인하면 서버가 돌아갈 주소를 놓아 둔다. 2초마다 들여다본다.
   const p = {json.dumps(pending)};

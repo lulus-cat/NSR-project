@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Alert, Linking, Platform, Pressable, ScrollView, Switch, TextInput, View } from "react-native";
 import type { ComponentProps, ReactNode } from "react";
 import { Text } from "react-native";
-import { useRouter } from "expo-router";
+import { useFocusEffect, useRouter } from "expo-router";
 import {
   DEFAULT_RECORDING_POLICY,
   DEFAULT_TEMPLATES,
@@ -264,10 +264,17 @@ export default function Settings() {
   const [srvBusy, setSrvBusy] = useState(false);
   const [srvNote, setSrvNote] = useState<string | null>(null);
 
-  useEffect(() => {
-    void getServerUrl().then(setSrvUrl);
-    void getDeviceToken().then((t) => setSrvHasToken(!!t));
+  // 화면에 들어올 때마다 다시 본다. QR 로 이은 직후에도, 401 로 열쇠가 지워진
+  // 뒤에도 '이 기기' 줄이 사실과 같아야 한다 (탭 화면은 한 번 뜨면 안 죽는다).
+  const refreshServer = useCallback(async () => {
+    setSrvUrl(await getServerUrl());
+    setSrvHasToken((await getDeviceToken()) !== null);
   }, []);
+  useFocusEffect(
+    useCallback(() => {
+      void refreshServer();
+    }, [refreshServer]),
+  );
 
   // AI(클로드·GPT) 연결 승인 — 커넥터 화면에 뜬 여섯 자리 번호.
   const [srvCode, setSrvCode] = useState("");
@@ -282,9 +289,10 @@ export default function Settings() {
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "승인하지 못했어요. 다시 해 주세요.");
     } finally {
+      await refreshServer();
       setSrvBusy(false);
     }
-  }, [srvCode]);
+  }, [refreshServer, srvCode]);
 
   const saveServer = useCallback(async () => {
     setSrvBusy(true);
@@ -295,9 +303,10 @@ export default function Settings() {
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "저장하지 못했어요. 다시 눌러 주세요.");
     } finally {
+      await refreshServer();
       setSrvBusy(false);
     }
-  }, [srvUrl]);
+  }, [refreshServer, srvUrl]);
 
   const pullResults = useCallback(async () => {
     setSrvBusy(true);
@@ -311,9 +320,10 @@ export default function Settings() {
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "받지 못했어요. 다시 눌러 주세요.");
     } finally {
+      await refreshServer();
       setSrvBusy(false);
     }
-  }, []);
+  }, [refreshServer]);
   const policy = app.policy;
 
   // ── 근무·기록 시간 — 듀티표 화면에 있던 것을 여기로 옮겼다.
@@ -443,8 +453,9 @@ export default function Settings() {
         <Row label="이 기기" value={srvHasToken ? "연결됨" : "아직 연결 안 됨"} />
         {srvHasToken ? null : (
           <>
-            <Small>서버에서 QR 을 만들어 폰으로 찍으면 이어져요.</Small>
-            <Small>열쇠를 옮겨 적을 일은 없어요.</Small>
+            <Small muted={false}>이 폰을 먼저 이어 주세요.</Small>
+            <Small>서버에서 QR 을 만들어 폰으로 찍으면 돼요.</Small>
+            <Small>python -m nsr_server.pair 를 서버에서 실행해요.</Small>
           </>
         )}
         <Button label="결과 받기" busy={srvBusy} onPress={() => void pullResults()} />

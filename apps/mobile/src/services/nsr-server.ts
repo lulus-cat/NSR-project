@@ -17,18 +17,18 @@
  *
  * 열쇠는 사람이 안 만진다
  * ----------------------
- * 예전에는 서버의 기기 토큰을 사람이 복사해 앱에 붙여넣었다. 이제는 **구글
- * 로그인**을 하면 서버가 이 폰만의 열쇠를 만들어 준다. 절차는 이렇다.
+ * 예전에는 서버의 기기 토큰을 사람이 복사해 앱에 붙여넣었다. 이제는 QR 이다.
  *
- *   1. 앱이 브라우저로 `/device/start` 를 연다
- *   2. 구글 로그인 → 서버가 계정을 확인한다 (허용 목록에 있는 계정만)
- *   3. 서버가 `nsr://linked?c=…` 로 앱을 다시 연다. c 는 **일회용 쪽지**다
- *   4. 앱이 그 쪽지를 `/device/claim` 에서 열쇠로 바꿔 보안 저장소에 넣는다
+ *   1. VPS 에서 `python -m nsr_server.pair` → 컴퓨터 화면에 QR
+ *   2. 폰으로 찍으면 `nsr://linked?c=…` 로 앱이 열린다. c 는 **일회용 쪽지**다
+ *   3. 앱이 그 쪽지를 `/device/claim` 에서 열쇠로 바꿔 보안 저장소에 넣는다
  *
  * 열쇠를 주소에 직접 실어 보내지 않는 이유: 그러면 브라우저 기록에 남는다.
- * 쪽지는 5분 뒤 사라지고 한 번 쓰면 없어진다.
+ * 쪽지는 15분 뒤 사라지고 한 번 쓰면 없어진다.
  *
- * 토큰을 손으로 넣는 길도 남겨 둔다 — 구글 설정이 잘못됐을 때의 비상문이다.
+ * 401 이 오면 이 폰의 열쇠를 **지운다**. 서버가 모르는 열쇠를 들고 있어 봐야
+ * 계속 막히기만 하고, 화면에는 '연결됨'으로 보여서 사람이 더 헷갈린다.
+ * (서버 토큰을 새로 만들었거나, 서버 DB 를 갈아 끼웠을 때 실제로 이렇게 된다.)
  */
 import * as SecureStore from "expo-secure-store";
 import {
@@ -81,10 +81,10 @@ export async function claimDeviceToken(code: string): Promise<void> {
   });
   if (!res.ok) {
     const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? "연결하지 못했어요. 다시 로그인해 주세요.");
+    throw new Error(body.error ?? "연결하지 못했어요. QR 을 다시 만들어 주세요.");
   }
   const { token } = (await res.json()) as { token?: string };
-  if (!token) throw new Error("서버가 열쇠를 주지 않았어요. 다시 로그인해 주세요.");
+  if (!token) throw new Error("서버가 열쇠를 주지 않았어요. QR 을 다시 만들어 주세요.");
   await setDeviceToken(token);
 }
 
@@ -116,7 +116,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
   const url = await getServerUrl();
   const token = await getDeviceToken();
   if (!url) throw new Error("서버 주소가 없어요. 설정에서 넣어 주세요.");
-  if (!token) throw new Error("기기 토큰이 없어요. 설정에서 넣어 주세요.");
+  if (!token) throw new Error("이 폰이 아직 서버에 안 이어졌어요. QR 로 이어 주세요.");
   return fetch(`${url}${path}`, {
     ...init,
     headers: {
@@ -135,7 +135,12 @@ async function serverError(res: Response, doing: string): Promise<string> {
     // JSON 이 아니면 상태 코드로만 본다.
   }
   void logDebug(`서버 ${doing} 실패 ${res.status}: ${body.error ?? ""}`);
-  if (res.status === 401) return "연결이 풀렸어요. 설정에서 다시 로그인해 주세요.";
+  if (res.status === 401) {
+    // 서버가 이 폰의 열쇠를 모른다. 들고 있어 봐야 계속 막히기만 하고, 화면에는
+    // '연결됨'으로 보여서 더 헷갈린다. 지우고 사실대로 적는다.
+    await setDeviceToken(null);
+    return "이 폰이 서버에 안 이어져 있어요. QR 로 다시 이어 주세요.";
+  }
   if (res.status === 422) {
     // 서버가 무엇을 몇 건 잡았는지만 준다. 값은 오지 않는다.
     const kinds = Object.keys(body.found ?? {}).join(", ");
@@ -153,12 +158,14 @@ export async function checkServer(): Promise<{ ok: boolean; message: string }> {
     const res = await fetch(`${url}/healthz`);
     if (!res.ok) return { ok: false, message: `서버가 ${res.status} 를 줬어요. 주소를 확인해 주세요.` };
     if (!(await getDeviceToken())) {
-      return { ok: false, message: "서버는 살아 있어요. 이제 구글로 로그인해 주세요." };
+      return { ok: false, message: "서버는 살아 있어요. 이제 QR 로 이 폰을 이어 주세요." };
     }
     // 토큰까지 맞는지는 실제로 한 번 물어봐야 안다.
     const pull = await call("/pull");
     if (pull.status === 401) {
-      return { ok: false, message: "연결이 풀렸어요. 구글로 다시 로그인해 주세요." };
+      // 낡은 열쇠는 여기서도 지운다 — 화면이 '연결됨'으로 남아 있으면 안 된다.
+      await setDeviceToken(null);
+      return { ok: false, message: "이 폰이 서버에 안 이어져 있어요. QR 로 이어 주세요." };
     }
     return { ok: true, message: "연결됐어요. 이제 근무를 보낼 수 있어요." };
   } catch {

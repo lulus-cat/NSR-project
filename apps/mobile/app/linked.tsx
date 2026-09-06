@@ -1,12 +1,11 @@
 /**
  * 기기 잇기 — `nsr://linked?c=…` 딥링크가 여는 화면.
  *
- * 구글 로그인을 마치면 서버가 이 주소로 앱을 다시 연다. c 는 **일회용 쪽지**이고,
- * 이 화면은 그것을 이 폰의 열쇠로 바꿔 보안 저장소에 넣는다. 사람이 옮겨 적는
- * 것은 이제 없다.
+ * QR 을 찍으면 서버가 이 주소로 앱을 연다. c 는 **일회용 쪽지**이고, 이 화면은
+ * 그것을 이 폰의 열쇠로 바꿔 보안 저장소에 넣는다. 사람이 옮겨 적는 것은 없다.
  *
- * 쪽지는 5분 뒤 사라지고 한 번 쓰면 없어진다. 그래서 실패하면 되돌릴 방법은
- * 하나뿐이다 — 설정에서 다시 로그인. 화면도 그렇게만 안내한다.
+ * 쪽지는 15분 뒤 사라지고 한 번 쓰면 없어진다. 그래서 실패하면 되돌릴 방법은
+ * 하나뿐이다 — 서버에서 QR 을 다시 만든다. 화면도 그렇게만 안내한다.
  */
 import { useCallback, useEffect, useState } from "react";
 import { ScrollView, Text } from "react-native";
@@ -31,7 +30,7 @@ export default function Linked() {
   const run = useCallback(async () => {
     const code = (params.c ?? "").trim();
     if (!code) {
-      setPhase({ step: "bad", reason: "연결 정보가 없어요. 설정에서 다시 로그인해 주세요." });
+      setPhase({ step: "bad", reason: "연결 정보가 없어요. QR 을 다시 만들어 주세요." });
       return;
     }
     setPhase({ step: "working" });
@@ -41,7 +40,7 @@ export default function Linked() {
     } catch (e) {
       setPhase({
         step: "bad",
-        reason: e instanceof Error ? e.message : "연결하지 못했어요. 다시 로그인해 주세요.",
+        reason: e instanceof Error ? e.message : "연결하지 못했어요. QR 을 다시 만들어 주세요.",
       });
     }
   }, [params.c]);
