@@ -254,6 +254,29 @@ A: 아닙니다
     expect(a.map((c) => c.id)).toEqual(b.map((c) => c.id));
   });
 
+  it("'사건 카드' 절을 카드 절로 착각하지 않는다", () => {
+    // 보고서 뼈대에 '## 사건 카드' 가 생겼다. 제목이 정확히 '카드' 인 절만 읽는다 —
+    // 아니면 사건 설명이 통째로 학습 카드가 된다.
+    const report = `# 근무
+
+## 사건 카드
+
+### 1. 환자A 소변량 감소
+Q: 이건 사건 설명 안에 있습니다
+A: 카드가 되면 안 됩니다
+
+## 카드
+Q: 진짜 물음입니까?
+A: 그렇습니다.
+
+## 복습
+- 하나
+`;
+    const cards = cardsFromReport("2026-09-06:D", report);
+    expect(cards).toHaveLength(1);
+    expect(cards[0].front).toBe("진짜 물음입니까?");
+  });
+
   it("카드 절이 없으면 아무것도 안 만든다", () => {
     expect(cardsFromReport("2026-09-06:D", "# 근무\n\n## 한 줄\n조용했습니다.")).toEqual([]);
   });
