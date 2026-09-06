@@ -27,6 +27,8 @@ let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function getDb(): Promise<SQLite.SQLiteDatabase> {
   if (!dbPromise) {
+    // 열기에 실패하면 **캐시를 비운다.** 예전에는 거절된 약속이 그대로 남아
+    // 그 프로세스의 모든 DB 호출이 끝까지 실패했다 (WAL 전환이 잠깐 막히면 그렇다).
     dbPromise = (async () => {
       const db = await SQLite.openDatabaseAsync("nsr.db");
       await db.execAsync(SCHEMA_SQL);
@@ -56,14 +58,29 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
           WHERE state = 'recording' AND file_uri IS NULL`,
       );
       return db;
-    })();
+    })().catch((e) => {
+      dbPromise = null; // 다음 호출이 다시 열어 볼 수 있게
+      throw e;
+    });
   }
   return dbPromise;
 }
 
-/** 테스트/로그아웃용. 다음 호출에서 다시 연다. */
-export function resetDbHandle(): void {
+/**
+ * 테스트/로그아웃용. 다음 호출에서 다시 연다.
+ *
+ * **연결을 실제로 닫는다.** 안드로이드의 expo-sqlite 는 열려 있는 DB 를 지우려
+ * 하면 예외를 던진다. 그래서 '전부 삭제' 가 음성 파일만 지우고 DB 삭제에서
+ * 죽었고, 사전·전사본·열쇠는 그대로 남은 채 사용자에게는 지웠다고 보였다.
+ */
+export async function resetDbHandle(): Promise<void> {
+  const open = dbPromise;
   dbPromise = null;
+  try {
+    await (await open)?.closeAsync();
+  } catch {
+    // 이미 닫혔거나 열린 적이 없으면 그만이다.
+  }
 }
 
 // ── 설정 ────────────────────────────────────────────────
@@ -125,7 +142,7 @@ export async function listDutyEntries(
 
 export async function upsertDutyEntries(entries: DutyEntry[]): Promise<void> {
   const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await db.withExclusiveTransactionAsync(async () => {
     for (const e of entries) {
       await db.runAsync(
         `INSERT INTO duty_entries (date, code, override_start, override_end, note)
@@ -306,11 +323,26 @@ export async function listTranscribedRecordings(
 /** 보관기간이 지난 녹음의 파일 경로를 돌려주고 행을 지운다. 파일 삭제는 호출부가 한다. */
 export async function expireRecordings(olderThan: number): Promise<string[]> {
   const db = await getDb();
+  // **줄을 지우지 않는다. 소리만 지운다.**
+  //
+  // 예전에는 `DELETE FROM recordings` 였다. segments 가 ON DELETE CASCADE 라
+  // 그 한 줄이 문장·편집·주석을 통째로 데려갔다. 보관 기한이 지나면 전사본이
+  // 조용히 사라졌다 — 이 저장소에서 가장 나쁜 일이다. 게다가 태움 점수와
+  // 카드에는 그 문장이 그대로 남아 있어서, 지울 것은 남고 남길 것만 지워졌다.
+  //
+  // 그리고 **전사본이 있는 것만** 소리를 지운다. 아직 글자로 못 바꾼 녹음은
+  // 그 소리가 유일한 사본이라 기한이 지나도 건드리지 않는다.
   const rows = await db.getAllAsync<{ id: string; file_uri: string | null }>(
-    "SELECT id, file_uri FROM recordings WHERE started_at < ?",
+    `SELECT id, file_uri FROM recordings
+      WHERE started_at < ? AND file_uri IS NOT NULL AND state = 'transcribed'`,
     [olderThan],
   );
-  await db.runAsync("DELETE FROM recordings WHERE started_at < ?", [olderThan]);
+  if (rows.length === 0) return [];
+  await db.runAsync(
+    `UPDATE recordings SET file_uri = NULL, size_bytes = 0
+      WHERE started_at < ? AND file_uri IS NOT NULL AND state = 'transcribed'`,
+    [olderThan],
+  );
   return rows.map((r) => r.file_uri).filter((u): u is string => !!u);
 }
 
@@ -330,28 +362,43 @@ export async function deleteTranscript(
         shiftId,
         id,
       ]);
-      // 파일이 있는 것만 '안 보냄'으로 되돌린다. 티로에서 가져온 노트는 소리가
-      // 이 폰에 없어서, 되돌리면 보낼 수도 없는 것이 '안 보낸 녹음'에 영영 남는다.
+      // 파일이 있는 것만 '안 보냄'으로 되돌린다. 소리가 없는 줄(티로에서 가져온
+      // 노트)은 **줄째 지운다** — 그 줄의 내용은 글자뿐이었고, 남겨 두면 다시
+      // 가져올 수도 없는 것이 목록에 영영 남는다.
       await db.runAsync(
-        `UPDATE recordings
-            SET state = CASE WHEN file_uri IS NOT NULL THEN 'recorded' ELSE 'discarded' END,
-                discard_reason = CASE WHEN file_uri IS NOT NULL THEN discard_reason
-                                      ELSE '티로에서 가져온 글자를 지웠어요' END
-          WHERE id = ? AND state = 'transcribed'`,
+        "UPDATE recordings SET state = 'recorded' WHERE id = ? AND state = 'transcribed' AND file_uri IS NOT NULL",
         [id],
       );
+      await db.runAsync("DELETE FROM recordings WHERE id = ? AND file_uri IS NULL", [id]);
     }
     return;
   }
   await db.runAsync("DELETE FROM segments WHERE shift_id = ?", [shiftId]);
   await db.runAsync(
-    `UPDATE recordings
-        SET state = CASE WHEN file_uri IS NOT NULL THEN 'recorded' ELSE 'discarded' END,
-            discard_reason = CASE WHEN file_uri IS NOT NULL THEN discard_reason
-                                  ELSE '티로에서 가져온 글자를 지웠어요' END
-      WHERE shift_id = ? AND state = 'transcribed'`,
+    "UPDATE recordings SET state = 'recorded' WHERE shift_id = ? AND state = 'transcribed' AND file_uri IS NOT NULL",
     [shiftId],
   );
+  await db.runAsync("DELETE FROM recordings WHERE shift_id = ? AND file_uri IS NULL", [shiftId]);
+}
+
+/**
+ * 줄 하나를 지운다 (딸린 문장도 함께 — segments 가 CASCADE 다).
+ *
+ * 가져오다 만 티로 노트를 치울 때 쓴다. 파일은 건드리지 않는다 — 가져온 노트는
+ * 애초에 이 폰에 소리가 없다.
+ */
+/** 지금 DB 가 알고 있는 모든 음성 파일 경로. 고아 파일을 가려낼 때 쓴다. */
+export async function listAllRecordingFiles(): Promise<(string | null)[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ file_uri: string | null }>(
+    "SELECT file_uri FROM recordings WHERE file_uri IS NOT NULL",
+  );
+  return rows.map((r) => r.file_uri);
+}
+
+export async function deleteRecordingRow(id: string): Promise<void> {
+  const db = await getDb();
+  await db.runAsync("DELETE FROM recordings WHERE id = ?", [id]);
 }
 
 /** 전사와 녹음을 함께 지운다. 지울 파일 경로를 돌려준다 — 파일 삭제는 호출부가 한다. */
@@ -426,6 +473,16 @@ function toSegment(row: SegmentRow): AppSegment {
   };
 }
 
+/**
+ * 아래 쓰기들은 **exclusive** 트랜잭션을 쓴다.
+ *
+ * expo-sqlite 의 `withTransactionAsync` 는 문서에 적힌 대로 배타적이지 않다 —
+ * 같은 연결에 BEGIN/COMMIT 을 걸 뿐이라, 그사이에 다른 비동기 쿼리가 끼어든다.
+ * 8시간 노트를 저장하는 몇 분 동안 녹음기가 만든 줄이 이 트랜잭션 안으로
+ * 빨려 들어가고, 저장이 실패하면 그 줄까지 함께 되감겼다 — 파일은 디스크에
+ * 남는데 앱은 그 녹음을 영영 모른다. 다른 화면이 트랜잭션을 시작하면 양쪽이
+ * 함께 깨지기도 했다.
+ */
 export async function saveSegments(
   recordingId: string,
   shiftId: string | null,
@@ -433,7 +490,7 @@ export async function saveSegments(
   perSegment: { edits: Edit[]; annotations: TermAnnotation[] }[],
 ): Promise<void> {
   const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await db.withExclusiveTransactionAsync(async () => {
     for (let i = 0; i < segments.length; i++) {
       const s = segments[i];
       await db.runAsync(
@@ -537,6 +594,32 @@ export async function listSegments(
         [shiftId],
       );
   return rows.map(toSegment);
+}
+
+/**
+ * 근무 전체 기준의 시각으로 문장을 준다.
+ *
+ * 파일마다 시각이 0 부터 다시 시작한다. 그대로 쓰면 8시간 근무가 "마지막 파일
+ * 길이"(30분)로 보이고, 태움 점수의 '질문이 몰린 구간' 계산은 파일이 바뀌는
+ * 자리마다 시간이 거꾸로 흘러 엉뚱한 값을 만든다. 앞 파일들의 길이를 더해
+ * 이어 붙인다.
+ */
+export async function listSegmentsAbsolute(
+  shiftId: string,
+): Promise<{ segments: AppSegment[]; minutes: number }> {
+  const [segments, recs] = await Promise.all([listSegments(shiftId), listRecordings(shiftId)]);
+  const order = [...recs].sort((a, b) => a.seq - b.seq || a.started_at - b.started_at);
+  const offset = new Map<string, number>();
+  let acc = 0;
+  for (const r of order) {
+    offset.set(r.id, acc);
+    acc += r.duration_sec || 0;
+  }
+  const shifted = segments.map((s) => {
+    const at = offset.get(s.recordingId ?? "") ?? 0;
+    return { ...s, startSec: s.startSec + at, endSec: s.endSec + at };
+  });
+  return { segments: shifted, minutes: Math.round(acc / 60) };
 }
 
 export async function listAnnotations(shiftId: string): Promise<
@@ -643,7 +726,7 @@ export async function loadCorrectionMemory(minCount = 2): Promise<CorrectionMemo
 
 export async function saveCorrectionMemory(memory: CorrectionMemory): Promise<void> {
   const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await db.withExclusiveTransactionAsync(async () => {
     await db.runAsync("DELETE FROM correction_rules");
     for (const [key, rule] of Object.entries(memory.rules)) {
       await db.runAsync(
@@ -725,7 +808,7 @@ function toCard(row: CardRow): Card {
 export async function saveCards(cards: Card[], now: number): Promise<number> {
   const db = await getDb();
   let inserted = 0;
-  await db.withTransactionAsync(async () => {
+  await db.withExclusiveTransactionAsync(async () => {
     for (const c of cards) {
       const result = await db.runAsync(
         `INSERT INTO cards (id, kind, front, back, entry_id, shift_id, segment_id, context, source_ids, created_at)
@@ -1158,7 +1241,7 @@ export async function addPendingCorrections(
 ): Promise<void> {
   if (corrections.length === 0) return;
   const db = await getDb();
-  await db.withTransactionAsync(async () => {
+  await db.withExclusiveTransactionAsync(async () => {
     for (const c of corrections) {
       await db.runAsync(
         `INSERT INTO pending_corrections (key, from_text, to_text, source, count, added_at)

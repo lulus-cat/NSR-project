@@ -34,7 +34,7 @@ import * as SecureStore from "expo-secure-store";
 import {
   getSetting,
   getTaeumScore,
-  listSegments,
+  listSegmentsAbsolute,
   listUserTerms,
   saveShiftReport,
   saveUserTerm,
@@ -195,7 +195,9 @@ export async function sendShift(
   shiftId: string,
   onProgress?: (pct: number, note?: string) => void,
 ): Promise<{ sentences: number; redacted: number }> {
-  const segments = await listSegments(shiftId);
+  // 근무 전체 기준 시각으로 받는다. 파일마다 0 부터 다시 세면 AI 가 보는
+  // 시간표가 뒤엉키고, 8시간 근무가 30분으로 보고된다.
+  const { segments, minutes } = await listSegmentsAbsolute(shiftId);
   if (segments.length === 0) throw new Error("이 근무에는 아직 전사본이 없어요.");
 
   onProgress?.(5, "개인정보 가리는 중");
@@ -242,7 +244,7 @@ export async function sendShift(
       shiftId,
       date,
       code,
-      minutes: Math.round((segments.at(-1)?.endSec ?? 0) / 60),
+      minutes: minutes || Math.round((segments.at(-1)?.endSec ?? 0) / 60),
       masked: true,
       taeum: taeum ? { score: taeum.score, level: taeum.level } : undefined,
       terms,
@@ -269,11 +271,17 @@ export async function pullFromServer(): Promise<{ reports: number; terms: number
   const reports = body.reports ?? [];
   const terms = body.terms ?? [];
   for (const r of reports) {
-    await saveShiftReport(r.shiftId, r.markdown, { source: "server" });
+    // payload 에 마크다운을 함께 남긴다. `{source:"server"}` 만 넣던 것이
+    // 로컬 분석 결과를 지웠고, 임상 모드의 '카드 추가' 는 payload 안에서
+    // 근거 id 를 찾기 때문에 그 뒤로 아무것도 못 넣었다.
+    await saveShiftReport(r.shiftId, r.markdown, { source: "server", markdown: r.markdown });
   }
+  const mine = new Set((await listUserTerms()).map((u) => u.ko));
   for (const t of terms) {
     const ko = (t.entry ?? "").trim();
     if (ko.length < 2) continue;
+    // 이미 있는 말이면 그대로 둔다. 덮어쓰면 사용자가 고쳐 둔 뜻이 날아간다.
+    if (mine.has(ko)) continue;
     await saveUserTerm({
       // 같은 말을 여러 번 받아도 한 줄만 남게 id 를 말에서 만든다.
       id: `srv-${ko}`,
@@ -287,13 +295,16 @@ export async function pullFromServer(): Promise<{ reports: number; terms: number
   }
 
   if (reports.length || terms.length) {
-    await call("/pulled", {
+    const told = await call("/pulled", {
       method: "POST",
       body: JSON.stringify({
         shiftIds: reports.map((r) => r.shiftId),
         entries: terms.map((t) => t.entry),
       }),
     });
+    // 실패하면 서버는 아직 '안 가져감' 으로 알고 있어서 다음에 또 준다.
+    // 그때 같은 보고서를 다시 덮어쓰지 않게 기록해 둔다.
+    if (!told.ok) void logDebug("받았다고 알리지 못했어요 — 다음에 다시 받습니다.");
   }
   return { reports: reports.length, terms: terms.length };
 }

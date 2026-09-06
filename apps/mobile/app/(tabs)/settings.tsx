@@ -398,15 +398,25 @@ export default function Settings() {
           text: "전부 삭제",
           style: "destructive",
           onPress: async () => {
-            const SQLite = await import("expo-sqlite");
-            deleteAllRecordings();
-            resetDbHandle();
-            await SQLite.deleteDatabaseAsync("nsr.db");
-            const { setTiroKey } = await import("../../src/services/asr");
-            await setTiroKey(null);
-            await setDeviceToken(null);
-            await app.refresh();
-            await load();
+            // 순서가 중요하다. DB 를 **닫고** 지운 다음 파일을 지운다 — 예전에는
+            // 파일부터 지우고 DB 삭제에서 예외로 죽어서, 음성만 사라지고 전사본과
+            // 열쇠는 남은 채 "지웠다"고 보였다. 실패하면 사용자에게 말한다.
+            try {
+              const SQLite = await import("expo-sqlite");
+              await resetDbHandle();
+              await SQLite.deleteDatabaseAsync("nsr.db");
+              deleteAllRecordings();
+              const { setTiroKey } = await import("../../src/services/asr");
+              await setTiroKey(null);
+              await setDeviceToken(null);
+              await app.refresh();
+              await load();
+            } catch (e) {
+              Alert.alert(
+                "다 지우지 못했어요",
+                e instanceof Error ? e.message : "앱을 닫았다 열고 다시 해 주세요.",
+              );
+            }
           },
         },
       ],

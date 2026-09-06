@@ -237,6 +237,14 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
                     else "이 노트에서 가져올 말이 없습니다."
                 )
             shift_id = f"{date}:{duty}"
+            # 폰이 이미 올린 근무를 덮어쓰지 않는다. 폰 사본에는 화자 표시와
+            # 폰에서만 가능한 가리기(등록해 둔 이름 목록)가 들어 있어서, 서버가
+            # 가린 사본으로 갈아 끼우면 그게 손실이다.
+            if any(sh.get("shiftId") == shift_id for sh in store.list_shifts(100)):
+                return (
+                    f"{shift_id} 는 폰이 이미 올린 근무입니다. 다른 듀티로 넣거나, "
+                    "폰에서 지운 뒤에 다시 부르십시오."
+                )
             n = store.put_shift(
                 {
                     "shiftId": shift_id,

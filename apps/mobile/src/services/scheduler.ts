@@ -49,14 +49,16 @@ import {
   createRecording,
   expireRecordings,
   finishRecording,
+  getRecording,
   getSetting,
+  listAllRecordingFiles,
   listDutyEntries,
   listRecordings,
   setSetting,
   totalStorageBytes,
 } from "../db";
 import { RecordingSession, createExpoAudioBackend } from "./recorder";
-import { deleteFile } from "./files";
+import { deleteFile, orphanRecordings } from "./files";
 
 export const BACKGROUND_TASK_NAME = "nsr-duty-recording-tick";
 
@@ -351,6 +353,27 @@ async function housekeeping(policy: RecordingPolicy, now: number): Promise<void>
     for (const uri of await expireRecordings(cutoff)) {
       deleteFile(uri);
     }
+  }
+
+  // 파일은 있는데 줄이 없는 녹음을 되찾는다. 그런 파일은 화면에 안 보이고
+  // 용량에도 안 잡히고 지워지지도 않아서, 폰에만 조용히 쌓인다.
+  try {
+    const known = (await listAllRecordingFiles()).filter((u): u is string => !!u);
+    for (const found of orphanRecordings(known)) {
+      const id = `${found.shiftId}#되찾음${found.seq}`;
+      if (await getRecording(id)) continue;
+      await createRecording({ id, shiftId: found.shiftId, seq: found.seq, startedAt: now });
+      await finishRecording({
+        id,
+        endedAt: now,
+        durationSec: 0,
+        fileUri: found.uri,
+        sizeBytes: 0,
+      });
+      void setSetting("recording.recovered", { at: now, shiftId: found.shiftId });
+    }
+  } catch {
+    // 되찾기는 덤이다. 실패해도 나머지 정리는 돈다.
   }
 
   const used = await totalStorageBytes();

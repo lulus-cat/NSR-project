@@ -22,7 +22,9 @@ import {
   type TiroParagraph,
 } from "@nsr/core";
 import {
+  countSegments,
   createRecording,
+  deleteRecordingRow,
   finishImportedTranscript,
   getRecording,
   listRecordings,
@@ -33,6 +35,7 @@ import {
   TIRO_API,
   autoPushTiroWords,
   getTiroKey,
+  refreshTaeumScore,
   saveImportedSegments,
   tiroError,
   tiroWorkspaceGuid,
@@ -154,7 +157,18 @@ export async function importTiroNote(input: {
   const id = `tiro-${input.note.guid}`;
   const already = await getRecording(id);
   if (already) {
-    throw new Error("이미 가져온 노트예요. 근무 기록에서 열어 보세요.");
+    // 글자가 실제로 들어와 있을 때만 막는다.
+    //
+    // 예전에는 줄만 있으면 무조건 막았다. 그런데 줄은 가져오기 **시작할 때**
+    // 만들어지고 문장은 몇 분 뒤에 들어온다. 그 사이에 앱이 죽거나 사용자가
+    // '전사만 지우기' 를 누르면, 줄만 남아서 그 노트는 영영 다시 가져올 수
+    // 없었다 — 화면 어디에도 그 사실이 안 적혀 있었다.
+    const has = await countSegments(`${input.date}:${input.code}`);
+    const mine = (await listRecordings(`${input.date}:${input.code}`)).find((r) => r.id === id);
+    if (has > 0 && mine) {
+      throw new Error("이미 가져온 노트예요. 근무 기록에서 열어 보세요.");
+    }
+    await deleteRecordingRow(id);
   }
 
   input.onProgress?.(10, "티로에서 받아오는 중");
@@ -193,6 +207,7 @@ export async function importTiroNote(input: {
     label: input.note.title,
     separate: input.separate,
   });
+  try {
   await finishImportedTranscript({
     id,
     endedAt: startedAt + durationSec * 1000,
@@ -206,8 +221,15 @@ export async function importTiroNote(input: {
     onProgress: input.onProgress,
   });
   await setRecordingState(id, "transcribed");
+  // 문장이 생긴 지금이 태움 점수를 다시 셀 자리다 (규칙 기반이라 값이 싸다).
+  await refreshTaeumScore(shiftId);
   // 홈의 "새 전사 결과가 나왔어요" 줄이 이 값을 본다. 쓰는 곳이 없어서 그 줄은
   // 지금까지 한 번도 뜬 적이 없었다 (쓰던 코드가 전사 경로와 함께 지워졌다).
   await setSetting("transcribe.lastResult", { shiftId, sentences, seen: false });
   return { shiftId, recordingId: id, sentences, locked };
+  } catch (e) {
+    // 반쯤 만들어진 줄을 남기지 않는다. 남기면 그 노트를 다시 못 가져온다.
+    await deleteRecordingRow(id).catch(() => {});
+    throw e;
+  }
 }

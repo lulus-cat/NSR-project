@@ -125,8 +125,8 @@ class Store:
                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                    ON CONFLICT(shift_id) DO UPDATE SET
                      date=excluded.date, code=excluded.code, minutes=excluded.minutes,
-                     sentences=excluded.sentences, taeum_score=excluded.taeum_score,
-                     taeum_level=excluded.taeum_level, received_at=excluded.received_at""",
+                     sentences=excluded.sentences, taeum_score=COALESCE(excluded.taeum_score, shifts.taeum_score),
+                     taeum_level=COALESCE(excluded.taeum_level, shifts.taeum_level), received_at=excluded.received_at""",
                 (
                     shift_id,
                     str(bundle.get("date", "")),
@@ -230,7 +230,9 @@ class Store:
             "SELECT shift_id, markdown FROM reports WHERE pulled_at IS NULL"
         ).fetchall()
         terms = self.db.execute(
-            "SELECT entry, meaning, note FROM terms WHERE pulled_at IS NULL"
+            # 폰이 올린 말은 폰에 돌려주지 않는다. 예전에는 돌려줘서, 근무를 보낼
+            # 때마다 자기 사전이 "srv-말" 이라는 짝퉁으로 하나씩 더 생겼다.
+            "SELECT entry, meaning, note FROM terms WHERE pulled_at IS NULL AND source != 'phone'"
         ).fetchall()
         return {
             "reports": [{"shiftId": r["shift_id"], "markdown": r["markdown"]} for r in reports],

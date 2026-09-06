@@ -93,3 +93,34 @@ export function deleteAllRecordings(): void {
 export function availableDiskBytes(): number {
   return Paths.availableDiskSpace;
 }
+
+/**
+ * 녹음 폴더에 있는데 DB 가 모르는 파일 목록.
+ *
+ * 이런 파일이 생기는 길이 여럿이다 — 저장이 되감겼을 때, DB 를 못 열었을 때,
+ * 조각을 여는 중에 앱이 죽었을 때. 지금까지는 그 소리가 폴더에 남아 있어도
+ * 앱이 볼 방법이 없었고, 용량 계산에도 안 잡히고, 영영 지워지지도 않았다.
+ *
+ * 파일 이름이 `근무id__번호.m4a` 라서 어느 근무의 것인지 되살릴 수 있다.
+ */
+export function orphanRecordings(known: string[]): { uri: string; shiftId: string; seq: number }[] {
+  const dir = recordingsDirectory();
+  const owned = new Set(known.map((u) => u.split("/").pop()));
+  const out: { uri: string; shiftId: string; seq: number }[] = [];
+  try {
+    for (const name of dir.list().map((f) => f.name ?? "")) {
+      if (!name.endsWith(".m4a") && !name.endsWith(".wav")) continue;
+      if (owned.has(name)) continue;
+      const m = /^(.+)__(\d+)\.(m4a|wav)$/.exec(name);
+      if (!m) continue;
+      out.push({
+        uri: recordingFileUri(name),
+        shiftId: m[1].replace(/_/g, ":"),
+        seq: Number(m[2]),
+      });
+    }
+  } catch {
+    // 폴더를 못 읽으면 되찾을 것도 없다.
+  }
+  return out;
+}

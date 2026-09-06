@@ -38,7 +38,7 @@ import {
 import {
   enabledWardPacks,
   knownEntryIds,
-  listSegments,
+  listSegmentsAbsolute,
   listUserTerms,
   loadCorrectionMemory,
   saveCards,
@@ -162,7 +162,9 @@ export async function saveImportedSegments(input: {
  * 화자 지정을 나중에 고쳐도 그때 값이 따라온다.
  */
 export async function refreshTaeumScore(shiftId: string): Promise<TaeumScore | null> {
-  const segments = await listSegments(shiftId);
+  // 근무 전체 기준 시각으로 본다. 파일마다 0 부터 다시 세면 '질문이 몰린 구간'
+  // 계산이 파일 경계마다 뒤로 흘러 없던 점수를 만든다.
+  const { segments } = await listSegmentsAbsolute(shiftId);
   if (segments.length === 0) return null;
   const score = scoreShift(segments);
   await saveTaeumScore(shiftId, score);
@@ -178,7 +180,7 @@ export async function finalizeShift(input: {
 }): Promise<{ cardsAdded: number; taeumScore: number }> {
   const now = input.now ?? Date.now();
   const lexicon = await loadLexicon();
-  const segments = await listSegments(input.shiftId);
+  const { segments } = await listSegmentsAbsolute(input.shiftId);
   const known = await knownEntryIds();
 
   // 세그먼트 본문을 다시 교정 파이프라인에 통과시켜 주석을 얻는다.
