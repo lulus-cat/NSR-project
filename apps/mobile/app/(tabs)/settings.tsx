@@ -467,11 +467,13 @@ export default function Settings() {
     setSrvBusy(true);
     try {
       const got = await pullFromServer();
-      setSrvNote(
-        got.reports + got.terms === 0
-          ? "새로 온 것이 없어요."
-          : `보고서 ${got.reports}개, 새 용어 ${got.terms}개를 받았어요.`,
-      );
+      const parts = [
+        got.reports ? `보고서 ${got.reports}개` : "",
+        got.terms ? `새 용어 ${got.terms}개` : "",
+        got.roles ? `화자 ${got.roles}줄` : "",
+        got.fixes ? `교정 ${got.fixes}곳` : "",
+      ].filter(Boolean);
+      setSrvNote(parts.length === 0 ? "새로 온 것이 없어요." : `${parts.join(", ")}를 받았어요.`);
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "받지 못했어요. 다시 눌러 주세요.");
     } finally {

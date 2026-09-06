@@ -196,6 +196,76 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         store.put_term(entry, meaning, note or None)
         return f"'{entry}' 을(를) 사전에 넣었습니다. 폰이 다음에 가져갑니다." + to_tiro_words(entry)
 
+    # 화자 이름표 — 앱이 아는 갈래만 받는다. 없는 이름을 넣으면 앱이 조용히 무시한다.
+    ROLES = ("self", "senior", "doctor", "patient", "other")
+
+    @mcp.tool()
+    def set_speaker_roles(shift_id: str, roles: str) -> str:
+        """
+        누가 누구인지 정해서 앱에 넘긴다. 폰이 가져가 전사 화면의 이름표를 바꾼다.
+
+        roles 는 JSON 이다 — 기계 이름표에서 갈래로: {"spk_0":"self","spk_1":"senior"}
+        갈래는 self(본인)·senior(선배)·doctor(의사)·patient(환자)·other 다섯 뿐이다.
+        확실하지 않은 화자는 **넣지 않는다.** 틀리게 붙은 이름표는 안 붙은 것보다 나쁘다.
+        """
+        try:
+            table = json.loads(roles)
+        except Exception:
+            return "roles 는 JSON 이어야 합니다. 예: {\"spk_0\":\"self\"}"
+        if not isinstance(table, dict) or not table:
+            return "roles 가 비어 있습니다."
+        clean = {
+            str(k): str(v) for k, v in table.items() if str(v) in ROLES and str(k).strip()
+        }
+        if not clean:
+            return f"쓸 수 있는 갈래는 {', '.join(ROLES)} 뿐입니다."
+        store.put_ai_action(shift_id, "speakers", clean)
+        log.info("화자 이름표 %d개 — 폰이 가져갑니다", len(clean))
+        return f"화자 {len(clean)}명을 정했습니다. 폰이 다음에 가져갑니다."
+
+    @mcp.tool()
+    def put_corrections(shift_id: str, items: str) -> str:
+        """
+        **사람이 확정한** 전사 교정을 앱에 넘긴다. 폰이 전사본의 그 낱말을 고친다.
+
+        items 는 JSON 배열이다:
+          [{"from":"포리","to":"폴리","reason":"misheard","note":"유치도뇨관"}]
+
+        reason 은 misheard(오인식)·initialism(약어)·phonetic(발음)·learned(배운 말).
+        낱말 단위로 적는다 — 문장 통째로 바꾸지 않는다.
+
+        **원문은 안 건드린다.** 앱이 교정본만 고치고 원문(raw_text)은 증거로 남긴다.
+        사람이 확정하지 않은 것은 여기 넣지 않는다. 화자가 실제로 한 말(은어)은
+        고치는 것이 아니다 — 음성인식이 틀린 것만이다.
+        """
+        try:
+            rows = json.loads(items)
+        except Exception:
+            return "items 는 JSON 배열이어야 합니다."
+        if not isinstance(rows, list) or not rows:
+            return "고칠 것이 없습니다."
+        clean = []
+        for r in rows:
+            if not isinstance(r, dict):
+                continue
+            a, b = str(r.get("from", "")).strip(), str(r.get("to", "")).strip()
+            # 빈 값이나 같은 값은 앱에서 아무 일도 안 하면서 기록만 남긴다.
+            if not a or not b or a == b or len(a) > 40 or len(b) > 40:
+                continue
+            clean.append(
+                {
+                    "from": a,
+                    "to": b,
+                    "reason": str(r.get("reason", "misheard")),
+                    "note": str(r.get("note", "")).strip(),
+                }
+            )
+        if not clean:
+            return "쓸 수 있는 항목이 없습니다. from·to 를 둘 다 적고, 서로 달라야 합니다."
+        store.put_ai_action(shift_id, "corrections", clean)
+        log.info("교정 %d개 — 폰이 가져갑니다", len(clean))
+        return f"교정 {len(clean)}개를 넘겼습니다. 폰이 다음에 가져가 전사본을 고칩니다."
+
     @mcp.tool()
     def get_taeum_summary(limit: int = 12) -> str:
         """근무별 태움 점수와 등급. 숫자만 준다 — 그 점수를 만든 문장은 주지 않는다."""
@@ -325,14 +395,21 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             )
         # 문장만 보면 안 된다. 화자 이름과 사전 항목도 그대로 저장되고, 그대로
         # 대화 AI 에게 나간다 — 예전에는 이 둘이 검문소를 그냥 지나갔다.
-        # 모양이 아닌 것은 여기서 걸러 낸다. 아래 검문소가 먼저 터지면 500 이 되고,
-        # 500 은 트레이스백에 보낸 값을 실어 로그로 내보낸다.
-        sentences = [s for s in (bundle.get("sentences") or []) if isinstance(s, dict)]
+        # 모양이 틀리면 **거절한다.** 걸러 내고 200 을 주면 폰은 올렸다고 알고
+        # 서버는 0건을 저장한다 — 근무 한 편이 성공 응답과 함께 사라진다.
+        # 조용한 자료 손실은 시끄러운 실패보다 늦게 발견된다.
+        sentences = bundle.get("sentences") or []
+        if not isinstance(sentences, list) or any(not isinstance(x, dict) for x in sentences):
+            return JSONResponse(
+                {"error": "sentences 는 객체의 배열이어야 합니다."}, status_code=400
+            )
+        terms_in = bundle.get("terms") or []
+        if not isinstance(terms_in, list) or any(not isinstance(x, dict) for x in terms_in):
+            return JSONResponse({"error": "terms 는 객체의 배열이어야 합니다."}, status_code=400)
         checked = [str(s.get("text", "")) for s in sentences]
         checked += [str(s.get("speaker", "")) for s in sentences]
-        for t in bundle.get("terms") or []:
-            if isinstance(t, dict):
-                checked += [str(t.get(k, "")) for k in ("entry", "meaning", "note")]
+        for t in terms_in:
+            checked += [str(t.get(k, "")) for k in ("entry", "meaning", "note")]
         leftover = screen_bundle(checked)
         if leftover:
             # 무엇이 몇 건인지만 알려 준다. 값은 돌려주지 않는다.
@@ -346,9 +423,7 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         # 않는다는 규칙이 그 길로 깨진다. 종류만 남기고 400 으로 돌려보낸다.
         try:
             n = store.put_shift(bundle)
-            for t in bundle.get("terms") or []:
-                if not isinstance(t, dict):
-                    continue
+            for t in terms_in:
                 # 사전은 티로 단어장으로도 나간다. 같은 잣대로 한 번 더 거른다.
                 if t.get("entry") and t.get("meaning") and not word_reject(str(t["entry"])):
                     store.put_term(
@@ -374,7 +449,11 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             body = await request.json()
         except Exception:
             return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
-        store.mark_pulled(list(body.get("shiftIds") or []), list(body.get("entries") or []))
+        store.mark_pulled(
+            list(body.get("shiftIds") or []),
+            list(body.get("entries") or []),
+            list(body.get("actions") or []),
+        )
         return JSONResponse({"ok": True})
 
     # ── 폰 잇기 ───────────────────────────────────────────
@@ -634,6 +713,13 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     app.state.store = store
     app.state.config = config
     app.state.auth = auth  # 시험이 번호를 만들 때 쓴다
+    # MCP 도구는 build_app 안의 닫힘이라 밖에서 못 부른다. 시험이 값 검사를
+    # 확인할 수 있게 이름표를 붙여 둔다 (auth 를 내놓는 것과 같은 이유).
+    app.state.tools = {
+        "set_speaker_roles": set_speaker_roles,
+        "put_corrections": put_corrections,
+        "add_term": add_term,
+    }
     return app
 
 

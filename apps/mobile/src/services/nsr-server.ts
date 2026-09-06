@@ -37,6 +37,8 @@ import {
   getSetting,
   getTaeumScore,
   listSegmentsAbsolute,
+  applyCorrections,
+  applySpeakerRoles,
   listUserTerms,
   shiftsWithSegments,
   saveShiftReport,
@@ -473,13 +475,20 @@ export async function sendShift(
  * 서버에 쌓인 결과를 받아온다 — AI 가 쓴 보고서와 새 병동 용어.
  * 받은 것은 알려 줘서 다음에 또 오지 않게 한다.
  */
-export async function pullFromServer(): Promise<{ reports: number; terms: number }> {
+export async function pullFromServer(): Promise<{
+  reports: number;
+  terms: number;
+  roles: number;
+  fixes: number;
+}> {
   const res = await call("/pull");
   if (!res.ok) throw new Error(await serverError(res, "결과 받기"));
-  const body = (await res.json()) as {
-    reports?: { shiftId: string; markdown: string }[];
-    terms?: { entry: string; meaning: string; note?: string | null }[];
-  };
+  const body = await readJson<{
+    reports: { shiftId: string; markdown: string }[];
+    terms: { entry: string; meaning: string; note?: string | null }[];
+    /** AI 가 정한 것 중 앱의 자료를 바꾸는 지시 — 화자 이름표와 확정된 교정. */
+    actions: { shiftId: string; kind: string; payload: unknown }[];
+  }>(res);
 
   const reports = body.reports ?? [];
   const terms = body.terms ?? [];
@@ -507,17 +516,41 @@ export async function pullFromServer(): Promise<{ reports: number; terms: number
     });
   }
 
-  if (reports.length || terms.length) {
+  // AI 가 정한 것을 실제로 반영한다. 여기까지 와야 '분석했다' 가 화면에 보인다.
+  // 하나가 막혀도 나머지는 넣는다 — 그리고 못 넣은 것은 '가져갔다'고 알리지 않아
+  // 다음 번에 다시 온다.
+  const actions = body.actions ?? [];
+  const done: { shiftId: string; kind: string }[] = [];
+  let roles = 0;
+  let fixes = 0;
+  for (const a of actions) {
+    try {
+      if (a.kind === "speakers") {
+        roles += await applySpeakerRoles(a.shiftId, a.payload as Record<string, string>);
+      } else if (a.kind === "corrections") {
+        fixes += await applyCorrections(a.shiftId, a.payload as never);
+      } else {
+        // 모르는 갈래는 건드리지 않고 그대로 둔다 (서버가 앞서 나갔을 때).
+        continue;
+      }
+      done.push({ shiftId: a.shiftId, kind: a.kind });
+    } catch (e) {
+      void logDebug(`${a.kind} 반영 실패 ${a.shiftId}: ${e instanceof Error ? e.message : ""}`);
+    }
+  }
+
+  if (reports.length || terms.length || done.length) {
     const told = await call("/pulled", {
       method: "POST",
       body: JSON.stringify({
         shiftIds: reports.map((r) => r.shiftId),
         entries: terms.map((t) => t.entry),
+        actions: done,
       }),
     });
     // 실패하면 서버는 아직 '안 가져감' 으로 알고 있어서 다음에 또 준다.
     // 그때 같은 보고서를 다시 덮어쓰지 않게 기록해 둔다.
     if (!told.ok) void logDebug("받았다고 알리지 못했어요 — 다음에 다시 받습니다.");
   }
-  return { reports: reports.length, terms: terms.length };
+  return { reports: reports.length, terms: terms.length, roles, fixes };
 }

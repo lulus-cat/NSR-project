@@ -490,9 +490,27 @@ def test_이상한_값이_와도_로그에_안_남는다(tmp_path, monkeypatch):
             },
             headers=head,
         )
-        # 500 이 아니다 — 500 이면 트레이스백에 값이 실려 로그로 나간다
-        assert bad.status_code == 200
+        # 문장 모양이 틀렸으니 거절이다. 걸러 내고 200 을 주면 근무 한 편이
+        # 성공 응답과 함께 사라진다 — 조용한 손실이 시끄러운 실패보다 나쁘다.
+        assert bad.status_code == 400
         assert "PROBE" not in bad.text
+        assert store.counts()["shifts"] == 0
+
+        # 모양이 맞으면 이상한 값이 섞여 있어도 500 없이 들어간다 (값은 안 남는다)
+        ok = c.post(
+            "/ingest",
+            json={
+                "shiftId": "2026-09-06:D",
+                "date": "2026-09-06",
+                "code": "D",
+                "masked": True,
+                "minutes": "PROBE-VALUE-9911",
+                "taeum": "PROBE-TAEUM-7",
+                "sentences": [{"t": "PROBE-T-1234", "text": "폴리 확인했어요"}],
+            },
+            headers=head,
+        )
+        assert ok.status_code == 200 and "PROBE" not in ok.text
         assert store.counts()["shifts"] == 1
 
 
@@ -522,6 +540,58 @@ def test_첫_기기는_그냥_이어진다(tmp_path, monkeypatch):
             headers={"authorization": f"Bearer {out['token']}"},
         )
         assert res.status_code == 200
+
+
+def test_AI_가_정한_것은_폰이_한_번만_가져간다(tmp_path, monkeypatch):
+    """화자 이름표와 교정은 읽고 마는 글이 아니라 앱의 자료를 바꾸는 지시다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
+    store.put_ai_action("2026-09-06:D", "speakers", {"spk_0": "self", "spk_1": "senior"})
+    store.put_ai_action(
+        "2026-09-06:D", "corrections", [{"from": "포리", "to": "폴리", "reason": "misheard"}]
+    )
+    with _client(app) as c:
+        head = {"authorization": f"Bearer {_link(c)['token']}"}
+        got = c.get("/pull", headers=head).json()
+        kinds = {a["kind"]: a for a in got["actions"]}
+        assert set(kinds) == {"speakers", "corrections"}
+        assert kinds["speakers"]["payload"]["spk_1"] == "senior"
+        assert kinds["corrections"]["payload"][0]["to"] == "폴리"
+
+        c.post(
+            "/pulled",
+            json={"shiftIds": [], "entries": [], "actions": got["actions"]},
+            headers=head,
+        )
+        assert c.get("/pull", headers=head).json()["actions"] == []
+
+        # 다시 쓰면 다시 간다 — 사람이 고쳐 달라고 할 때가 있다
+        store.put_ai_action("2026-09-06:D", "speakers", {"spk_0": "senior"})
+        assert len(c.get("/pull", headers=head).json()["actions"]) == 1
+
+
+def test_모르는_화자_갈래와_빈_교정은_안_넘어간다(tmp_path, monkeypatch):
+    """틀리게 붙은 이름표는 안 붙은 것보다 나쁘다."""
+    import json as _json
+
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
+    tools = app.state.tools
+
+    out = tools["set_speaker_roles"]("2026-09-06:D", _json.dumps({"spk_0": "선배님"}))
+    assert "self" in out and store.pending_for_phone()["actions"] == []
+
+    out = tools["set_speaker_roles"](
+        "2026-09-06:D", _json.dumps({"spk_0": "self", "spk_9": "왕초보"})
+    )
+    payload = store.pending_for_phone()["actions"][0]["payload"]
+    assert payload == {"spk_0": "self"}
+
+    # from·to 가 같거나 비면 앱에서 아무 일도 안 하면서 기록만 남는다
+    out = tools["put_corrections"](
+        "2026-09-06:D", _json.dumps([{"from": "폴리", "to": "폴리"}, {"from": "", "to": "x"}])
+    )
+    assert "쓸 수 있는 항목이 없습니다" in out
 
 
 def test_첫_문은_동시에_두드려도_한_대만_들어온다(tmp_path):

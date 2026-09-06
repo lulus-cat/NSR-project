@@ -701,6 +701,84 @@ export async function setSpeakerRoles(ids: string[], role: SpeakerRole): Promise
   }
 }
 
+/**
+ * AI 가 정한 화자 이름표를 붙인다 — 기계 이름표(spk_0)에서 갈래로.
+ *
+ * 앱이 아는 갈래만 받는다. 모르는 이름이 오면 그 줄만 건너뛴다 — 서버가 새 갈래를
+ * 만들어도 앱이 조용히 이상해지지 않게.
+ */
+export async function applySpeakerRoles(
+  shiftId: string,
+  roles: Record<string, string>,
+): Promise<number> {
+  const db = await getDb();
+  const known: SpeakerRole[] = ["self", "senior", "doctor", "patient", "other"];
+  let n = 0;
+  for (const [speakerId, role] of Object.entries(roles)) {
+    if (!known.includes(role as SpeakerRole)) continue;
+    const r = await db.runAsync(
+      "UPDATE segments SET speaker_role = ? WHERE shift_id = ? AND speaker_id = ?",
+      [role, shiftId, speakerId],
+    );
+    n += r.changes ?? 0;
+  }
+  return n;
+}
+
+export interface AiCorrection {
+  from: string;
+  to: string;
+  reason?: string;
+  note?: string;
+}
+
+/**
+ * AI 가 확정받아 보낸 교정을 전사본에 반영한다.
+ *
+ * **원문(raw_text)은 건드리지 않는다.** 교정본(text)만 고치고, 고친 자리마다
+ * edits 에 한 줄을 남긴다 — 나중에 하나씩 되돌릴 수 있어야 하기 때문이다
+ * (CLAUDE.md 절대 규칙 1).
+ *
+ * 낱말 단위로만 바꾼다. 문장을 통째로 갈아 끼우면 무엇이 바뀌었는지 알 수 없고,
+ * 화자가 실제로 한 말까지 같이 사라진다.
+ */
+export async function applyCorrections(
+  shiftId: string,
+  items: AiCorrection[],
+): Promise<number> {
+  const clean = items.filter((c) => c?.from && c?.to && c.from !== c.to);
+  if (clean.length === 0) return 0;
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id: string; text: string }>(
+    "SELECT id, text FROM segments WHERE shift_id = ?",
+    [shiftId],
+  );
+  let changed = 0;
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    for (const row of rows) {
+      let text = row.text;
+      for (const c of clean) {
+        let at = text.indexOf(c.from);
+        while (at >= 0) {
+          await tx.runAsync(
+            `INSERT OR REPLACE INTO edits
+               (id, segment_id, start_pos, end_pos, from_text, to_text, reason, entry_id, confidence, accepted)
+             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, 1)`,
+            [`${row.id}#ai${changed}`, row.id, at, at + c.from.length, c.from, c.to, c.reason ?? "misheard"],
+          );
+          text = text.slice(0, at) + c.to + text.slice(at + c.from.length);
+          changed += 1;
+          at = text.indexOf(c.from, at + c.to.length);
+        }
+      }
+      if (text !== row.text) {
+        await tx.runAsync("UPDATE segments SET text = ? WHERE id = ?", [text, row.id]);
+      }
+    }
+  });
+  return changed;
+}
+
 /** 사용자가 본문을 직접 고쳤을 때. 원문(raw_text)은 건드리지 않는다. */
 export async function updateSegmentText(
   segmentId: string,

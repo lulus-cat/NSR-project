@@ -90,6 +90,19 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   last_seen_at INTEGER
 );
 
+-- 대화 AI 가 근무에 대해 정한 것 중 **폰이 가져가서 반영해야 하는 것**.
+-- 지금 두 갈래다: 화자 역할(speakers)과 확정된 교정(corrections).
+-- 보고서와 달리 읽고 마는 글이 아니라 앱의 자료를 바꾸는 지시라, 가져간 뒤에는
+-- 다시 주지 않는다 (pulled_at).
+CREATE TABLE IF NOT EXISTS ai_actions (
+  shift_id    TEXT NOT NULL,
+  kind        TEXT NOT NULL,
+  payload     TEXT NOT NULL,
+  written_at  INTEGER NOT NULL,
+  pulled_at   INTEGER,
+  PRIMARY KEY (shift_id, kind)
+);
+
 -- 서버가 기억해야 하는 한 줄짜리 값들. 지금은 복구 번호 하나뿐이다.
 CREATE TABLE IF NOT EXISTS server_meta (
   key    TEXT PRIMARY KEY,
@@ -265,8 +278,24 @@ class Store:
         ).fetchone()
         return row["markdown"] if row else None
 
+    def put_ai_action(self, shift_id: str, kind: str, payload: Any) -> None:
+        """
+        AI 가 정한 것을 폰이 가져갈 자리에 둔다.
+
+        같은 근무·같은 갈래를 다시 쓰면 **덮어쓴다** — 아직 안 가져갔으면 마지막
+        판이 가고, 이미 가져갔으면 새것으로 다시 한 번 간다.
+        """
+        with self._write():
+            self.db.execute(
+                """INSERT INTO ai_actions (shift_id, kind, payload, written_at, pulled_at)
+                   VALUES (?, ?, ?, ?, NULL)
+                   ON CONFLICT(shift_id, kind) DO UPDATE SET
+                     payload=excluded.payload, written_at=excluded.written_at, pulled_at=NULL""",
+                (shift_id, kind, json.dumps(payload, ensure_ascii=False), int(time.time())),
+            )
+
     def pending_for_phone(self) -> dict[str, Any]:
-        """폰이 아직 안 가져간 것 — 보고서와 새 용어."""
+        """폰이 아직 안 가져간 것 — 보고서·새 용어·AI 가 정한 것."""
         reports = self.db.execute(
             "SELECT shift_id, markdown FROM reports WHERE pulled_at IS NULL"
         ).fetchall()
@@ -275,14 +304,23 @@ class Store:
             # 때마다 자기 사전이 "srv-말" 이라는 짝퉁으로 하나씩 더 생겼다.
             "SELECT entry, meaning, note FROM terms WHERE pulled_at IS NULL AND source != 'phone'"
         ).fetchall()
+        actions = self.db.execute(
+            "SELECT shift_id, kind, payload FROM ai_actions WHERE pulled_at IS NULL"
+        ).fetchall()
         return {
             "reports": [{"shiftId": r["shift_id"], "markdown": r["markdown"]} for r in reports],
             "terms": [
                 {"entry": t["entry"], "meaning": t["meaning"], "note": t["note"]} for t in terms
             ],
+            "actions": [
+                {"shiftId": a["shift_id"], "kind": a["kind"], "payload": json.loads(a["payload"])}
+                for a in actions
+            ],
         }
 
-    def mark_pulled(self, shift_ids: list[str], entries: list[str]) -> None:
+    def mark_pulled(
+        self, shift_ids: list[str], entries: list[str], actions: list[dict[str, str]] | None = None
+    ) -> None:
         now = int(time.time())
         with self._write():
             self.db.executemany(
@@ -291,6 +329,14 @@ class Store:
             )
             self.db.executemany(
                 "UPDATE terms SET pulled_at = ? WHERE entry = ?", [(now, e) for e in entries]
+            )
+            self.db.executemany(
+                "UPDATE ai_actions SET pulled_at = ? WHERE shift_id = ? AND kind = ?",
+                [
+                    (now, str(a.get("shiftId", "")), str(a.get("kind", "")))
+                    for a in (actions or [])
+                    if isinstance(a, dict)
+                ],
             )
 
     # ── 병동 사전 ─────────────────────────────────────────
