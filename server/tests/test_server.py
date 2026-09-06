@@ -524,6 +524,49 @@ def test_첫_기기는_그냥_이어진다(tmp_path, monkeypatch):
         assert res.status_code == 200
 
 
+def test_첫_문은_동시에_두드려도_한_대만_들어온다(tmp_path):
+    """워커가 둘이면 세기와 넣기가 갈라진다. 그래서 한 몸으로 묶었다."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from nsr_server.link import first_token
+
+    store = Store(str(tmp_path / "race.db"))
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        got = list(pool.map(lambda _: first_token(store, "동시"), range(20)))
+    assert sum(1 for g in got if g) == 1
+    assert store.count_device_tokens() == 1
+
+
+def test_설정_오타는_문을_닫는_쪽으로(tmp_path, monkeypatch):
+    """음수를 0 으로 접으면 0 이 '제한 없음' 이라 오타가 문을 영영 열어 둔다."""
+    import nsr_server.app as app_module
+
+    monkeypatch.setenv("NSR_OPEN_MINUTES", "-5")
+    app, _ = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        assert c.get("/device/door").json()["open"] is False
+        assert c.post("/device/link", json={}).status_code == 403
+    assert app_module.Config().open_minutes == -5
+
+
+def test_인증할_때마다_쓰지_않는다(tmp_path):
+    """읽기 판정이 매번 쓰기 트랜잭션을 열면 파일이 커졌을 때 여기서 먼저 막힌다."""
+    store = Store(str(tmp_path / "seen.db"))
+    store.put_device_token("열쇠", "(앱)", "폰")
+    assert store.device_token_ok("열쇠")
+    first = store.list_device_tokens()[0]["last_seen_at"]
+    for _ in range(5):
+        assert store.device_token_ok("열쇠")
+    # 1분 안에는 처음 적은 값 그대로다
+    assert store.list_device_tokens()[0]["last_seen_at"] == first
+
+    # 1분이 지나면 다시 적는다
+    with store.db:
+        store.db.execute("UPDATE device_tokens SET last_seen_at = ? WHERE token = ?", (0, "열쇠"))
+    assert store.device_token_ok("열쇠")
+    assert store.list_device_tokens()[0]["last_seen_at"] > 0
+
+
 def test_문은_켠_뒤_잠깐만_열린다(tmp_path, monkeypatch):
     """도메인은 인증서 기록으로 공개된다. 며칠씩 열어 두면 남이 먼저 붙는다."""
     import nsr_server.app as app_module

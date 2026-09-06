@@ -12,9 +12,11 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import os
 import sqlite3
+import threading
 import time
 from typing import Any
 
@@ -123,6 +125,11 @@ class Store:
     def __init__(self, path: str) -> None:
         self.path = path
         new = not os.path.exists(path)
+        # 연결 하나를 여러 갈래가 함께 쓴다 (폰의 REST 와 MCP 도구는 다른 실에서
+        # 돈다). 파이썬 sqlite3 는 트랜잭션이 열려 있는데 또 열려고 하면
+        # "cannot start a transaction within a transaction" 으로 죽는다.
+        # 그래서 쓰기는 전부 `_write()` 한 문으로 지난다.
+        self._lock = threading.RLock()
         self.db = sqlite3.connect(path, check_same_thread=False)
         self.db.row_factory = sqlite3.Row
         self.db.executescript(SCHEMA)
@@ -130,6 +137,12 @@ class Store:
         if new:
             # 남이 읽지 못하게. 무한 보관이라 더 중요하다.
             os.chmod(path, 0o600)
+
+    @contextlib.contextmanager
+    def _write(self):
+        """쓰기 트랜잭션 하나. 같은 연결에 둘이 겹치지 않게 줄을 세운다."""
+        with self._lock, self.db:
+            yield
 
     # ── 폰이 올린다 ────────────────────────────────────────
 
@@ -146,7 +159,7 @@ class Store:
         now = int(time.time())
         taeum = bundle.get("taeum")
         taeum = taeum if isinstance(taeum, dict) else {}
-        with self.db:
+        with self._write():
             self.db.execute(
                 """INSERT INTO shifts (shift_id, date, code, minutes, sentences,
                                        taeum_score, taeum_level, received_at)
@@ -238,7 +251,7 @@ class Store:
     # ── 보고서 ────────────────────────────────────────────
 
     def put_report(self, shift_id: str, markdown: str) -> None:
-        with self.db:
+        with self._write():
             self.db.execute(
                 """INSERT INTO reports (shift_id, markdown, written_at) VALUES (?, ?, ?)
                    ON CONFLICT(shift_id) DO UPDATE SET
@@ -271,7 +284,7 @@ class Store:
 
     def mark_pulled(self, shift_ids: list[str], entries: list[str]) -> None:
         now = int(time.time())
-        with self.db:
+        with self._write():
             self.db.executemany(
                 "UPDATE reports SET pulled_at = ? WHERE shift_id = ?",
                 [(now, s) for s in shift_ids],
@@ -283,7 +296,7 @@ class Store:
     # ── 병동 사전 ─────────────────────────────────────────
 
     def put_term(self, entry: str, meaning: str, note: str | None, source: str = "ai") -> None:
-        with self.db:
+        with self._write():
             self.db.execute(
                 """INSERT INTO terms (entry, meaning, note, source, written_at) VALUES (?, ?, ?, ?, ?)
                    ON CONFLICT(entry) DO UPDATE SET
@@ -315,27 +328,53 @@ class Store:
     # ── 기기 열쇠 ─────────────────────────────────────────
 
     def put_device_token(self, token: str, email: str, label: str | None = None) -> None:
-        with self.db:
+        with self._write():
             self.db.execute(
                 "INSERT OR REPLACE INTO device_tokens (token, email, label, created_at) VALUES (?, ?, ?, ?)",
                 (token, email.strip().lower(), (label or "").strip() or None, int(time.time())),
             )
 
     def device_token_ok(self, token: str) -> bool:
-        """이 열쇠가 살아 있는가. 쓸 때마다 마지막 사용 시각을 적어 둔다."""
+        """
+        이 열쇠가 살아 있는가.
+
+        마지막 사용 시각은 **1분에 한 번만** 적는다. 판정은 읽기인데 매번 쓰기
+        트랜잭션을 열면, 무한 보관으로 파일이 커졌을 때 잠금 경합이 여기서 먼저
+        난다. 화면에 보이는 값은 분 단위라 이 정도면 충분하다.
+        """
         if not token:
             return False
         row = self.db.execute(
-            "SELECT token FROM device_tokens WHERE token = ?", (token,)
+            "SELECT last_seen_at FROM device_tokens WHERE token = ?", (token,)
         ).fetchone()
         if not row:
             return False
-        with self.db:
-            self.db.execute(
-                "UPDATE device_tokens SET last_seen_at = ? WHERE token = ?",
-                (int(time.time()), token),
-            )
+        now = int(time.time())
+        if now - int(row["last_seen_at"] or 0) >= 60:
+            with self._write():
+                self.db.execute(
+                    "UPDATE device_tokens SET last_seen_at = ? WHERE token = ?", (now, token)
+                )
         return True
+
+    def claim_first_device(self, token: str, label: str) -> bool:
+        """
+        기기가 하나도 없을 때만 첫 열쇠를 넣는다. **세는 것과 넣는 것이 한 몸이다.**
+
+        예전에는 세기와 넣기가 따로였다. 워커가 하나라 지금은 안전하지만, 그걸
+        코드도 유닛 파일도 강제하지 않는다 — `--workers 2` 한 줄이면 두 대가
+        동시에 첫 기기가 된다. 여기서 잠가 두면 워커 수와 무관해진다.
+        """
+        # 문장 하나로 끝낸다. 세고 나서 넣으면 그 사이에 남이 들어올 수 있는데,
+        # `WHERE NOT EXISTS` 는 SQLite 가 쓰기 잠금을 쥔 채로 따지므로 갈라지지 않는다.
+        with self._write():
+            cur = self.db.execute(
+                """INSERT INTO device_tokens (token, email, label, created_at)
+                   SELECT ?, ?, ?, ?
+                   WHERE NOT EXISTS (SELECT 1 FROM device_tokens)""",
+                (token, "(앱)", label, int(time.time())),
+            )
+        return cur.rowcount == 1
 
     def count_device_tokens(self) -> int:
         """이어진 기기 수. 0 이면 첫 기기가 그냥 들어올 수 있다(처음 한 번만 열리는 문)."""
@@ -344,7 +383,7 @@ class Store:
 
     def delete_device_tokens_except(self, keep: str) -> int:
         """이 열쇠만 남기고 나머지를 끊는다. 앱을 지웠다 깔면 죽은 열쇠가 쌓인다."""
-        with self.db:
+        with self._write():
             cur = self.db.execute("DELETE FROM device_tokens WHERE token <> ?", (keep,))
         return cur.rowcount or 0
 
@@ -353,7 +392,7 @@ class Store:
         return row["value"] if row else None
 
     def put_meta(self, key: str, value: str) -> None:
-        with self.db:
+        with self._write():
             self.db.execute(
                 """INSERT INTO server_meta (key, value) VALUES (?, ?)
                    ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
@@ -382,7 +421,7 @@ class Store:
         ]
 
     def put_oauth_client(self, client_id: str, info: dict[str, Any]) -> None:
-        with self.db:
+        with self._write():
             self.db.execute(
                 """INSERT INTO oauth_clients (client_id, info, created_at) VALUES (?, ?, ?)
                    ON CONFLICT(client_id) DO UPDATE SET info=excluded.info""",
@@ -396,7 +435,7 @@ class Store:
         return json.loads(row["info"]) if row else None
 
     def put_oauth_pending(self, pending_id: str, payload: dict[str, Any], expires_at: float) -> None:
-        with self.db:
+        with self._write():
             self.db.execute("DELETE FROM oauth_pending WHERE expires_at < ?", (time.time(),))
             self.db.execute(
                 """INSERT INTO oauth_pending (id, payload, expires_at) VALUES (?, ?, ?)
@@ -426,14 +465,14 @@ class Store:
         ).fetchone()
         if not row:
             return None
-        with self.db:
+        with self._write():
             self.db.execute("DELETE FROM oauth_pending WHERE id = ?", (pending_id,))
         if row["expires_at"] < time.time():
             return None
         return json.loads(row["payload"])
 
     def put_oauth_code(self, code: str, payload: dict[str, Any]) -> None:
-        with self.db:
+        with self._write():
             self.db.execute("DELETE FROM oauth_codes WHERE expires_at < ?", (time.time(),))
             self.db.execute(
                 "INSERT INTO oauth_codes (code, payload, expires_at) VALUES (?, ?, ?)",
@@ -445,7 +484,7 @@ class Store:
         return json.loads(row["payload"]) if row else None
 
     def delete_oauth_code(self, code: str) -> None:
-        with self.db:
+        with self._write():
             self.db.execute("DELETE FROM oauth_codes WHERE code = ?", (code,))
 
     def put_oauth_token(
@@ -457,7 +496,7 @@ class Store:
         expires_at: float | None,
         resource: str | None,
     ) -> None:
-        with self.db:
+        with self._write():
             self.db.execute(
                 """INSERT INTO oauth_tokens (token, kind, client_id, scopes, resource, expires_at, created_at)
                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
@@ -479,7 +518,7 @@ class Store:
         }
 
     def delete_oauth_token(self, token: str) -> None:
-        with self.db:
+        with self._write():
             self.db.execute("DELETE FROM oauth_tokens WHERE token = ?", (token,))
 
     def dump_json(self, obj: Any) -> str:

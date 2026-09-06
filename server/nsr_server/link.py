@@ -70,6 +70,19 @@ def issue_token(store: Store, label: str) -> dict[str, str]:
     return {"token": token, "recovery": recovery_code(store)}
 
 
+def first_token(store: Store, label: str) -> dict[str, str] | None:
+    """
+    문이 열려 있을 때의 첫 열쇠. **기기가 0대일 때만** 만들어진다.
+
+    세기와 넣기를 store 안에서 한 몸으로 처리한다 — 여기서 나눠 하면 워커가
+    둘 이상일 때 두 대가 동시에 첫 기기가 된다.
+    """
+    token = secrets.token_urlsafe(32)
+    if not store.claim_first_device(token, label):
+        return None
+    return {"token": token, "recovery": recovery_code(store)}
+
+
 def use_recovery(store: Store, given: str) -> dict[str, str] | None:
     """
     복구 번호를 열쇠로 바꾼다. 맞으면 번호는 새것으로 바뀐다(한 번만 쓴다).

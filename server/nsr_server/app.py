@@ -62,6 +62,7 @@ from .oauth import NsrOAuthProvider
 from .link import (
     BAD_RECOVERY_DELAY,
     approve_link,
+    first_token,
     issue_token,
     new_link_code,
     poll_link,
@@ -388,7 +389,8 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     def door_open() -> bool:
         if store.count_device_tokens() > 0:
             return False
-        if config.open_minutes <= 0:
+        # 0 만 '제한 없음' 이다. 음수(오타)는 닫힌 것으로 본다 — config.py 참고.
+        if config.open_minutes == 0:
             return True
         return time.monotonic() - started_at < config.open_minutes * 60
 
@@ -428,8 +430,12 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
                 return JSONResponse(
                     {"error": "서버를 다시 켠 뒤에 이어 주십시오."}, status_code=403
                 )
-            log.info("첫 기기 연결 — 이제 문이 닫힌다")
-            return JSONResponse({"open": True, **issue_token(store, "처음 이은 기기")})
+            # 세기와 넣기를 한 몸으로 한다. 따로 하면 워커가 둘일 때 두 대가
+            # 동시에 첫 기기가 된다 (store.claim_first_device).
+            first = first_token(store, "처음 이은 기기")
+            if first:
+                log.info("첫 기기 연결 — 이제 문이 닫힌다")
+                return JSONResponse({"open": True, **first})
         try:
             ticket = new_link_code(store)
         except RuntimeError as e:
