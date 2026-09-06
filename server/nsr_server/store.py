@@ -105,6 +105,20 @@ CREATE TABLE IF NOT EXISTS terms (
 """
 
 
+def _num(value: Any) -> float:
+    """
+    숫자로 받는다. 아니면 0 — **값을 예외에 싣지 않는다.**
+
+    `float("환자A 010-1234-5678")` 은 그 문장을 통째로 예외 문구에 넣고, 그게
+    트레이스백을 타고 로그에 남는다. 이 저장소가 곳곳에 '본문은 안 남긴다' 라고
+    적어 둔 규칙이 그 한 줄로 깨졌다.
+    """
+    try:
+        return float(value)  # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return 0.0
+
+
 class Store:
     def __init__(self, path: str) -> None:
         self.path = path
@@ -120,11 +134,18 @@ class Store:
     # ── 폰이 올린다 ────────────────────────────────────────
 
     def put_shift(self, bundle: dict[str, Any]) -> int:
-        """근무 꾸러미 하나를 넣는다. 같은 근무를 다시 올리면 갈아 끼운다."""
+        """
+        근무 꾸러미 하나를 넣는다. 같은 근무를 다시 올리면 갈아 끼운다.
+
+        숫자는 `_num` 으로 받는다. `int(...)`·`float(...)` 을 바로 쓰면 값이 숫자가
+        아닐 때 **그 값이 예외 문구에 그대로 실린다** — 그 문구는 트레이스백을 타고
+        journal 에 남는다. 전사본 조각이 들어오면 본문이 로그로 새는 길이 된다.
+        """
         shift_id = str(bundle["shiftId"])
-        sentences = bundle.get("sentences") or []
+        sentences = [s for s in (bundle.get("sentences") or []) if isinstance(s, dict)]
         now = int(time.time())
-        taeum = bundle.get("taeum") or {}
+        taeum = bundle.get("taeum")
+        taeum = taeum if isinstance(taeum, dict) else {}
         with self.db:
             self.db.execute(
                 """INSERT INTO shifts (shift_id, date, code, minutes, sentences,
@@ -138,7 +159,7 @@ class Store:
                     shift_id,
                     str(bundle.get("date", "")),
                     str(bundle.get("code", "")),
-                    int(bundle.get("minutes") or 0),
+                    int(_num(bundle.get("minutes"))),
                     len(sentences),
                     taeum.get("score"),
                     taeum.get("level"),
@@ -149,7 +170,7 @@ class Store:
             self.db.executemany(
                 "INSERT INTO sentences (shift_id, seq, at_sec, speaker, text) VALUES (?, ?, ?, ?, ?)",
                 [
-                    (shift_id, i, float(s.get("t") or 0), s.get("speaker"), str(s.get("text", "")))
+                    (shift_id, i, _num(s.get("t")), s.get("speaker"), str(s.get("text", "")))
                     for i, s in enumerate(sentences)
                 ],
             )

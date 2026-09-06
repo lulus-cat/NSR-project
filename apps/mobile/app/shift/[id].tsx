@@ -785,6 +785,7 @@ export default function ShiftDetail() {
       {!preview ? (
         <Card>
           <Heading>분석 서버로 보내기</Heading>
+          <Small>전사본이 생기면 저절로 보내요.</Small>
           <Small>이름 같은 민감한 말은 가리고 보내요.</Small>
           <Small>보낸 뒤 클로드·GPT 에서 분석해요.</Small>
           {/* 못 보낼 때 카드를 감추면 왜 못 보내는지 알 길이 없다. 이유를 말한다. */}
@@ -793,17 +794,9 @@ export default function ShiftDetail() {
           ) : !srvReady ? (
             <Small muted={false}>설정에서 서버를 먼저 이어 주세요.</Small>
           ) : (
-            <>
-              <Small muted={false}>
-                {sentAt ? `${sentDayText(sentAt)}에 보냈어요.` : "아직 안 보냈어요."}
-              </Small>
-              <Button
-                label={sentAt ? "다시 보내기" : "이 근무 보내기"}
-                tone={sentAt ? "default" : "primary"}
-                busy={sending}
-                onPress={() => void sendToServer()}
-              />
-            </>
+            <Small muted={false}>
+              {sentAt ? `${sentDayText(sentAt)}에 보냈어요.` : "곧 저절로 보내요."}
+            </Small>
           )}
           {sendNote ? <Small muted={false}>{sendNote}</Small> : null}
         </Card>

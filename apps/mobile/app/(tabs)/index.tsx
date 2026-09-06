@@ -42,6 +42,7 @@ import {
   pendingTranscriptions,
 } from "../../src/db";
 import { buildSchedule, startManual, stopManual } from "../../src/services/scheduler";
+import { autoSendPending } from "../../src/services/nsr-server";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
 
 function formatClock(epochMs: number): string {
@@ -388,6 +389,10 @@ export default function Home() {
   useFocusEffect(
     useCallback(() => {
       void load();
+      // 아직 안 보낸 근무를 밀어 보낸다. 이 화면을 열 때마다 한 번 — 서버가
+      // 안 이어졌거나 설정에서 껐으면 아무 일도 안 하고 바로 돌아온다.
+      // (전사본을 가져온 자리에서도 보내지만, 그 전에 쌓여 있던 근무가 있다.)
+      void autoSendPending().catch(() => {});
     }, [load]),
   );
 

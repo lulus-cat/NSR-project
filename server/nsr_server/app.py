@@ -324,11 +324,14 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             )
         # 문장만 보면 안 된다. 화자 이름과 사전 항목도 그대로 저장되고, 그대로
         # 대화 AI 에게 나간다 — 예전에는 이 둘이 검문소를 그냥 지나갔다.
-        sentences = bundle.get("sentences") or []
+        # 모양이 아닌 것은 여기서 걸러 낸다. 아래 검문소가 먼저 터지면 500 이 되고,
+        # 500 은 트레이스백에 보낸 값을 실어 로그로 내보낸다.
+        sentences = [s for s in (bundle.get("sentences") or []) if isinstance(s, dict)]
         checked = [str(s.get("text", "")) for s in sentences]
         checked += [str(s.get("speaker", "")) for s in sentences]
         for t in bundle.get("terms") or []:
-            checked += [str(t.get(k, "")) for k in ("entry", "meaning", "note")]
+            if isinstance(t, dict):
+                checked += [str(t.get(k, "")) for k in ("entry", "meaning", "note")]
         leftover = screen_bundle(checked)
         if leftover:
             # 무엇이 몇 건인지만 알려 준다. 값은 돌려주지 않는다.
@@ -337,11 +340,24 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
                 status_code=422,
             )
 
-        n = store.put_shift(bundle)
-        for t in bundle.get("terms") or []:
-            # 사전은 티로 단어장으로도 나간다. 같은 잣대로 한 번 더 거른다.
-            if t.get("entry") and t.get("meaning") and not word_reject(str(t["entry"])):
-                store.put_term(t["entry"], t["meaning"], t.get("note"), source="phone")
+        # 여기부터는 예상 못 한 모양이 와도 500 을 내지 않는다. 500 은 트레이스백을
+        # 남기고, 그 트레이스백에는 보낸 값이 섞여 들어간다 — 로그에 본문을 남기지
+        # 않는다는 규칙이 그 길로 깨진다. 종류만 남기고 400 으로 돌려보낸다.
+        try:
+            n = store.put_shift(bundle)
+            for t in bundle.get("terms") or []:
+                if not isinstance(t, dict):
+                    continue
+                # 사전은 티로 단어장으로도 나간다. 같은 잣대로 한 번 더 거른다.
+                if t.get("entry") and t.get("meaning") and not word_reject(str(t["entry"])):
+                    store.put_term(
+                        str(t["entry"]), str(t["meaning"]), t.get("note"), source="phone"
+                    )
+        except Exception as e:
+            log.info("근무 꾸러미 저장 실패 — %s", type(e).__name__)  # 값은 안 남긴다
+            return JSONResponse(
+                {"error": "보낸 자료의 모양이 맞지 않습니다."}, status_code=400
+            )
         log.info("근무 꾸러미 저장 — 문장 %d개", n)  # 본문은 안 남긴다
         return JSONResponse({"ok": True, "shiftId": bundle["shiftId"], "sentences": n})
 

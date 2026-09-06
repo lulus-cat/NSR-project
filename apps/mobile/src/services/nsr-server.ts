@@ -38,6 +38,7 @@ import {
   getTaeumScore,
   listSegmentsAbsolute,
   listUserTerms,
+  shiftsWithSegments,
   saveShiftReport,
   saveUserTerm,
   setSetting,
@@ -52,6 +53,8 @@ const TOKEN_KEY = "nsr.server.deviceToken";
 const UNAUTH_KEY = "nsr.server.unauthorizedCount";
 /** 이 근무를 언제 보냈나. 안 남기면 사람이 보냈는지 알 길이 없다. */
 const sentKey = (shiftId: string) => `nsr.server.sent.${shiftId}`;
+/** 저절로 보내기를 켰나. 서버를 이었다는 것 자체가 보내겠다는 뜻이라 기본은 켬. */
+const AUTO_KEY = "nsr.server.autoSend";
 
 export interface ServerSettings {
   url: string;
@@ -271,6 +274,39 @@ export async function approveCode(code: string): Promise<"ai" | "device"> {
   if (!res.ok) throw new Error(await serverError(res, "승인"));
   const { kind } = await readJson<{ kind: "ai" | "device" }>(res);
   return kind ?? "ai";
+}
+
+export async function getAutoSend(): Promise<boolean> {
+  return (await getSetting<boolean>(AUTO_KEY, true)) !== false;
+}
+
+export async function setAutoSend(on: boolean): Promise<void> {
+  await setSetting(AUTO_KEY, on);
+}
+
+/**
+ * 아직 안 보낸 근무를 전부 보낸다.
+ *
+ * 사람이 근무마다 버튼을 누르게 했더니, 서버에 이어 놓고도 목록이 계속 비어
+ * 있었다 — 눌러야 한다는 사실이 화면에 없었다. 이제 전사본이 생기면 저절로 간다.
+ *
+ * 나가는 것은 여전히 **가린 사본뿐**이다 (`sendShift` 안에서 문장마다
+ * `redactForNetwork` 를 지난다). 끄고 싶으면 설정의 '저절로 보내기' 를 끈다.
+ */
+export async function autoSendPending(): Promise<number> {
+  if (!(await getAutoSend()) || !(await serverReady())) return 0;
+  let sent = 0;
+  for (const shiftId of await shiftsWithSegments()) {
+    if (await shiftSentAt(shiftId)) continue;
+    try {
+      await sendShift(shiftId);
+      sent += 1;
+    } catch (e) {
+      // 하나가 막혀도 나머지는 보낸다. 다음 기회에 다시 시도한다.
+      void logDebug(`저절로 보내기 실패 ${shiftId}: ${e instanceof Error ? e.message : ""}`);
+    }
+  }
+  return sent;
 }
 
 /** 이 근무를 서버에 보낸 시각(초). 안 보냈으면 null. */

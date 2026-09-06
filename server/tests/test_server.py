@@ -453,6 +453,49 @@ def _client(app):
     return TestClient(app, base_url="https://nsr.example.com")
 
 
+def test_한국어_문장에서도_2차_검문소가_잡는다():
+    """`\\b` 는 파이썬에서 한글을 낱말로 봐서, 조사가 붙은 번호가 다 새어 나갔다."""
+    from nsr_server.screen import screen_text
+
+    새는_문장 = [
+        "보호자번호는010-1234-5678이에요",
+        "주민번호940101-2345678이고",
+        "등록번호12345678이에요",
+        "메일은hong@test.co.kr이에요",
+    ]
+    for line in 새는_문장:
+        assert screen_text(line), line
+
+    # 평범한 임상 문장은 그대로 지나가야 한다 (여기서 걸리면 못 올린다)
+    for line in ["환자A 폴리 확인했어요", "2026년 9월 6일 야간", "혈압 120 80", "산소 2L 넣었어요"]:
+        assert not screen_text(line), line
+
+
+def test_이상한_값이_와도_로그에_안_남는다(tmp_path, monkeypatch):
+    """`float("환자A 010-…")` 은 그 문장을 예외 문구에 실어 journal 로 보낸다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
+    with _client(app) as c:
+        head = {"authorization": f"Bearer {_link(c)['token']}"}
+        bad = c.post(
+            "/ingest",
+            json={
+                "shiftId": "2026-09-06:D",
+                "date": "2026-09-06",
+                "code": "D",
+                "masked": True,
+                "minutes": "PROBE-VALUE-9911",
+                "taeum": "PROBE-TAEUM-7",
+                "sentences": [{"t": "PROBE-T-1234", "text": "폴리 확인했어요"}, "문자열"],
+            },
+            headers=head,
+        )
+        # 500 이 아니다 — 500 이면 트레이스백에 값이 실려 로그로 나간다
+        assert bad.status_code == 200
+        assert "PROBE" not in bad.text
+        assert store.counts()["shifts"] == 1
+
+
 def _link(c):
     """첫 기기를 잇는다 — 기기가 없을 때는 버튼 한 번이 전부다."""
     got = c.post("/device/link", json={})

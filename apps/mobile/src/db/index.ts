@@ -546,6 +546,15 @@ export async function saveSegments(
   });
 }
 
+/** 전사본이 있는 근무 번호. 저절로 보내기가 무엇을 보낼지 고를 때 쓴다. */
+export async function shiftsWithSegments(): Promise<string[]> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ shift_id: string }>(
+    "SELECT DISTINCT shift_id FROM segments ORDER BY shift_id",
+  );
+  return rows.map((r) => r.shift_id);
+}
+
 /** 근무 화면의 요약용 — 수천 문장을 다 읽지 않고 개수만 센다. */
 export async function countSegments(shiftId: string): Promise<number> {
   const db = await getDb();

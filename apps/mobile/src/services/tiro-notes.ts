@@ -226,6 +226,10 @@ export async function importTiroNote(input: {
   // 홈의 "새 전사 결과가 나왔어요" 줄이 이 값을 본다. 쓰는 곳이 없어서 그 줄은
   // 지금까지 한 번도 뜬 적이 없었다 (쓰던 코드가 전사 경로와 함께 지워졌다).
   await setSetting("transcribe.lastResult", { shiftId, sentences, seen: false });
+  // 문장이 생겼으니 분석 서버로 저절로 보낸다. 가린 사본만 나가고, 서버가
+  // 안 이어졌거나 설정에서 껐으면 아무 일도 안 한다 (nsr-server 의 autoSendPending).
+  // 여기서 막혀도 가져오기 자체는 성공이라, 실패를 위로 던지지 않는다.
+  void import("./nsr-server").then((m) => m.autoSendPending()).catch(() => {});
   return { shiftId, recordingId: id, sentences, locked };
   } catch (e) {
     // 반쯤 만들어진 줄을 남기지 않는다. 남기면 그 노트를 다시 못 가져온다.
