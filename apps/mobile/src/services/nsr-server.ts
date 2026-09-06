@@ -41,6 +41,7 @@ import {
   setSetting,
 } from "../db";
 import { redactForNetwork } from "./export";
+import { deidentify } from "@nsr/core";
 import { logDebug } from "./debug";
 
 const URL_KEY = "nsr.server.url";
@@ -221,11 +222,18 @@ export async function sendShift(
 
   const [date, code] = shiftId.split(":");
   const taeum = await getTaeumScore(shiftId);
-  const terms = (await listUserTerms()).slice(0, 500).map((t) => ({
-    entry: t.ko,
-    meaning: t.en || t.abbr || t.ko,
-    note: t.aliases?.join(", ") || undefined,
-  }));
+  // 병동 사전도 사람이 넣은 글이다. 전사본에서 낱말을 눌러 담은 것이 그대로
+  // 들어오므로 이름이 섞일 수 있다 — 문장과 똑같이 검사해서 걸리는 것은 뺀다.
+  // (문장은 가려서 보내지만 사전은 가려 봐야 뜻이 없다. 그래서 버린다.)
+  const clean = (v?: string) => !!v && deidentify(v, { disable: [] }).redactions.length === 0;
+  const terms = (await listUserTerms())
+    .slice(0, 500)
+    .map((t) => ({
+      entry: t.ko,
+      meaning: t.en || t.abbr || t.ko,
+      note: t.aliases?.join(", ") || undefined,
+    }))
+    .filter((t) => clean(t.entry) && clean(t.meaning) && (!t.note || clean(t.note)));
 
   onProgress?.(70, "서버로 보내는 중");
   const res = await call("/ingest", {

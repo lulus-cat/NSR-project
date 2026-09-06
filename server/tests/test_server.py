@@ -606,3 +606,30 @@ def test_번호는_스무_개까지만_살아_있다(tmp_path):
         provider.new_code(f"p-{i}")
     with pytest.raises(RuntimeError):
         provider.new_code("p-넘침")
+
+
+# ── 2차 검문소가 1차보다 느슨하면 안 된다 ────────────────
+#
+# 폰의 deidentify 가 잡는 모양을 서버가 못 잡으면, 검문소가 아니라 장식이다.
+# 아래는 전부 실제로 그냥 지나가던 것들이다.
+
+
+def test_점으로_쓴_전화번호도_잡는다():
+    assert screen_text("연락처 010.1234.5678") == {"phone": 1}
+
+
+def test_일반전화도_잡는다():
+    assert screen_text("병동 02-123-4567 로 연락 주세요") == {"phone": 1}
+
+
+def test_낱말이_붙은_등록번호는_다섯자리부터_잡는다():
+    assert screen_text("환자 등록번호는 1234567 입니다") == {"mrn_labeled": 1}
+
+
+def test_별표로_가린_주민번호도_잡는다():
+    # 뒷자리를 가려도 생년월일과 성별은 남는다.
+    assert screen_text("940101-2******") == {"rrn": 1}
+
+
+def test_가려진_문장은_여전히_통과한다():
+    assert screen_text("[이름]님 폴리 확인했어요. [등록번호] 맞아요. [전화번호]") == {}

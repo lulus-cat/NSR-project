@@ -212,6 +212,20 @@ export default function ShiftDetail() {
         return;
       }
       setError(null);
+      // 이 앱에서 가장 위험한 내보내기다 — **소리는 가릴 수 없다.** 목소리에
+      // 이름과 진단이 그대로 담겨 있고, 한 번 나가면 되돌릴 수 없다. 글을
+      // 내보낼 때는 확인을 받으면서 정작 이쪽에는 아무것도 없었다.
+      const ok = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          "티로 앱으로 보낼까요",
+          "음성은 가릴 수 없어요. 이름과 진단명이 그대로 담긴 채로 티로에 올라가요.",
+          [
+            { text: "취소", style: "cancel", onPress: () => resolve(false) },
+            { text: "보내기", onPress: () => resolve(true) },
+          ],
+        );
+      });
+      if (!ok) return;
       setBusy("보내는 중");
       try {
         const Sharing = await import("expo-sharing");

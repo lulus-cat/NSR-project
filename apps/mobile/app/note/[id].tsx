@@ -22,6 +22,7 @@ import {
   type MarkdownEditorHandle,
 } from "../../src/components/markdown-editor";
 import { exportNotePdf } from "../../src/services/note-doc";
+import { redactForExport } from "../../src/services/export";
 import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
   deleteNote,
@@ -156,7 +157,22 @@ export default function NoteEditor() {
     setBusyPdf(true);
     try {
       await persist();
-      await exportNotePdf(title, body);
+      // 노트에는 근무 보고서를 그대로 담아 두는 길이 있다(학습 탭의 '노트로').
+      // 보고서에는 태움 근거로 쓰인 **문장이 통째로** 들어 있어서, 안 가리고
+      // 내보내면 환자·동료 실명이 카카오톡이나 메일로 그대로 나간다.
+      const red = await redactForExport(body);
+      const ok = await new Promise<boolean>((resolve) => {
+        Alert.alert(
+          "PDF 로 내보낼까요",
+          `${red.summary}\n\n음성과 달리 글은 가릴 수 있어요. 그래도 남는 것은 확인해 주세요.`,
+          [
+            { text: "취소", style: "cancel", onPress: () => resolve(false) },
+            { text: "내보내기", onPress: () => resolve(true) },
+          ],
+        );
+      });
+      if (!ok) return;
+      await exportNotePdf(title, red.text);
     } catch (e) {
       Alert.alert("PDF 를 만들지 못했어요", e instanceof Error ? e.message : "잠시 뒤 다시 해 주세요.");
     } finally {

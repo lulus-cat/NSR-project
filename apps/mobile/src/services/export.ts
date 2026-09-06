@@ -138,7 +138,13 @@ export async function redactForExport(
 export async function redactForNetwork(text: string): Promise<RedactedText> {
   const settings = await loadPrivacySettings();
   const result = deidentify(text, {
-    disable: settings.disabled,
+    // **설정을 안 본다.** 여기 `settings.disabled` 를 넘기던 것이 이 저장소에서
+    // 가장 위험한 한 줄이었다: 설정 화면의 '이름' 스위치를 끄면 환자·동료
+    // 실명이 그대로 VPS 로 갔고, 서버의 2차 검문소는 숫자만 보므로 이름을
+    // 잡지 못한다. 게다가 기본값에 location 이 들어 있어 **병실 번호는 한 번도
+    // 가려진 적이 없었다** (같은 자료를 서버가 가릴 때는 전부 가린다 —
+    // tools/mask-tiro-note.mjs 의 disable: []).
+    disable: [],
     extraTerms: settings.extraTerms,
   });
   return {

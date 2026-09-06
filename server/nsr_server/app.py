@@ -35,7 +35,9 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
 
 from __future__ import annotations
 
+import html
 import logging
+import re
 import json
 import secrets
 import time
@@ -291,8 +293,14 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
                 {"error": "가리기를 거치지 않은 자료는 받지 않습니다 (masked=true 필요)."},
                 status_code=400,
             )
+        # 문장만 보면 안 된다. 화자 이름과 사전 항목도 그대로 저장되고, 그대로
+        # 대화 AI 에게 나간다 — 예전에는 이 둘이 검문소를 그냥 지나갔다.
         sentences = bundle.get("sentences") or []
-        leftover = screen_bundle([str(s.get("text", "")) for s in sentences])
+        checked = [str(s.get("text", "")) for s in sentences]
+        checked += [str(s.get("speaker", "")) for s in sentences]
+        for t in bundle.get("terms") or []:
+            checked += [str(t.get(k, "")) for k in ("entry", "meaning", "note")]
+        leftover = screen_bundle(checked)
         if leftover:
             # 무엇이 몇 건인지만 알려 준다. 값은 돌려주지 않는다.
             return JSONResponse(
@@ -302,7 +310,8 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
 
         n = store.put_shift(bundle)
         for t in bundle.get("terms") or []:
-            if t.get("entry") and t.get("meaning"):
+            # 사전은 티로 단어장으로도 나간다. 같은 잣대로 한 번 더 거른다.
+            if t.get("entry") and t.get("meaning") and not word_reject(str(t["entry"])):
                 store.put_term(t["entry"], t["meaning"], t.get("note"), source="phone")
         log.info("근무 꾸러미 저장 — 문장 %d개", n)  # 본문은 안 남긴다
         return JSONResponse({"ok": True, "shiftId": bundle["shiftId"], "sentences": n})
@@ -352,12 +361,21 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
 </style></head><body><main>{body}</main></body></html>"""
         )
 
+    def clean_code(raw: str) -> str | None:
+        """쪽지는 우리가 만든 모양(URL 안전 문자)만 받는다."""
+        return raw if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", raw or "") else None
+
     async def pair_qr(request: Request) -> HTMLResponse:
         """컴퓨터 화면에 띄우는 QR. 폰 카메라로 이걸 찍는다."""
-        code = request.path_params["code"]
+        code = clean_code(request.path_params["code"])
+        if not code:
+            return google_off_page("주소가 올바르지 않아요. QR 을 다시 만들어 주세요.")
         link = f"https://{config.public_host}/pair/{code}"
         art = svg_qr(link)
-        picture = art or f"<p>QR 그림을 못 만들었어요. 아래 주소를 폰에 직접 여세요.</p><code>{link}</code>"
+        picture = art or (
+            "<p>QR 그림을 못 만들었어요. 아래 주소를 폰에 직접 여세요.</p>"
+            f"<code>{html.escape(link)}</code>"
+        )
         return pair_page(
             "NSR 폰 잇기",
             f"<h1>폰 카메라로 찍어 주세요</h1>"
@@ -367,7 +385,9 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
 
     async def pair_open(request: Request) -> HTMLResponse:
         """폰이 QR 로 여는 자리. 버튼을 누르면 앱이 열린다."""
-        code = request.path_params["code"]
+        code = clean_code(request.path_params["code"])
+        if not code:
+            return google_off_page("주소가 올바르지 않아요. QR 을 다시 만들어 주세요.")
         return pair_page(
             "NSR 앱 열기",
             f"<h1>NSR 앱을 열까요</h1>"
@@ -404,8 +424,10 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     # 이미 이어진 폰(기기 열쇠를 가진 폰)만 할 수 있다.
 
     async def oauth_login_form(request: Request) -> HTMLResponse:
-        pending = request.query_params.get("p", "")
+        pending = clean_code(request.query_params.get("p", "")) or ""
         code = request.query_params.get("c", "")
+        if not re.fullmatch(r"\d{6}", code):
+            code = ""
         if not pending or not code:
             return HTMLResponse(
                 "<!doctype html><meta charset=utf-8>"
@@ -414,6 +436,8 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
                 status_code=400,
             )
         spaced = f"{code[:3]} {code[3:]}"
+        # </script> 로 빠져나가지 못하게 한 번 더 막는다 (json.dumps 는 안 막는다).
+        pending_js = json.dumps(pending).replace("</", "<\\/")
         return HTMLResponse(
             f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -437,7 +461,7 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
      서버에서 <code>python -m nsr_server.pair</code> 로 QR 을 만들어 찍으세요.</p>
 <script>
   // 폰이 승인하면 서버가 돌아갈 주소를 놓아 둔다. 2초마다 들여다본다.
-  const p = {json.dumps(pending)};
+  const p = {pending_js};
   let tries = 0;
   const timer = setInterval(async () => {{
     if (++tries > 300) {{ clearInterval(timer);

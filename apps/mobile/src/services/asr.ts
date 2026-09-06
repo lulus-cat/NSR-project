@@ -21,6 +21,7 @@
 import {
   buildLexicon,
   collapseRepeatedSentences,
+  deidentify,
   correctTranscript,
   splitAllIntoSentences,
   generateCards,
@@ -339,9 +340,25 @@ export async function tiroWorkspaceGuid(apiKey: string): Promise<string | undefi
  */
 const TIRO_PUSHED = "tiro.pushedWords";
 
-/** 사전에서 티로에 올릴 수 있는 말만 고른다. entry 는 1~63자·공백 불가다. */
+/**
+ * 사전에서 티로에 올릴 수 있는 말만 고른다.
+ *
+ * 길이·공백만 보던 것이 구멍이었다. 전사본에서 낱말 하나를 눌러 '단어장에
+ * 넣기' 를 하면 그 말이 그대로 사전이 되고(사람 이름도 된다), 티로 노트 화면을
+ * 열 때마다 사전이 티로 계정으로 올라간다 — 남의 서버에 영구히 남는다.
+ * 서버 쪽 같은 기능에는 이미 검사가 있었다 (server/nsr_server/tiro.py word_reject).
+ *
+ * 그래서 여기서도 **가려질 만한 말은 안 올린다.** deidentify 가 무엇이든 잡으면
+ * 사람을 가리키는 말로 보고 뺀다.
+ */
 function tiroWordsOf(lexicon: Lexicon): { words: { entry: string; subEntry?: string }[]; skipped: number } {
-  const ok = (w?: string) => !!w && w.length <= 63 && !/\s/.test(w);
+  const ok = (w?: string) =>
+    !!w &&
+    w.length <= 63 &&
+    !/\s/.test(w) &&
+    !w.includes("[") &&
+    !w.includes("]") &&
+    deidentify(w, { disable: [] }).redactions.length === 0;
   const words: { entry: string; subEntry?: string }[] = [];
   let skipped = 0;
   for (const e of lexicon.entries) {
