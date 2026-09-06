@@ -305,6 +305,29 @@ sudo -iu nsr bash -c 'cd ~/NSR-project && echo "{\"paragraphs\":[{\"transcript\"
 **한계**: 폰에는 사용자가 등록한 이름 목록이 있어 호칭 없이 부르는 이름까지
 가리지만, 서버에는 그 목록이 없다. 그래서 이 길은 폰 경로보다 약하다.
 
+## 서버 올리기 (새 판을 받았을 때)
+
+`git pull` 만으로는 안 바뀐다 — systemd 가 돌고 있는 것은 이미 읽어 들인 옛 코드다.
+아래를 위에서부터 그대로 돌리고, **마지막 줄이 200 이나 202 를 찍는지** 본다.
+
+```bash
+sudo -iu nsr bash -c 'cd ~/NSR-project && git fetch origin && git checkout claude/clinical-nursing-app-whisper-vn25k5 && git pull && git log --oneline -1'
+sudo -iu nsr bash -c '~/NSR-project/server/venv/bin/pip install -r ~/NSR-project/server/requirements.txt'
+sudo systemctl restart nsr && sleep 2 && systemctl is-active nsr
+curl -s -o /dev/null -w "%{http_code}\n" -X POST https://<도메인>/device/link \
+  -H 'content-type: application/json' -d '{}'
+```
+
+- 첫 줄이 `error: Your local changes…` 로 멈추면: `sudo -iu nsr bash -c 'cd ~/NSR-project && git stash && git pull'`
+- `systemctl is-active` 가 `failed` 면: `sudo journalctl -u nsr -n 30 --no-pager`
+- 마지막 줄이 아직 **404** 면 서비스가 다른 폴더를 보고 있다. 확인:
+  `systemctl show nsr -p WorkingDirectory -p ExecStart`
+- **200 이나 202** 가 나오면 올라간 것이다. 이제 앱에서 잇는다 (7번).
+
+venv 는 `~/NSR-project/server/venv` 에 있다 (4번의 systemd 설정과 같은 자리).
+
+---
+
 ## 시험
 
 ```bash
@@ -319,6 +342,7 @@ cd server && ./venv/bin/python -m pytest -q
 | `403` (커넥터에서만) | 그 앱의 Origin 이 목록에 없다 | `journalctl -u nsr` 에서 값을 보고 `NSR_ALLOWED_ORIGINS` 에 더한다 |
 | "로그인 서비스에 등록할 수 없습니다" | 옛 주소(`/t/…/mcp`)를 넣었다 | 주소를 `https://도메인/mcp` 로 바꾼다 |
 | 번호 화면이 안 넘어간다 | 폰이 아직 승인하지 않았다 | 앱 → 설정 → 분석 서버 → 승인 번호에 번호를 넣는다 (10분 안에) |
+| 앱이 "서버가 옛 판이에요" | 코드는 새 판인데 서비스가 옛 판을 돌고 있다 | 아래 **서버 올리기** 를 그대로 돌린다 |
 | 앱이 "이 폰은 이어져 있지 않습니다" | 폰이 아직 안 이어졌다 | 앱 → 설정 → 분석 서버 → 잇기 (7번) |
 | 「잇기」 를 눌렀는데 번호만 뜬다 | 서버에 이미 다른 기기가 있다 | 그 기기에서 승인하거나, 복구 번호로 잇는다 (7번) |
 | `400 Invalid HTTP request` | 프록시가 `Host` 를 두 번 넣었다 | `proxy_set_header Host $host;` 하나만 남긴다 |

@@ -128,6 +128,23 @@ async function readJson<T>(res: Response): Promise<Partial<T>> {
 }
 
 /**
+ * 404 는 두 가지다 — 주소가 틀렸거나, 서버가 옛 판이라 그 주소가 아직 없거나.
+ *
+ * 사람에게 "둘 중 하나예요" 라고 하면 할 수 있는 일이 없다. 앱이 가려 준다:
+ * 뿌리(`/healthz`)가 대답하면 주소는 맞는 것이고, 없는 것은 새 주소다.
+ */
+async function notFound(): Promise<string> {
+  const url = await getServerUrl();
+  try {
+    const alive = await fetch(`${url}/healthz`);
+    if (alive.ok) return "서버가 옛 판이에요. 서버를 올려 주세요.";
+  } catch {
+    // 뿌리조차 안 되면 주소 쪽이다.
+  }
+  return "서버 주소가 맞지 않아요. 설정에서 확인해 주세요.";
+}
+
+/**
  * 실패한 대답을 사람 말로 바꾼다.
  *
  * 서버가 보낸 문장을 그대로 쓰지 않는다 — 서버 문구는 '…해 주십시오' 이고
@@ -137,7 +154,7 @@ async function why(res: Response, fallback: string): Promise<string> {
   const body = await readJson<{ error?: string }>(res);
   void logDebug(`서버 ${res.status}: ${body.error ?? ""}`);
   if (res.status === 401) return "이 폰이 서버에 안 이어져 있어요. 다시 이어 주세요.";
-  if (res.status === 404) return "주소가 다르거나 서버가 옛 판이에요.";
+  if (res.status === 404) return await notFound();
   if (res.status === 429) return "지금은 이을 수 없어요. 10분 뒤에 해 주세요.";
   if (res.status >= 500) return "서버가 대답하지 못했어요. 잠시 뒤 다시 해 주세요.";
   return fallback;
@@ -298,7 +315,7 @@ async function serverError(res: Response, doing: string): Promise<string> {
     const kinds = Object.keys(body.found ?? {}).join(", ");
     return `가려지지 않은 것이 남아 있어요 (${kinds}). 병동 사전에 이름을 넣어 주세요.`;
   }
-  if (res.status === 404) return "서버 주소가 맞지 않아요. 설정에서 확인해 주세요.";
+  if (res.status === 404) return await notFound();
   return `서버가 ${doing}에 실패했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`;
 }
 
