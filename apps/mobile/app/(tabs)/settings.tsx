@@ -445,33 +445,34 @@ export default function Settings() {
             fontSize: 15,
           }}
         />
-        <View style={{ flexDirection: "row", gap: space.sm }}>
-          <View style={{ flex: 1 }}>
-            <Button label="주소 저장" busy={srvBusy} onPress={() => void saveServer()} />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Button
-              label={srvHasToken ? "다시 로그인" : "구글로 로그인"}
-              tone="primary"
-              busy={srvBusy}
-              onPress={() => void loginWithGoogle()}
-            />
-          </View>
-        </View>
+        <Button label="주소 저장" tone="primary" busy={srvBusy} onPress={() => void saveServer()} />
         <Row label="이 기기" value={srvHasToken ? "연결됨" : "아직 연결 안 됨"} />
+        {srvHasToken ? null : (
+          <>
+            <Small>서버에서 QR 을 만들어 폰으로 찍으면 이어져요.</Small>
+            <Small>열쇠를 옮겨 적을 일은 없어요.</Small>
+          </>
+        )}
         <Button label="결과 받기" busy={srvBusy} onPress={() => void pullResults()} />
         {srvNote ? <Small muted={false}>{srvNote}</Small> : null}
         <Small>보낸 뒤에는 클로드·GPT 에서 분석해요.</Small>
         <Divider />
-        {/* 비상문 — 구글 로그인이 안 될 때만 쓴다. 평소에는 접어 둔다. */}
+        {/* QR 이 기본이다. 아래는 그게 막혔을 때의 두 갈래라 접어 둔다. */}
         <Row
-          label="열쇠로 잇기"
+          label="다른 방법으로 잇기"
           value={srvManual ? "접기" : "열기 ›"}
           onPress={() => setSrvManual((v) => !v)}
         />
         {srvManual ? (
           <>
-            <Small>구글 로그인이 안 될 때만 써요. 서버의 NSR_DEVICE_TOKEN 이에요.</Small>
+            <Small>서버에 구글 로그인을 켜 뒀으면 이걸로 이어요.</Small>
+            <Button
+              label={srvHasToken ? "구글로 다시 로그인" : "구글로 로그인"}
+              busy={srvBusy}
+              onPress={() => void loginWithGoogle()}
+            />
+            <Divider />
+            <Small>둘 다 안 되면 서버의 NSR_DEVICE_TOKEN 을 넣어요.</Small>
             <TextInput
               value={srvToken}
               onChangeText={setSrvToken}

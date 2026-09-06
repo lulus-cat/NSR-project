@@ -582,3 +582,72 @@ def test_쪽지는_한_번만_열쇠가_된다(tmp_path, monkeypatch):
         assert good.status_code == 200
         bad = c.post("/ingest", json=bundle, headers={"authorization": "Bearer not-a-real-token"})
         assert bad.status_code == 401
+
+
+# ── QR 로 폰 잇기 ──────────────────────────────────────────
+
+
+def test_QR_로_이으면_열쇠가_생긴다(tmp_path, monkeypatch):
+    from nsr_server.pair import new_pairing
+
+    app, app_module = _app(tmp_path, monkeypatch, google=False)
+    store = app.state.store
+    code = new_pairing(store)
+
+    with _client(app) as c:
+        # 1) 컴퓨터 화면 — QR 이 그려지고, 폰이 열 주소가 들어 있다
+        page = c.get(f"/pair/{code}/qr")
+        assert page.status_code == 200
+        assert "<svg" in page.text or code in page.text
+
+        # 2) 폰 — 버튼이 앱을 연다
+        open_page = c.get(f"/pair/{code}")
+        assert open_page.status_code == 200
+        assert f"nsr://linked?c={code}" in open_page.text
+
+        # 3) 앱이 쪽지를 열쇠로 바꾼다. 한 번만.
+        got = c.post("/device/claim", json={"code": code})
+        assert got.status_code == 200
+        token = got.json()["token"]
+        assert c.post("/device/claim", json={"code": code}).status_code == 400
+
+        # 4) 그 열쇠로 실제로 올릴 수 있다
+        res = c.post(
+            "/ingest",
+            json={
+                "shiftId": "2026-09-06:N",
+                "date": "2026-09-06",
+                "code": "N",
+                "masked": True,
+                "sentences": [{"t": 0, "text": "[이름]님 폴리 확인했어요."}],
+            },
+            headers={"authorization": f"Bearer {token}"},
+        )
+        assert res.status_code == 200
+
+
+def test_안_주워_가면_열쇠가_안_남는다(tmp_path):
+    from nsr_server.pair import new_pairing
+
+    store = Store(str(tmp_path / "p.db"))
+    new_pairing(store)
+    new_pairing(store)
+    # 쪽지만 있고 열쇠는 아직 없다 — 만들어 두고 안 쓰면 그게 곧 떠도는 열쇠다.
+    assert store.list_device_tokens() == []
+
+
+def test_QR_그림은_lib_없이도_안_죽는다(monkeypatch):
+    import builtins
+
+    from nsr_server import pair
+
+    real = builtins.__import__
+
+    def no_qrcode(name, *a, **k):
+        if name.startswith("qrcode"):
+            raise ImportError("없음")
+        return real(name, *a, **k)
+
+    monkeypatch.setattr(builtins, "__import__", no_qrcode)
+    assert pair.svg_qr("https://nsr.example.com/pair/x") is None
+    assert pair.ascii_qr("https://nsr.example.com/pair/x") is None

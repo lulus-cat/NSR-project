@@ -8,6 +8,8 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
   GET  /pull                   서버 → 폰. 보고서·새 용어 가져가기. 기기 토큰 필요
   POST /pulled                 폰이 "받았다"고 알림. 기기 토큰 필요
   *    /mcp                     대화 AI 커넥터 주소 (클로드·GPT 공통)
+  GET  /pair/<쪽지>            QR 로 폰 잇기 (VPS 에서 python -m nsr_server.pair)
+  GET  /pair/<쪽지>/qr         컴퓨터 화면에 띄우는 큰 QR
   GET  /device/start           폰을 잇는다 — 구글 로그인으로 보내고 열쇠를 만들어 준다
   POST /device/claim           폰이 그 열쇠를 한 번만 받아 간다 (일회용 쪽지)
   GET  /oauth/google/begin     커넥터를 구글 로그인으로 보낸다
@@ -53,6 +55,7 @@ from starlette.responses import HTMLResponse, RedirectResponse
 from .config import Config
 from . import google
 from .oauth import NsrOAuthProvider
+from .pair import svg_qr
 from .tiro import TiroError, fetch_paragraphs, list_notes, mask, push_word, word_reject
 from .screen import screen_bundle
 from .store import Store
@@ -390,15 +393,15 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             return google_off_page("이 계정은 들어올 수 없어요. 서버에 등록된 계정으로 해 주세요.")
 
         if pending.get("kind") == "device":
-            # 폰 열쇠를 만들고, 앱이 주워 갈 일회용 쪽지를 남긴다. 열쇠를 주소에
-            # 직접 실어 보내면 브라우저 기록에 남는다 — 쪽지는 한 번 쓰면 사라진다.
-            token = secrets.token_urlsafe(32)
-            store.put_device_token(token, email, label=request.headers.get("user-agent", "")[:60])
+            # 앱이 주워 갈 일회용 쪽지만 남긴다. 열쇠를 주소에 직접 실어 보내면
+            # 브라우저 기록에 남는다 — 쪽지는 한 번 쓰면 사라지고 15분이면 만료된다.
             claim = secrets.token_urlsafe(24)
             store.put_oauth_pending(
-                f"claim-{claim}", {"token": token}, expires_at=time.time() + CLAIM_TTL
+                f"claim-{claim}",
+                {"email": email, "label": request.headers.get("user-agent", "")[:60]},
+                expires_at=time.time() + CLAIM_TTL,
             )
-            log.info("폰 연결 — 새 기기 열쇠 발급")
+            log.info("폰 연결 — 구글 로그인 성공")
             return RedirectResponse(f"nsr://linked?c={claim}", status_code=302)
 
         # 커넥터 — MCP 쪽 대기표다. 코드를 만들어 커넥터에게 돌려보낸다.
@@ -419,10 +422,67 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         pending = store.take_oauth_pending(f"claim-{claim}") if claim else None
         if not pending:
             return JSONResponse(
-                {"error": "쪽지가 없거나 시간이 지났습니다. 다시 로그인해 주십시오."},
+                {"error": "쪽지가 없거나 시간이 지났습니다. 다시 이어 주십시오."},
                 status_code=400,
             )
-        return JSONResponse({"token": pending["token"]})
+        # 열쇠는 주우러 온 지금 만든다. 안 주워 가면 아무것도 안 남는다.
+        token = secrets.token_urlsafe(32)
+        store.put_device_token(token, pending.get("email", "(qr)"), pending.get("label"))
+        log.info("기기 연결 — 새 열쇠 발급")
+        return JSONResponse({"token": token})
+
+    # ── QR 로 폰 잇기 ─────────────────────────────────────
+    #
+    # VPS 에서 `python -m nsr_server.pair` 를 돌리면 쪽지가 하나 생기고 주소 두 개가
+    # 나온다. 아래 둘이 그 주소다.
+    #
+    #   /pair/<쪽지>/qr   컴퓨터 화면에 띄우는 큰 QR
+    #   /pair/<쪽지>      폰이 QR 로 여는 자리 → 버튼을 누르면 앱이 열린다
+    #
+    # 버튼을 두는 이유: 브라우저는 사람이 누르지 않은 앱 열기(nsr://)를 자주
+    # 막는다. 302 로 바로 넘기면 아무 일도 안 일어난 것처럼 보인다.
+
+    def pair_page(title: str, body: str) -> HTMLResponse:
+        return HTMLResponse(
+            f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{title}</title>
+<style>
+  body {{ font-family: system-ui, -apple-system, sans-serif; background:#F7F6F3; color:#23211E;
+         display:flex; min-height:100vh; margin:0; align-items:center; justify-content:center; }}
+  main {{ background:#fff; padding:28px; border-radius:16px; width:min(420px,92vw);
+          box-shadow:0 1px 3px rgba(0,0,0,.08); text-align:center; }}
+  h1 {{ font-size:19px; margin:0 0 8px; }}
+  p {{ font-size:14px; color:#6B6660; margin:0 0 16px; line-height:1.6; }}
+  a.go {{ display:block; padding:15px; font-size:16px; font-weight:700; color:#fff;
+          background:#2F6F4E; border-radius:10px; text-decoration:none; }}
+  svg {{ width:min(280px,70vw); height:auto; }}
+  code {{ font-size:12px; color:#8A857E; word-break:break-all; }}
+</style></head><body><main>{body}</main></body></html>"""
+        )
+
+    async def pair_qr(request: Request) -> HTMLResponse:
+        """컴퓨터 화면에 띄우는 QR. 폰 카메라로 이걸 찍는다."""
+        code = request.path_params["code"]
+        link = f"https://{config.public_host}/pair/{code}"
+        art = svg_qr(link)
+        picture = art or f"<p>QR 그림을 못 만들었어요. 아래 주소를 폰에 직접 여세요.</p><code>{link}</code>"
+        return pair_page(
+            "NSR 폰 잇기",
+            f"<h1>폰 카메라로 찍어 주세요</h1>"
+            f"<p>찍으면 알림이 뜨고, 누르면 NSR 앱이 열려요.<br>15분 안에 해 주세요.</p>"
+            f"{picture}",
+        )
+
+    async def pair_open(request: Request) -> HTMLResponse:
+        """폰이 QR 로 여는 자리. 버튼을 누르면 앱이 열린다."""
+        code = request.path_params["code"]
+        return pair_page(
+            "NSR 앱 열기",
+            f"<h1>NSR 앱을 열까요</h1>"
+            f"<p>누르면 앱이 열리면서 이 폰이 서버에 이어져요.</p>"
+            f'<a class="go" href="nsr://linked?c={code}">앱 열기</a>',
+        )
 
     # ── 로그인 화면 ───────────────────────────────────────
     #
@@ -489,6 +549,8 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             Route("/ingest", ingest, methods=["POST"]),
             Route("/pull", pull, methods=["GET"]),
             Route("/pulled", pulled, methods=["POST"]),
+            Route("/pair/{code}", pair_open, methods=["GET"]),
+            Route("/pair/{code}/qr", pair_qr, methods=["GET"]),
             Route("/device/start", device_start, methods=["GET"]),
             Route("/device/claim", device_claim, methods=["POST"]),
             Route("/oauth/google/begin", google_begin, methods=["GET"]),
