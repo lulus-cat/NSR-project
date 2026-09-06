@@ -8,10 +8,12 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
   GET  /pull                   서버 → 폰. 보고서·새 용어 가져가기. 기기 토큰 필요
   POST /pulled                 폰이 "받았다"고 알림. 기기 토큰 필요
   *    /mcp                     대화 AI 커넥터 주소 (클로드·GPT 공통)
-  GET  /pair/<쪽지>            QR 로 폰 잇기 (VPS 에서 python -m nsr_server.pair)
-  GET  /pair/<쪽지>/qr         컴퓨터 화면에 띄우는 큰 QR
-  POST /device/claim           폰이 열쇠를 한 번만 받아 간다 (일회용 쪽지)
-  POST /connector/approve      폰이 AI 연결을 승인한다 (여섯 자리 번호). 기기 열쇠 필요
+  POST /device/link            앱이 잇기를 시작한다 (첫 기기면 바로, 아니면 번호)
+  POST /device/link/poll       새 기기가 승인을 기다리며 들여다보는 자리
+  POST /device/recover         복구 번호로 잇기 (앱을 다시 깔았을 때)
+  GET  /device/state           이어진 기기와 복구 번호. 기기 열쇠 필요
+  POST /device/forget-others   이 기기만 남기고 끊기. 기기 열쇠 필요
+  POST /connector/approve      폰이 승인한다 — AI 연결과 새 기기 둘 다. 기기 열쇠 필요
   GET  /oauth/login            커넥터 화면 — 번호를 보여 주고 폰의 승인을 기다린다
   GET  /oauth/login/status     그 화면이 2초마다 들여다보는 자리
   *    /.well-known/oauth-*     커넥터가 로그인 방법을 찾아보는 자리 (SDK 가 만든다)
@@ -35,12 +37,10 @@ NSR VPS 서버 — 대화 AI 의 창구(MCP)와 폰의 창구(REST)를 한 프�
 
 from __future__ import annotations
 
-import html
 import logging
 import re
 import json
 import secrets
-import time
 from typing import Any
 
 from mcp.server.mcpserver import MCPServer
@@ -52,11 +52,19 @@ from starlette.routing import Mount, Route
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
 from pydantic import AnyHttpUrl
-from starlette.responses import HTMLResponse, RedirectResponse
+from starlette.responses import HTMLResponse
 
 from .config import Config
 from .oauth import NsrOAuthProvider
-from .pair import svg_qr
+from .link import (
+    FailLock,
+    approve_link,
+    issue_token,
+    new_link_code,
+    poll_link,
+    recovery_code,
+    use_recovery,
+)
 from .tiro import TiroError, fetch_paragraphs, list_notes, mask, push_word, word_reject
 from .screen import screen_bundle
 from .store import Store
@@ -73,6 +81,16 @@ INSTRUCTIONS = """\
 근거 없는 임상 판단을 쓰지 않으며, 확인이 필요한 것은 '확인필요'로 남깁니다.
 보고서는 put_shift_report 로 써 넣으면 폰이 가져갑니다.
 """
+
+
+def only_digits(value: Any) -> str:
+    """
+    번호에서 숫자만 남긴다.
+
+    isdigit() 은 전각 '３' 이나 아랍 숫자도 참이다. 그런 글자로 만든 번호는 어떤
+    대기표에도 안 맞아서, 맞게 누른 사람이 "번호가 틀렸다"를 보게 된다.
+    """
+    return "".join(ch for ch in str(value or "") if ch in "0123456789")
 
 
 def transport_security(config: Config) -> TransportSecuritySettings:
@@ -269,8 +287,8 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         """
         폰인가.
 
-        두 갈래를 다 받는다 — QR 로 이을 때 **발급된** 열쇠(기기마다 하나)와,
-        nsr.env 에 적어 둔 고정 토큰(비상문). QR 이 깨져도 자료를 올리는 길이
+        두 갈래를 다 받는다 — 앱이 이을 때 **발급된** 열쇠(기기마다 하나)와,
+        nsr.env 에 적어 둔 고정 토큰(비상문). 잇기가 깨져도 자료를 올리는 길이
         끊기지 않게 둘 다 둔다.
         """
         header = request.headers.get("authorization", "")
@@ -339,88 +357,99 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         store.mark_pulled(list(body.get("shiftIds") or []), list(body.get("entries") or []))
         return JSONResponse({"ok": True})
 
-    # ── QR 로 폰 잇기 ─────────────────────────────────────
+    # ── 폰 잇기 ───────────────────────────────────────────
     #
-    # VPS 에서 `python -m nsr_server.pair` 를 돌리면 쪽지가 하나 생기고 주소 두 개가
-    # 나온다. 아래 둘이 그 주소다.
-    #
-    #   /pair/<쪽지>/qr   컴퓨터 화면에 띄우는 큰 QR
-    #   /pair/<쪽지>      폰이 QR 로 여는 자리 → 버튼을 누르면 앱이 열린다
-    #
-    # 버튼을 두는 이유: 브라우저는 사람이 누르지 않은 앱 열기(nsr://)를 자주
-    # 막는다. 302 로 바로 넘기면 아무 일도 안 일어난 것처럼 보인다.
+    # 앱과 서버 둘만으로 잇는다. 왜 이 모양인지는 link.py 에 적어 뒀다.
+    # 예전에는 VPS 에서 명령을 돌려 QR 을 만들었는데, 잇고 싶을 때마다 서버에
+    # 들어가야 하는 것이 벽이라 지웠다.
 
-    def pair_page(title: str, body: str) -> HTMLResponse:
-        return HTMLResponse(
-            f"""<!doctype html><html lang="ko"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1">
-<title>{title}</title>
-<style>
-  body {{ font-family: system-ui, -apple-system, sans-serif; background:#F7F6F3; color:#23211E;
-         display:flex; min-height:100vh; margin:0; align-items:center; justify-content:center; }}
-  main {{ background:#fff; padding:28px; border-radius:16px; width:min(420px,92vw);
-          box-shadow:0 1px 3px rgba(0,0,0,.08); text-align:center; }}
-  h1 {{ font-size:19px; margin:0 0 8px; }}
-  p {{ font-size:14px; color:#6B6660; margin:0 0 16px; line-height:1.6; }}
-  a.go {{ display:block; padding:15px; font-size:16px; font-weight:700; color:#fff;
-          background:#2F6F4E; border-radius:10px; text-decoration:none; }}
-  svg {{ width:min(280px,70vw); height:auto; }}
-  code {{ font-size:12px; color:#8A857E; word-break:break-all; }}
-</style></head><body><main>{body}</main></body></html>"""
+    recovery_lock = FailLock()
+
+    def bearer(request: Request) -> str:
+        header = request.headers.get("authorization", "")
+        return header[7:] if header.startswith("Bearer ") else ""
+
+    async def json_body(request: Request) -> dict[str, Any] | None:
+        try:
+            return dict(await request.json())
+        except Exception:
+            return None
+
+    async def device_link(request: Request) -> JSONResponse:
+        """
+        잇기 시작.
+
+        이어진 기기가 하나도 없으면 그대로 열쇠를 준다 — 처음 한 번만 열리는 문이다.
+        하나라도 있으면 여섯 자리 번호를 주고, 이미 이어진 기기의 승인을 기다린다.
+        """
+        if store.count_device_tokens() == 0:
+            log.info("첫 기기 연결 — 이제 문이 닫힌다")
+            return JSONResponse({"open": True, **issue_token(store, "처음 이은 기기")})
+        try:
+            code = new_link_code(store)
+        except RuntimeError as e:
+            return JSONResponse({"error": str(e)}, status_code=429)
+        return JSONResponse({"open": False, "code": code}, status_code=202)
+
+    async def device_link_poll(request: Request) -> JSONResponse:
+        """새 기기가 몇 초마다 묻는 자리. 승인 전에는 404 다."""
+        body = await json_body(request)
+        if body is None:
+            return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
+        code = only_digits(body.get("code"))
+        got = poll_link(store, code) if len(code) == 6 else None
+        if not got:
+            return JSONResponse({"waiting": True}, status_code=404)
+        log.info("새 기기 연결 — 승인으로")
+        return JSONResponse(got)
+
+    async def device_recover(request: Request) -> JSONResponse:
+        """복구 번호를 열쇠로 바꾼다. 앱을 지웠다 다시 깔았을 때 쓴다."""
+        body = await json_body(request)
+        if body is None:
+            return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
+        if recovery_lock.locked():
+            return JSONResponse(
+                {"error": "여러 번 틀렸습니다. 10분 뒤에 다시 해 주십시오."}, status_code=429
+            )
+        got = use_recovery(store, str(body.get("recovery", "")))
+        if not got:
+            recovery_lock.bad()
+            log.info("복구 번호 실패")
+            return JSONResponse({"error": "복구 번호가 맞지 않습니다."}, status_code=400)
+        recovery_lock.good()
+        log.info("복구 번호로 기기 연결")
+        return JSONResponse(got)
+
+    async def device_state(request: Request) -> JSONResponse:
+        """
+        이어진 기기 목록과 복구 번호.
+
+        목록을 앱에 보여 주는 이유: '처음 한 번만 열리는 문' 의 유일한 위험이
+        남이 먼저 붙는 것이다. 낯선 기기가 한 줄 늘어 있으면 눈에 띈다.
+        """
+        if not device_ok(request):
+            return JSONResponse({"error": "이 폰은 서버에 이어져 있지 않습니다."}, status_code=401)
+        return JSONResponse(
+            {"devices": store.list_device_tokens(), "recovery": recovery_code(store)}
         )
+
+    async def device_forget_others(request: Request) -> JSONResponse:
+        """이 기기만 남기고 끊는다. 앱을 지웠다 깔기를 되풀이하면 죽은 열쇠가 쌓인다."""
+        token = bearer(request)
+        # nsr.env 의 비상 토큰으로는 못 한다. 그 토큰은 표에 없어서 '나만 남기기'가
+        # 곧 '전부 지우기' 가 되고, 멀쩡히 쓰던 폰이 끊긴다.
+        if not store.device_token_ok(token):
+            return JSONResponse(
+                {"error": "이어진 기기의 열쇠로만 할 수 있습니다."}, status_code=401
+            )
+        removed = store.delete_device_tokens_except(token)
+        log.info("기기 정리 — %d개 끊음", removed)
+        return JSONResponse({"removed": removed})
 
     def clean_code(raw: str) -> str | None:
-        """쪽지는 우리가 만든 모양(URL 안전 문자)만 받는다."""
+        """커넥터 대기표는 우리가 만든 모양(URL 안전 문자)만 받는다."""
         return raw if re.fullmatch(r"[A-Za-z0-9_-]{1,64}", raw or "") else None
-
-    async def pair_qr(request: Request) -> HTMLResponse:
-        """컴퓨터 화면에 띄우는 QR. 폰 카메라로 이걸 찍는다."""
-        code = clean_code(request.path_params["code"])
-        if not code:
-            return google_off_page("주소가 올바르지 않아요. QR 을 다시 만들어 주세요.")
-        link = f"https://{config.public_host}/pair/{code}"
-        art = svg_qr(link)
-        picture = art or (
-            "<p>QR 그림을 못 만들었어요. 아래 주소를 폰에 직접 여세요.</p>"
-            f"<code>{html.escape(link)}</code>"
-        )
-        return pair_page(
-            "NSR 폰 잇기",
-            f"<h1>폰 카메라로 찍어 주세요</h1>"
-            f"<p>찍으면 알림이 뜨고, 누르면 NSR 앱이 열려요.<br>15분 안에 해 주세요.</p>"
-            f"{picture}",
-        )
-
-    async def pair_open(request: Request) -> HTMLResponse:
-        """폰이 QR 로 여는 자리. 버튼을 누르면 앱이 열린다."""
-        code = clean_code(request.path_params["code"])
-        if not code:
-            return google_off_page("주소가 올바르지 않아요. QR 을 다시 만들어 주세요.")
-        return pair_page(
-            "NSR 앱 열기",
-            f"<h1>NSR 앱을 열까요</h1>"
-            f"<p>누르면 앱이 열리면서 이 폰이 서버에 이어져요.</p>"
-            f'<a class="go" href="nsr://linked?c={code}">앱 열기</a>',
-        )
-
-    async def device_claim(request: Request) -> JSONResponse:
-        """앱이 쪽지를 열쇠로 바꾼다. 한 번만 된다."""
-        try:
-            body = await request.json()
-        except Exception:
-            return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
-        claim = str(body.get("code", "")).strip()
-        pending = store.take_oauth_pending(f"claim-{claim}") if claim else None
-        if not pending:
-            return JSONResponse(
-                {"error": "쪽지가 없거나 시간이 지났습니다. 다시 이어 주십시오."},
-                status_code=400,
-            )
-        # 열쇠는 주우러 온 지금 만든다. 안 주워 가면 아무것도 안 남는다.
-        token = secrets.token_urlsafe(32)
-        store.put_device_token(token, pending.get("email", "(qr)"), pending.get("label"))
-        log.info("기기 연결 — 새 열쇠 발급")
-        return JSONResponse({"token": token})
 
     # ── 커넥터 연결 화면 ──────────────────────────────────
     #
@@ -466,7 +495,7 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
   <div class="code">{spaced}</div>
   <p class="wait" id="wait">기다리는 중이에요… 10분 안에 해 주세요.</p>
   <p class="wait">폰이 아직 서버에 안 이어져 있으면 먼저 이어야 해요.<br>
-     서버에서 <code>python -m nsr_server.pair</code> 로 QR 을 만들어 찍으세요.</p>
+     앱 → 설정 → 분석 서버 → <b>잇기</b> 를 누르면 돼요.</p>
 <script>
   // 폰이 승인하면 서버가 돌아갈 주소를 놓아 둔다. 2초마다 들여다본다.
   const p = {pending_js};
@@ -492,27 +521,32 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         return JSONResponse({"back": done["back"]} if done else {})
 
     async def connector_approve(request: Request) -> JSONResponse:
-        """폰이 번호를 승인한다. 이어진 폰만 할 수 있다."""
+        """
+        폰이 여섯 자리 번호를 승인한다. 이어진 폰만 할 수 있다.
+
+        번호는 두 가지다 — AI 커넥터 화면에 뜬 번호와, 새로 잇는 기기가 띄운 번호.
+        앱에서 칸을 둘로 나누면 사람이 어느 칸인지 헷갈린다. 서버가 둘 다 보고
+        맞는 쪽을 연다. 번호를 만들 때 양쪽이 겹치지 않게 해 둔다(link.py).
+        """
         if not device_ok(request):
             return JSONResponse({"error": "이 폰은 서버에 이어져 있지 않습니다."}, status_code=401)
         try:
             body = await request.json()
         except Exception:
             return JSONResponse({"error": "본문이 JSON 이 아닙니다."}, status_code=400)
-        # isdigit() 은 전각 '３' 이나 아랍 숫자도 참이다. 그런 글자로 만든 번호는
-        # 어떤 대기표에도 안 맞아서, 맞게 누른 사람이 "번호가 틀렸다"를 본다.
-        code = "".join(ch for ch in str(body.get("code", "")) if ch in "0123456789")
+        code = only_digits(body.get("code"))
         if len(code) != 6:
             return JSONResponse({"error": "여섯 자리 번호를 넣어 주십시오."}, status_code=400)
-        if not auth.approve_from_phone(code):
-            # 번호가 틀렸는지 시간이 지났는지는 나누지 않는다 — 찍어 보는 사람에게
-            # 단서가 된다. 어차피 사람이 할 일은 같다: 커넥터에서 다시 시작.
-            log.info("AI 연결 승인 실패")
-            return JSONResponse(
-                {"error": "번호가 맞지 않거나 시간이 지났습니다."}, status_code=400
-            )
-        log.info("AI 연결 승인 — 폰이 열었다")
-        return JSONResponse({"ok": True})
+        if auth.approve_from_phone(code):
+            log.info("AI 연결 승인 — 폰이 열었다")
+            return JSONResponse({"ok": True, "kind": "ai"})
+        if approve_link(store, code):
+            log.info("새 기기 승인 — 폰이 열었다")
+            return JSONResponse({"ok": True, "kind": "device"})
+        # 번호가 틀렸는지 시간이 지났는지는 나누지 않는다 — 찍어 보는 사람에게
+        # 단서가 된다. 어차피 사람이 할 일은 같다: 처음부터 다시.
+        log.info("승인 실패")
+        return JSONResponse({"error": "번호가 맞지 않거나 시간이 지났습니다."}, status_code=400)
 
     # MCP 창구와 OAuth 주소는 SDK 가 만든다. well-known 은 도메인 뿌리에 있어야
     # 커넥터가 찾으므로, 이 앱을 뿌리에 둔다.
@@ -530,9 +564,11 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
             Route("/ingest", ingest, methods=["POST"]),
             Route("/pull", pull, methods=["GET"]),
             Route("/pulled", pulled, methods=["POST"]),
-            Route("/pair/{code}", pair_open, methods=["GET"]),
-            Route("/pair/{code}/qr", pair_qr, methods=["GET"]),
-            Route("/device/claim", device_claim, methods=["POST"]),
+            Route("/device/link", device_link, methods=["POST"]),
+            Route("/device/link/poll", device_link_poll, methods=["POST"]),
+            Route("/device/recover", device_recover, methods=["POST"]),
+            Route("/device/state", device_state, methods=["GET"]),
+            Route("/device/forget-others", device_forget_others, methods=["POST"]),
             Route("/connector/approve", connector_approve, methods=["POST"]),
             Route("/oauth/login/status", oauth_login_status, methods=["GET"]),
             Route("/oauth/login", oauth_login_form, methods=["GET"]),
@@ -558,7 +594,7 @@ def main() -> None:
     # 토큰은 앞자리도 찍지 않는다. systemd 가 stdout 을 journal 로 받으므로
     # 여기 적히는 것은 곧 로그에 남는 것이다. 주소는 nsr.env 를 보고 만든다.
     print(f"커넥터 주소: https://{config.public_host or '<도메인>'}/mcp")
-    print("폰 잇기: python -m nsr_server.pair  (QR)")
+    print("폰 잇기: 앱 → 설정 → 분석 서버 → 잇기")
     print("AI 연결: 커넥터 화면의 여섯 자리 번호를 앱에서 승인")
     # 접근 로그를 끈다 — 주소에 토큰이 들어 있어 로그에 남으면 그게 유출이다.
     uvicorn.run(app, host=config.host, port=config.port, access_log=False)

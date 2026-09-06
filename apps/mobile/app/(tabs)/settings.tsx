@@ -24,13 +24,19 @@ import {
 } from "../../src/services/scheduler";
 import { deleteAllRecordings } from "../../src/services/files";
 import {
+  approveCode,
   checkServer,
+  forgetOtherDevices,
   getDeviceToken,
   getServerUrl,
+  linkDevice,
+  pollLink,
   pullFromServer,
+  recoverDevice,
+  serverState,
   setDeviceToken,
   setServerUrl,
-  approveConnector,
+  type ServerState,
 } from "../../src/services/nsr-server";
 import {
   clearWorkplace,
@@ -269,7 +275,7 @@ export default function Settings() {
   // 앱 버전·디버그 카드가 제 자리에서 말하게 한다 (예전에는 분석 서버 카드에 떴다).
   const [cardNote, setCardNote] = useState<string | null>(null);
 
-  // 화면에 들어올 때마다 다시 본다. QR 로 이은 직후에도, 401 로 열쇠가 지워진
+  // 화면에 들어올 때마다 다시 본다. 이은 직후에도, 401 로 열쇠가 지워진
   // 뒤에도 '이 기기' 줄이 사실과 같아야 한다 (탭 화면은 한 번 뜨면 안 죽는다).
   // 홈의 "새 판이 나왔어요 · 받기" 로 들어오면 이 카드가 비어 있었다.
   useEffect(() => {
@@ -279,9 +285,22 @@ export default function Settings() {
   // 주소 칸은 사람이 고치고 있을 수 있다. 손대지 않은 동안만 서버 값으로 채운다 —
   // 예전에는 탭을 다녀오면 치던 주소가 저장된 값으로 되돌아갔다.
   const urlDirty = useRef(false);
+  // 이어진 기기 목록과 복구 번호. 이어져 있을 때만 서버가 준다.
+  const [srvState, setSrvState] = useState<ServerState | null>(null);
   const refreshServer = useCallback(async () => {
     if (!urlDirty.current) setSrvUrl(await getServerUrl());
-    setSrvHasToken((await getDeviceToken()) !== null);
+    const linked = (await getDeviceToken()) !== null;
+    setSrvHasToken(linked);
+    if (!linked) {
+      setSrvState(null);
+      return;
+    }
+    // 서버가 잠깐 안 되는 것 때문에 설정 화면 전체가 멎으면 안 된다.
+    try {
+      setSrvState(await serverState());
+    } catch {
+      setSrvState(null);
+    }
   }, []);
   useFocusEffect(
     useCallback(() => {
@@ -289,16 +308,16 @@ export default function Settings() {
     }, [refreshServer]),
   );
 
-  // AI(클로드·GPT) 연결 승인 — 커넥터 화면에 뜬 여섯 자리 번호.
+  // 승인 번호 — AI 커넥터 화면에 뜬 것과, 새로 잇는 기기가 띄운 것 둘 다 여기 넣는다.
   const [srvCode, setSrvCode] = useState("");
 
-  const approveAi = useCallback(async () => {
+  const approveNow = useCallback(async () => {
     setSrvBusy(true);
     setSrvNote(null);
     try {
-      await approveConnector(srvCode);
+      const kind = await approveCode(srvCode);
       setSrvCode("");
-      setSrvNote("승인했어요. 커넥터 화면이 곧 연결돼요.");
+      setSrvNote(kind === "device" ? "새 기기를 이었어요." : "승인했어요. 곧 연결돼요.");
     } catch (e) {
       setSrvNote(e instanceof Error ? e.message : "승인하지 못했어요. 다시 해 주세요.");
     } finally {
@@ -306,6 +325,112 @@ export default function Settings() {
       setSrvBusy(false);
     }
   }, [refreshServer, srvCode]);
+
+  // ── 잇기 ──────────────────────────────────────────────
+  //
+  // 서버에 기기가 하나도 없으면 버튼 한 번으로 끝난다. 있으면 여섯 자리가 뜨고,
+  // 이미 이어진 폰이 승인할 때까지 3초마다 물어본다. 화면을 떠나면 멈춘다 —
+  // 안 멈추면 탭을 옮겨 다니는 동안에도 계속 서버를 두드린다.
+  const [linkCode, setLinkCode] = useState<string | null>(null);
+  const [recovery, setRecovery] = useState<string | null>(null);
+  const [recoveryIn, setRecoveryIn] = useState("");
+  const polling = useRef(false);
+
+  const linkNow = useCallback(async () => {
+    setSrvBusy(true);
+    setSrvNote(null);
+    try {
+      await setServerUrl(srvUrl);
+      urlDirty.current = false;
+      const out = await linkDevice();
+      if (out.linked) {
+        setRecovery(out.recovery ?? null);
+        setSrvNote("이어졌어요. 복구 번호를 적어 두세요.");
+      } else {
+        setLinkCode(out.code ?? null);
+        setSrvNote("이미 이은 폰에서 이 번호를 승인해 주세요.");
+      }
+    } catch (e) {
+      setSrvNote(e instanceof Error ? e.message : "잇지 못했어요. 다시 눌러 주세요.");
+    } finally {
+      await refreshServer();
+      setSrvBusy(false);
+    }
+  }, [refreshServer, srvUrl]);
+
+  useFocusEffect(
+    useCallback(() => {
+      if (!linkCode) return;
+      polling.current = true;
+      let tries = 0;
+      const timer = setInterval(() => {
+        void (async () => {
+          if (!polling.current) return;
+          if (++tries > 100) {
+            setLinkCode(null);
+            setSrvNote("시간이 지났어요. 다시 눌러 주세요.");
+            return;
+          }
+          try {
+            const out = await pollLink(linkCode);
+            if (!out.linked || !polling.current) return;
+            setLinkCode(null);
+            setRecovery(out.recovery ?? null);
+            setSrvNote("이어졌어요. 복구 번호를 적어 두세요.");
+            await refreshServer();
+          } catch {
+            // 잠깐 끊긴 것은 다음 차례에 다시 본다.
+          }
+        })();
+      }, 3000);
+      return () => {
+        polling.current = false;
+        clearInterval(timer);
+      };
+    }, [linkCode, refreshServer]),
+  );
+
+  const recoverNow = useCallback(async () => {
+    setSrvBusy(true);
+    setSrvNote(null);
+    try {
+      await setServerUrl(srvUrl);
+      urlDirty.current = false;
+      setRecovery((await recoverDevice(recoveryIn)) ?? null);
+      setRecoveryIn("");
+      setLinkCode(null);
+      setSrvNote("이어졌어요. 새 복구 번호를 적어 두세요.");
+    } catch (e) {
+      setSrvNote(e instanceof Error ? e.message : "복구 번호가 맞지 않아요.");
+    } finally {
+      await refreshServer();
+      setSrvBusy(false);
+    }
+  }, [recoveryIn, refreshServer, srvUrl]);
+
+  const forgetOthers = useCallback(() => {
+    Alert.alert("다른 기기 끊기", "이 폰만 남기고 모두 끊어요.", [
+      { text: "그만두기", style: "cancel" },
+      {
+        text: "끊기",
+        style: "destructive",
+        onPress: () => {
+          void (async () => {
+            setSrvBusy(true);
+            try {
+              const n = await forgetOtherDevices();
+              setSrvNote(n ? `${n}대를 끊었어요.` : "끊을 기기가 없었어요.");
+            } catch (e) {
+              setSrvNote(e instanceof Error ? e.message : "끊지 못했어요. 다시 해 주세요.");
+            } finally {
+              await refreshServer();
+              setSrvBusy(false);
+            }
+          })();
+        },
+      },
+    ]);
+  }, [refreshServer]);
 
   const saveServer = useCallback(async () => {
     setSrvBusy(true);
@@ -338,6 +463,15 @@ export default function Settings() {
     }
   }, [refreshServer]);
   const policy = app.policy;
+  // 번호는 옮겨 적는 값이라 크고 넓게 둔다 (여섯 자리, 복구 번호 둘 다).
+  const codeStyle = {
+    fontSize: 26,
+    fontWeight: "800" as const,
+    letterSpacing: 4,
+    color: t.text,
+    textAlign: "center" as const,
+    paddingVertical: space.sm,
+  };
 
   // ── 근무·기록 시간 — 듀티표 화면에 있던 것을 여기로 옮겼다.
   // 설정에서 만지는 값이라 설정에 둔다. 달력·근무 통계·자동 기록·홈의 인계
@@ -494,23 +628,54 @@ export default function Settings() {
             fontSize: 15,
           }}
         />
-        <Button label="주소 저장" tone="primary" busy={srvBusy} onPress={() => void saveServer()} />
-        <Row label="이 기기" value={srvHasToken ? "연결됨" : "아직 연결 안 됨"} />
-        {srvHasToken ? null : (
-          <>
-            <Small muted={false}>이 폰을 먼저 이어 주세요.</Small>
-            <Small>서버에서 QR 을 만들어 폰으로 찍으면 돼요.</Small>
-            <Small>python -m nsr_server.pair 를 서버에서 실행해요.</Small>
-          </>
+        {srvHasToken ? (
+          <Button label="연결 확인" busy={srvBusy} onPress={() => void saveServer()} />
+        ) : (
+          <Button label="잇기" tone="primary" busy={srvBusy} onPress={() => void linkNow()} />
         )}
-        <Button label="결과 받기" busy={srvBusy} onPress={() => void pullResults()} />
+        <Row label="이 기기" value={srvHasToken ? "연결됨" : "아직 연결 안 됨"} />
+
+        {/* 아직 안 이어졌을 때 — 버튼 하나로 끝나거나, 번호가 뜨거나 */}
+        {srvHasToken ? null : linkCode ? (
+          <>
+            <Small muted={false}>이미 이은 폰에서 승인해 주세요.</Small>
+            <Text style={codeStyle}>{`${linkCode.slice(0, 3)} ${linkCode.slice(3)}`}</Text>
+            <Small>승인하면 저절로 이어져요. 기다리는 중이에요.</Small>
+            <Small>폰이 이것 하나면 아래 복구 번호를 쓰세요.</Small>
+          </>
+        ) : (
+          <Small>서버에 처음 잇는 폰이면 바로 이어져요.</Small>
+        )}
+
+        {/* 이어진 뒤 한 번만 뜨는 복구 번호. 여기서 놓쳐도 아래 줄에 늘 있다 */}
+        {recovery ? (
+          <>
+            <Small muted={false}>복구 번호예요. 적어 두세요.</Small>
+            <Text style={codeStyle}>{recovery}</Text>
+          </>
+        ) : null}
+
+        {/* 이어진 뒤 — 어떤 기기가 붙어 있나. 낯선 줄이 있으면 여기서 보인다 */}
+        {srvState ? (
+          <>
+            <Row label="이어진 기기" value={`${srvState.devices.length}대`} />
+            <Row label="복구 번호" value={srvState.recovery} />
+            <Small>앱을 지우기 전에 이 번호를 적어 두세요.</Small>
+            {srvState.devices.length > 1 ? (
+              <Button label="다른 기기 끊기" busy={srvBusy} onPress={forgetOthers} />
+            ) : null}
+          </>
+        ) : null}
+
+        <Button label="결과 받기" disabled={!srvHasToken} busy={srvBusy} onPress={() => void pullResults()} />
         {srvNote ? <Small muted={false}>{srvNote}</Small> : null}
         <Small>보낸 뒤에는 클로드·GPT 에서 분석해요.</Small>
         <Divider />
-        {/* AI 연결은 이 폰이 연다. 서버 화면에는 열쇠를 넣는 칸이 없다. */}
-        <Small muted={false}>AI 연결 승인</Small>
-        <Small>클로드·GPT 에 서버를 붙이면 번호 여섯 자리가 떠요.</Small>
-        <Small>그 번호를 여기 넣으면 연결돼요.</Small>
+
+        {/* 승인 번호 — AI 연결과 새 기기가 같은 칸을 쓴다. 서버가 알아서 가른다 */}
+        <Small muted={false}>승인 번호</Small>
+        <Small>AI 연결이나 새 기기가 번호를 보여 줘요.</Small>
+        <Small>그 번호를 여기 넣으면 열려요.</Small>
         <TextInput
           value={srvCode}
           onChangeText={setSrvCode}
@@ -532,9 +697,33 @@ export default function Settings() {
           label="승인하기"
           busy={srvBusy}
           disabled={!srvHasToken}
-          onPress={() => void approveAi()}
+          onPress={() => void approveNow()}
         />
-        {srvHasToken ? null : <Small>먼저 이 폰을 QR 로 이어 주세요.</Small>}
+        {srvHasToken ? null : <Small>먼저 이 폰을 이어 주세요.</Small>}
+        <Divider />
+
+        {/* 앱을 지웠다 다시 깔면 열쇠가 사라진다. 승인해 줄 기기도 없을 때의 길 */}
+        <Small muted={false}>복구 번호로 잇기</Small>
+        <Small>앱을 다시 깔았을 때 쓰는 번호예요.</Small>
+        <TextInput
+          value={recoveryIn}
+          onChangeText={setRecoveryIn}
+          placeholder="ABCD-EFGH-JKLM"
+          placeholderTextColor={t.textMuted}
+          autoCapitalize="characters"
+          autoCorrect={false}
+          maxLength={14}
+          style={{
+            minHeight: TOUCH_MIN,
+            paddingHorizontal: space.md,
+            borderRadius: radius.md,
+            backgroundColor: t.surfaceAlt,
+            color: t.text,
+            fontSize: 16,
+            letterSpacing: 2,
+          }}
+        />
+        <Button label="복구로 잇기" busy={srvBusy} onPress={() => void recoverNow()} />
       </Card>
 
       {/* 판 번호와 업데이트 */}

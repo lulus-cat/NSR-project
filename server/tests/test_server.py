@@ -11,6 +11,8 @@ from __future__ import annotations
 import os
 import sys
 
+import pytest
+
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from nsr_server.screen import screen_bundle, screen_text  # noqa: E402
@@ -451,22 +453,141 @@ def _client(app):
     return TestClient(app, base_url="https://nsr.example.com")
 
 
-def test_없는_쪽지는_열쇠가_안_된다(tmp_path, monkeypatch):
+def _link(c):
+    """첫 기기를 잇는다 — 기기가 없을 때는 버튼 한 번이 전부다."""
+    got = c.post("/device/link", json={})
+    assert got.status_code == 200
+    return got.json()
+
+
+def test_첫_기기는_그냥_이어진다(tmp_path, monkeypatch):
     app, _ = _app(tmp_path, monkeypatch)
     with _client(app) as c:
-        assert c.post("/device/claim", json={"code": "지어낸쪽지"}).status_code == 400
-        assert c.post("/device/claim", json={"code": ""}).status_code == 400
+        out = _link(c)
+        assert out["open"] is True and out["token"] and out["recovery"]
+
+        # 그 열쇠로 실제로 올릴 수 있다
+        res = c.post(
+            "/ingest",
+            json={
+                "shiftId": "2026-09-06:N",
+                "date": "2026-09-06",
+                "code": "N",
+                "masked": True,
+                "sentences": [{"t": 0, "text": "[이름]님 폴리 확인했어요."}],
+            },
+            headers={"authorization": f"Bearer {out['token']}"},
+        )
+        assert res.status_code == 200
+
+
+def test_문은_한_번만_열린다(tmp_path, monkeypatch):
+    """두 번째부터는 번호가 뜨고, 이미 이어진 폰이 승인해야 열쇠가 나온다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        token = _link(c)["token"]
+        head = {"authorization": f"Bearer {token}"}
+
+        second = c.post("/device/link", json={})
+        assert second.status_code == 202
+        code = second.json()["code"]
+        assert len(code) == 6 and "token" not in second.json()
+
+        # 승인 전에는 아무것도 안 준다
+        assert c.post("/device/link/poll", json={"code": code}).status_code == 404
+        # 이어지지 않은 기기는 승인하지 못한다
+        assert c.post("/connector/approve", json={"code": code}).status_code == 401
+
+        ok = c.post("/connector/approve", json={"code": code}, headers=head)
+        assert ok.status_code == 200 and ok.json()["kind"] == "device"
+
+        got = c.post("/device/link/poll", json={"code": code})
+        assert got.status_code == 200 and got.json()["token"] != token
+        # 열쇠는 한 번만 준다
+        assert c.post("/device/link/poll", json={"code": code}).status_code == 404
+
+
+def test_승인만_하고_안_가져가면_열쇠가_안_남는다(tmp_path, monkeypatch):
+    """만들어 두고 아무도 안 가진 열쇠는 그 자체로 표를 더럽힌다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
+    with _client(app) as c:
+        head = {"authorization": f"Bearer {_link(c)['token']}"}
+        code = c.post("/device/link", json={}).json()["code"]
+        assert c.post("/connector/approve", json={"code": code}, headers=head).status_code == 200
+        assert store.count_device_tokens() == 1
+
+        c.post("/device/link/poll", json={"code": code})
+        assert store.count_device_tokens() == 2
+
+
+def test_앱을_다시_깔면_복구_번호로_잇는다(tmp_path, monkeypatch):
+    app, _ = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        first = _link(c)
+        recovery = first["recovery"]
+
+        # 앱을 지웠다 깔았다 — 폰에는 열쇠가 없고, 승인해 줄 기기도 없다
+        assert c.post("/device/link", json={}).status_code == 202
+
+        # 사람이 옮겨 적은 값이라 소문자·빈칸도 받아 준다
+        typed = recovery.replace("-", " ").lower()
+        again = c.post("/device/recover", json={"recovery": typed})
+        assert again.status_code == 200
+        assert again.json()["token"] != first["token"]
+        # 한 번 쓰면 새 번호로 바뀐다
+        assert again.json()["recovery"] != recovery
+        assert c.post("/device/recover", json={"recovery": recovery}).status_code == 400
+
+
+def test_복구_번호는_찍어_볼_수_없다(tmp_path, monkeypatch):
+    app, _ = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        _link(c)
+        for _ in range(5):
+            assert c.post("/device/recover", json={"recovery": "2222-3333-4444"}).status_code == 400
+        # 다섯 번 틀리면 잠긴다 — 맞는 번호를 넣어도 안 열린다
+        assert c.post("/device/recover", json={"recovery": "2222-3333-4444"}).status_code == 429
+
+
+def test_이어진_기기만_목록과_복구_번호를_본다(tmp_path, monkeypatch):
+    app, _ = _app(tmp_path, monkeypatch)
+    with _client(app) as c:
+        out = _link(c)
+        head = {"authorization": f"Bearer {out['token']}"}
+        assert c.get("/device/state").status_code == 401
+
+        state = c.get("/device/state", headers=head).json()
+        assert state["recovery"] == out["recovery"]
+        assert len(state["devices"]) == 1
+        assert all("token" not in d for d in state["devices"])
+
+
+def test_다른_기기_끊기는_이_기기만_남긴다(tmp_path, monkeypatch):
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
+    with _client(app) as c:
+        out = _link(c)
+        head = {"authorization": f"Bearer {out['token']}"}
+        store.put_device_token("죽은열쇠1", "(앱)", "옛날 폰")
+        store.put_device_token("죽은열쇠2", "(앱)", "더 옛날 폰")
+
+        got = c.post("/device/forget-others", headers=head)
+        assert got.status_code == 200 and got.json()["removed"] == 2
+        assert store.count_device_tokens() == 1
+
+        # nsr.env 의 비상 토큰으로는 못 한다 — 그러면 쓰던 폰까지 끊긴다
+        env = {"authorization": f"Bearer {app.state.config.device_token}"}
+        assert c.post("/device/forget-others", headers=env).status_code == 401
+        assert store.count_device_tokens() == 1
 
 
 def test_AI_연결은_이어진_폰만_승인한다(tmp_path, monkeypatch):
     """열쇠를 묻는 화면이 없어졌다. 여는 것은 폰이다."""
-    from nsr_server.pair import new_pairing
-
     app, _ = _app(tmp_path, monkeypatch)
     store = app.state.store
     with _client(app) as c:
-        # 폰을 먼저 잇는다 (QR)
-        token = c.post("/device/claim", json={"code": new_pairing(store)}).json()["token"]
+        token = _link(c)["token"]
 
         # 커넥터가 사람을 보내는 자리 — 대기표와 번호를 만든다
         pending, number = "p-1", app.state.auth.new_code("p-1")
@@ -494,80 +615,30 @@ def test_AI_연결은_이어진_폰만_승인한다(tmp_path, monkeypatch):
         assert c.post("/connector/approve", json={"code": "000000"}, headers=head).status_code == 400
 
         # 이어진 폰이 승인하면 화면이 돌아갈 주소를 받아 간다
-        assert c.post("/connector/approve", json={"code": number}, headers=head).status_code == 200
+        ok = c.post("/connector/approve", json={"code": number}, headers=head)
+        assert ok.status_code == 200 and ok.json()["kind"] == "ai"
         back = c.get(f"/oauth/login/status?p={pending}").json()["back"]
         assert back.startswith("https://claude.ai/cb?code=")
         # 주소는 한 번만 준다
         assert c.get(f"/oauth/login/status?p={pending}").json() == {}
 
 
-# ── QR 로 폰 잇기 ──────────────────────────────────────────
+def test_기기_번호와_AI_번호는_겹치지_않는다(tmp_path, monkeypatch):
+    """같은 번호가 두 뜻을 가지면, 사람이 넣은 번호가 엉뚱한 쪽을 열 수 있다."""
+    import secrets
 
+    from nsr_server import link as link_module
 
-def test_QR_로_이으면_열쇠가_생긴다(tmp_path, monkeypatch):
-    from nsr_server.pair import new_pairing
-
-    app, app_module = _app(tmp_path, monkeypatch)
+    app, _ = _app(tmp_path, monkeypatch)
     store = app.state.store
-    code = new_pairing(store)
-
-    with _client(app) as c:
-        # 1) 컴퓨터 화면 — QR 이 그려지고, 폰이 열 주소가 들어 있다
-        page = c.get(f"/pair/{code}/qr")
-        assert page.status_code == 200
-        assert "<svg" in page.text or code in page.text
-
-        # 2) 폰 — 버튼이 앱을 연다
-        open_page = c.get(f"/pair/{code}")
-        assert open_page.status_code == 200
-        assert f"nsr://linked?c={code}" in open_page.text
-
-        # 3) 앱이 쪽지를 열쇠로 바꾼다. 한 번만.
-        got = c.post("/device/claim", json={"code": code})
-        assert got.status_code == 200
-        token = got.json()["token"]
-        assert c.post("/device/claim", json={"code": code}).status_code == 400
-
-        # 4) 그 열쇠로 실제로 올릴 수 있다
-        res = c.post(
-            "/ingest",
-            json={
-                "shiftId": "2026-09-06:N",
-                "date": "2026-09-06",
-                "code": "N",
-                "masked": True,
-                "sentences": [{"t": 0, "text": "[이름]님 폴리 확인했어요."}],
-            },
-            headers={"authorization": f"Bearer {token}"},
-        )
-        assert res.status_code == 200
-
-
-def test_안_주워_가면_열쇠가_안_남는다(tmp_path):
-    from nsr_server.pair import new_pairing
-
-    store = Store(str(tmp_path / "p.db"))
-    new_pairing(store)
-    new_pairing(store)
-    # 쪽지만 있고 열쇠는 아직 없다 — 만들어 두고 안 쓰면 그게 곧 떠도는 열쇠다.
-    assert store.list_device_tokens() == []
-
-
-def test_QR_그림은_lib_없이도_안_죽는다(monkeypatch):
-    import builtins
-
-    from nsr_server import pair
-
-    real = builtins.__import__
-
-    def no_qrcode(name, *a, **k):
-        if name.startswith("qrcode"):
-            raise ImportError("없음")
-        return real(name, *a, **k)
-
-    monkeypatch.setattr(builtins, "__import__", no_qrcode)
-    assert pair.svg_qr("https://nsr.example.com/pair/x") is None
-    assert pair.ascii_qr("https://nsr.example.com/pair/x") is None
+    # 주사위가 늘 같은 눈만 나오게 해서 겹침을 강제로 만든다
+    monkeypatch.setattr(secrets, "randbelow", lambda _n: 234567 - 100000)
+    mine = link_module.new_link_code(store)
+    assert mine == "234567"
+    with pytest.raises(RuntimeError):
+        app.state.auth.new_code("p-x")
+    with pytest.raises(RuntimeError):
+        link_module.new_link_code(store)
 
 
 def test_기기_열쇠_목록에_열쇠는_없다(tmp_path):

@@ -1,8 +1,8 @@
 """
 설정. 전부 환경변수로 받는다 — 저장소에 값이 들어가면 안 된다.
 
-  NSR_DEVICE_TOKEN  폰이 자료를 올릴 때 쓰는 비상용 토큰. 평소에는 QR 로 잇는다
-                    (python -m nsr_server.pair). 헤더에 들어간다.
+  NSR_DEVICE_TOKEN  비상용 토큰. 평소에는 앱에서 「잇기」 를 누르면 이어진다
+                    (link.py). 헤더에 들어간다.
   NSR_DB            SQLite 파일 경로 (기본 ./nsr.db)
   NSR_HOST/NSR_PORT 붙일 주소 (기본 127.0.0.1:8787 — 바깥은 nginx·caddy 가 받는다)
   NSR_PUBLIC_HOST   바깥에서 부르는 도메인 (예: nsr.example.com). **없으면 붙지 않는다.**
@@ -12,7 +12,7 @@
 
 대화 AI(클로드·GPT) 쪽에는 토큰이 없다. 커넥터를 연결할 때 화면에 여섯 자리
 번호가 뜨고, **이미 이어진 폰에서** 그 번호를 승인해야 열린다. 그래서 이 서버에
-들어오는 길은 둘 다 폰을 거친다 — 폰은 QR 로 잇고, AI 는 폰이 승인한다.
+들어오는 길은 둘 다 폰을 거친다 — 폰은 앱에서 잇고, AI 는 폰이 승인한다.
 """
 
 from __future__ import annotations

@@ -177,7 +177,6 @@ function Gate() {
       <Stack.Screen name="shift/[id]" options={{ title: "근무 기록" }} />
       <Stack.Screen name="transcript/[id]" options={{ title: "전사 결과" }} />
       <Stack.Screen name="tiro-notes" options={{ title: "티로 노트 가져오기" }} />
-      <Stack.Screen name="linked" options={{ title: "서버 잇기" }} />
       {/* 없으면 머리글에 주소가 그대로 뜬다 (notes, note/[id]). */}
       <Stack.Screen name="notes" options={{ title: "노트" }} />
       <Stack.Screen name="note/[id]" options={{ title: "노트" }} />

@@ -17,18 +17,19 @@
  *
  * 열쇠는 사람이 안 만진다
  * ----------------------
- * 예전에는 서버의 기기 토큰을 사람이 복사해 앱에 붙여넣었다. 이제는 QR 이다.
+ * 주소를 넣고 「잇기」 를 누르는 것이 전부다. 터미널도 QR 도 없다.
  *
- *   1. VPS 에서 `python -m nsr_server.pair` → 컴퓨터 화면에 QR
- *   2. 폰으로 찍으면 `nsr://linked?c=…` 로 앱이 열린다. c 는 **일회용 쪽지**다
- *   3. 앱이 그 쪽지를 `/device/claim` 에서 열쇠로 바꿔 보안 저장소에 넣는다
- *
- * 열쇠를 주소에 직접 실어 보내지 않는 이유: 그러면 브라우저 기록에 남는다.
- * 쪽지는 15분 뒤 사라지고 한 번 쓰면 없어진다.
+ *   - 서버에 이어진 기기가 **하나도 없으면** 그대로 이어진다 (처음 한 번만
+ *     열리는 문). Jellyfin·Home Assistant 의 첫 실행과 같은 방식이다.
+ *   - 이미 기기가 있으면 여섯 자리 번호가 뜨고, **이미 이어진 폰**에서 승인해야
+ *     열쇠가 나온다 (Syncthing·시그널의 기기 연결과 같은 방식이다).
+ *   - 앱을 지웠다 다시 깔면 열쇠가 사라진다. 그때 승인해 줄 기기도 없으면
+ *     **복구 번호**로 잇는다. 처음 이을 때 서버가 만들어 주고, 이어진 앱은
+ *     설정에서 언제든 볼 수 있다. 한 번 쓰면 새 번호로 바뀐다.
  *
  * 401 이 오면 이 폰의 열쇠를 **지운다**. 서버가 모르는 열쇠를 들고 있어 봐야
  * 계속 막히기만 하고, 화면에는 '연결됨'으로 보여서 사람이 더 헷갈린다.
- * (서버 토큰을 새로 만들었거나, 서버 DB 를 갈아 끼웠을 때 실제로 이렇게 된다.)
+ * (서버 DB 를 갈아 끼웠을 때 실제로 이렇게 된다.)
  */
 import * as SecureStore from "expo-secure-store";
 import {
@@ -73,42 +74,103 @@ export async function setDeviceToken(token: string | null): Promise<void> {
   else await SecureStore.deleteItemAsync(TOKEN_KEY);
 }
 
-/** 일회용 쪽지를 이 폰의 열쇠로 바꾼다. 성공하면 보안 저장소에 넣는다. */
-export async function claimDeviceToken(code: string): Promise<void> {
+/** 서버가 준 열쇠를 보관한다. 복구 번호는 사람이 적어 둘 것이라 저장하지 않는다. */
+async function keep(body: { token?: string }): Promise<void> {
+  if (!body.token) throw new Error("서버가 열쇠를 주지 않았어요. 다시 눌러 주세요.");
+  await setDeviceToken(body.token);
+  await setSetting(UNAUTH_KEY, 0);
+}
+
+async function postPublic(path: string, payload: unknown): Promise<Response> {
   const url = await getServerUrl();
   if (!url) throw new Error("서버 주소가 없어요. 설정에서 넣어 주세요.");
-  const res = await fetch(`${url}/device/claim`, {
+  return fetch(`${url}${path}`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ code }),
+    body: JSON.stringify(payload ?? {}),
   });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? "연결하지 못했어요. QR 을 다시 만들어 주세요.");
-  }
-  const { token } = (await res.json()) as { token?: string };
-  if (!token) throw new Error("서버가 열쇠를 주지 않았어요. QR 을 다시 만들어 주세요.");
-  await setDeviceToken(token);
+}
+
+async function why(res: Response, fallback: string): Promise<string> {
+  const body = (await res.json().catch(() => ({}))) as { error?: string };
+  return body.error ?? fallback;
 }
 
 /**
- * AI(클로드·GPT) 연결을 승인한다.
+ * 잇기를 시작한다.
  *
- * 커넥터를 연결하면 화면에 여섯 자리 번호가 뜬다. 그 번호를 여기 넣으면 서버가
- * 연결을 연다. **이어진 폰만 승인할 수 있다** — 이 요청에 이 폰의 열쇠가 실린다.
- * 그래서 서버로 들어오는 길은 둘 다 폰을 거친다: 폰은 QR 로 잇고, AI 는 폰이 연다.
+ * 서버에 기기가 하나도 없으면 여기서 끝난다(`{ linked: true }`). 이미 있으면
+ * 여섯 자리 번호를 받아 오고, 그 번호를 이미 이어진 폰이 승인할 때까지
+ * `pollLink` 로 기다린다.
  */
-export async function approveConnector(code: string): Promise<void> {
+export async function linkDevice(): Promise<{ linked: boolean; code?: string; recovery?: string }> {
+  const res = await postPublic("/device/link", {});
+  if (res.status === 202) {
+    const { code } = (await res.json()) as { code?: string };
+    if (!code) throw new Error("서버가 번호를 주지 않았어요. 다시 눌러 주세요.");
+    return { linked: false, code };
+  }
+  if (!res.ok) throw new Error(await why(res, "잇지 못했어요. 주소를 확인해 주세요."));
+  const body = (await res.json()) as { token?: string; recovery?: string };
+  await keep(body);
+  return { linked: true, recovery: body.recovery };
+}
+
+/** 승인을 기다린다. 아직이면 false, 승인되면 열쇠를 넣고 true. */
+export async function pollLink(code: string): Promise<{ linked: boolean; recovery?: string }> {
+  const res = await postPublic("/device/link/poll", { code });
+  if (res.status === 404) return { linked: false };
+  if (!res.ok) throw new Error(await why(res, "기다리지 못했어요. 다시 해 주세요."));
+  const body = (await res.json()) as { token?: string; recovery?: string };
+  await keep(body);
+  return { linked: true, recovery: body.recovery };
+}
+
+/** 복구 번호로 잇는다. 앱을 지웠다 다시 깔았을 때 쓴다. */
+export async function recoverDevice(recovery: string): Promise<string | undefined> {
+  const res = await postPublic("/device/recover", { recovery });
+  if (!res.ok) throw new Error(await why(res, "복구 번호가 맞지 않아요."));
+  const body = (await res.json()) as { token?: string; recovery?: string };
+  await keep(body);
+  return body.recovery;
+}
+
+export interface ServerState {
+  devices: { label?: string | null; created_at: number; last_seen_at?: number | null }[];
+  recovery: string;
+}
+
+/** 이어진 기기 목록과 복구 번호. 낯선 기기가 있으면 여기서 보인다. */
+export async function serverState(): Promise<ServerState> {
+  const res = await call("/device/state");
+  if (!res.ok) throw new Error(await serverError(res, "기기 목록 보기"));
+  return (await res.json()) as ServerState;
+}
+
+/** 이 폰만 남기고 끊는다. 앱을 여러 번 다시 깔면 죽은 열쇠가 쌓인다. */
+export async function forgetOtherDevices(): Promise<number> {
+  const res = await call("/device/forget-others", { method: "POST" });
+  if (!res.ok) throw new Error(await serverError(res, "다른 기기 끊기"));
+  const { removed } = (await res.json()) as { removed?: number };
+  return removed ?? 0;
+}
+
+/**
+ * 여섯 자리 번호를 승인한다.
+ *
+ * 두 가지를 다 받는다 — AI 커넥터 화면에 뜬 번호와, 새로 잇는 기기가 띄운 번호.
+ * 어느 쪽인지는 서버가 알아서 가른다. **이어진 폰만** 승인할 수 있다.
+ */
+export async function approveCode(code: string): Promise<"ai" | "device"> {
   const digits = code.replace(/\D/g, "");
   if (digits.length !== 6) throw new Error("번호 여섯 자리를 넣어 주세요.");
   const res = await call("/connector/approve", {
     method: "POST",
     body: JSON.stringify({ code: digits }),
   });
-  if (!res.ok) {
-    const body = (await res.json().catch(() => ({}))) as { error?: string };
-    throw new Error(body.error ?? "승인하지 못했어요. 번호를 다시 봐 주세요.");
-  }
+  if (!res.ok) throw new Error(await why(res, "승인하지 못했어요. 번호를 다시 봐 주세요."));
+  const { kind } = (await res.json()) as { kind?: "ai" | "device" };
+  return kind ?? "ai";
 }
 
 export async function serverReady(): Promise<boolean> {
@@ -119,7 +181,7 @@ async function call(path: string, init: RequestInit = {}): Promise<Response> {
   const url = await getServerUrl();
   const token = await getDeviceToken();
   if (!url) throw new Error("서버 주소가 없어요. 설정에서 넣어 주세요.");
-  if (!token) throw new Error("이 폰이 아직 서버에 안 이어졌어요. QR 로 이어 주세요.");
+  if (!token) throw new Error("이 폰이 아직 서버에 안 이어졌어요. 설정에서 이어 주세요.");
   return fetch(`${url}${path}`, {
     ...init,
     headers: {
@@ -140,15 +202,15 @@ async function serverError(res: Response, doing: string): Promise<string> {
   void logDebug(`서버 ${doing} 실패 ${res.status}: ${body.error ?? ""}`);
   if (res.status === 401) {
     // 서버가 이 폰의 열쇠를 모른다. 다만 **한 번으로 지우지 않는다** — 배포 중이거나
-    // 프록시가 끼어들어도 401 은 나오고, 그때 지우면 QR 을 다시 만들러 VPS 에
-    // 들어가야 한다. 연달아 두 번이면 진짜다.
+    // 프록시가 끼어들어도 401 은 나오고, 그때 지우면 다시 이어야 한다.
+    // 연달아 두 번이면 진짜다.
     const before = (await getSetting<number>(UNAUTH_KEY, 0)) + 1;
     await setSetting(UNAUTH_KEY, before);
     if (before >= 2) {
       await setDeviceToken(null);
       await setSetting(UNAUTH_KEY, 0);
     }
-    return "이 폰이 서버에 안 이어져 있어요. QR 로 다시 이어 주세요.";
+    return "이 폰이 서버에 안 이어져 있어요. 설정에서 다시 이어 주세요.";
   }
   await setSetting(UNAUTH_KEY, 0);
   if (res.status === 422) {
@@ -168,7 +230,7 @@ export async function checkServer(): Promise<{ ok: boolean; message: string }> {
     const res = await fetch(`${url}/healthz`);
     if (!res.ok) return { ok: false, message: `서버가 ${res.status} 를 줬어요. 주소를 확인해 주세요.` };
     if (!(await getDeviceToken())) {
-      return { ok: false, message: "서버는 살아 있어요. 이제 QR 로 이 폰을 이어 주세요." };
+      return { ok: false, message: "서버는 살아 있어요. 이제 잇기를 눌러 주세요." };
     }
     // 토큰까지 맞는지는 실제로 한 번 물어봐야 안다.
     const pull = await call("/pull");
@@ -177,7 +239,7 @@ export async function checkServer(): Promise<{ ok: boolean; message: string }> {
       // 열쇠만 안 맞는다. 그러면 미루지 않고 지운다.
       await setDeviceToken(null);
       await setSetting(UNAUTH_KEY, 0);
-      return { ok: false, message: "이 폰이 서버에 안 이어져 있어요. QR 로 이어 주세요." };
+      return { ok: false, message: "이 폰이 서버에 안 이어져 있어요. 다시 이어 주세요." };
     }
     return { ok: true, message: "연결됐어요. 이제 근무를 보낼 수 있어요." };
   } catch {

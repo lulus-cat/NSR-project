@@ -18,7 +18,7 @@ OAuth — 대화 AI 커넥터가 요구하는 로그인 절차.
 
 이렇게 한 이유: 열쇠를 묻는 화면은 결국 사람이 열쇠를 어딘가에 적어 두게 만든다.
 번호는 10분이면 사라지고 그 자체로는 아무 힘이 없다 — 승인할 폰이 없으면 못 연다.
-폰은 QR 로 잇는다(`python -m nsr_server.pair`). 그래서 이 서버로 들어오는 길은
+폰은 앱에서 「잇기」 한 번으로 잇는다(link.py). 그래서 이 서버로 들어오는 길은
 둘 다 폰을 거친다.
 
 절차 (SDK 가 대부분 처리한다)
@@ -112,7 +112,11 @@ class NsrOAuthProvider:
             raise RuntimeError("연결 시도가 너무 많습니다. 10분 뒤에 다시 해 주십시오.")
         for _ in range(20):
             code = f"{secrets.randbelow(900000) + 100000}"
-            if not self.store.peek_oauth_pending(f"code-{code}"):
+            # 기기 잇기 번호(`link-`)도 같은 칸에 넣는다. 같은 번호가 두 뜻을
+            # 가지면, 사람이 앱에 넣은 번호가 엉뚱한 쪽을 열어 줄 수 있다.
+            if not self.store.peek_oauth_pending(
+                f"code-{code}"
+            ) and not self.store.peek_oauth_pending(f"link-{code}"):
                 self.store.put_oauth_pending(
                     f"code-{code}", {"p": pending_id}, expires_at=time.time() + PENDING_TTL
                 )

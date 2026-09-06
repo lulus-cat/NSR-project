@@ -77,7 +77,8 @@ CREATE TABLE IF NOT EXISTS oauth_tokens (
   created_at  INTEGER NOT NULL
 );
 
--- 폰마다 하나씩 발급되는 열쇠. 구글 로그인을 마치면 서버가 만들어 준다.
+-- 폰마다 하나씩 발급되는 열쇠. 첫 기기는 그냥 이어지고(기기가 없을 때만 문이
+-- 열린다), 그 뒤로는 이미 이어진 기기가 승인해야 발급된다.
 -- 사람이 보거나 옮겨 적을 일이 없다 — 앱이 받아 보안 저장소에 넣는다.
 CREATE TABLE IF NOT EXISTS device_tokens (
   token        TEXT PRIMARY KEY,
@@ -85,6 +86,12 @@ CREATE TABLE IF NOT EXISTS device_tokens (
   label        TEXT,
   created_at   INTEGER NOT NULL,
   last_seen_at INTEGER
+);
+
+-- 서버가 기억해야 하는 한 줄짜리 값들. 지금은 복구 번호 하나뿐이다.
+CREATE TABLE IF NOT EXISTS server_meta (
+  key    TEXT PRIMARY KEY,
+  value  TEXT NOT NULL
 );
 
 CREATE TABLE IF NOT EXISTS terms (
@@ -308,6 +315,29 @@ class Store:
                 (int(time.time()), token),
             )
         return True
+
+    def count_device_tokens(self) -> int:
+        """이어진 기기 수. 0 이면 첫 기기가 그냥 들어올 수 있다(처음 한 번만 열리는 문)."""
+        row = self.db.execute("SELECT COUNT(*) AS n FROM device_tokens").fetchone()
+        return int(row["n"]) if row else 0
+
+    def delete_device_tokens_except(self, keep: str) -> int:
+        """이 열쇠만 남기고 나머지를 끊는다. 앱을 지웠다 깔면 죽은 열쇠가 쌓인다."""
+        with self.db:
+            cur = self.db.execute("DELETE FROM device_tokens WHERE token <> ?", (keep,))
+        return cur.rowcount or 0
+
+    def get_meta(self, key: str) -> str | None:
+        row = self.db.execute("SELECT value FROM server_meta WHERE key = ?", (key,)).fetchone()
+        return row["value"] if row else None
+
+    def put_meta(self, key: str, value: str) -> None:
+        with self.db:
+            self.db.execute(
+                """INSERT INTO server_meta (key, value) VALUES (?, ?)
+                   ON CONFLICT(key) DO UPDATE SET value=excluded.value""",
+                (key, value),
+            )
 
     def list_device_tokens(self) -> list[dict[str, Any]]:
         """어떤 기기가 붙어 있나. **열쇠 자체는 주지 않는다.**"""
