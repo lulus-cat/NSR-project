@@ -343,6 +343,25 @@ export default function Settings() {
   // 3택과 같은 판정 — 어느 방식의 세부 설정을 펼칠지 정한다.
   const mode = policy.enabled ? "duty" : geoOn ? "geo" : "off";
 
+  // 근무지 카드를 볼 때마다 지금 안인지 밖인지 한 번 읽는다. 사용자가 버튼을
+  // 눌러 확인하는 것이 아니라, 앱이 늘 보고 있다는 것을 그대로 비춘다.
+  const [geoNow, setGeoNow] = useState("보는 중…");
+  useFocusEffect(
+    useCallback(() => {
+      let alive = true;
+      void (async () => {
+        const here = await whereAmI();
+        if (!alive) return;
+        if (!here) setGeoNow("근무지 없음");
+        else if (here.distance === null) setGeoNow("위치를 못 읽었어요");
+        else setGeoNow(here.inside ? `근무지 안 · ${here.distance}m` : `밖 · ${here.distance}m`);
+      })();
+      return () => {
+        alive = false;
+      };
+    }, [workplace]),
+  );
+
   const updatePrivacy = useCallback(async (next: PrivacySettings) => {
     setPrivacy(next);
     await savePrivacySettings(next);
@@ -858,25 +877,8 @@ export default function Settings() {
                 </View>
                 <Small>건물만이면 100m, 부지가 넓으면 500m 이상으로 해요.</Small>
 
-                {/* 폰에서 실제로 되는지 볼 수 있는 유일한 자리 */}
-                <Button
-                  label="지금 여기서 확인"
-                  onPress={async () => {
-                    setGeoMsg("위치를 보는 중이에요…");
-                    const now = await whereAmI();
-                    if (!now) {
-                      setGeoMsg("근무지가 없어요.");
-                    } else if (now.distance === null) {
-                      setGeoMsg("위치를 못 읽었어요. 하늘이 보이는 곳에서 다시 눌러 주세요.");
-                    } else {
-                      setGeoMsg(
-                        now.inside
-                          ? `근무지에서 ${now.distance}m — 안이에요. 여기서 기록이 켜져요.`
-                          : `근무지에서 ${now.distance}m — 밖이에요. 여기서는 안 켜져요.`,
-                      );
-                    }
-                  }}
-                />
+                {/* 지금 어디인지 화면이 알아서 보여 준다. 누를 것이 없다. */}
+                <Row label="지금" value={geoNow} />
                 <Button
                   label="지도에서 위치 확인 (카카오맵)"
                   onPress={() =>

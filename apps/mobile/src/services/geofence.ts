@@ -79,6 +79,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
       if (!day.working) return;
       if (!currentSession()) await startManual(day.shiftId);
       await setSetting("geofence.lastEnterAt", Date.now());
+      watchExit();
     } else if (eventType === Location.GeofencingEventType.Exit) {
       // 나갔다는 신호를 그대로 믿지 않는다. 안드로이드는 실내에서 위치가 수백
       // 미터씩 튀고, 그 한 번에 근무 중 기록이 끊기면 그날 근무는 통째로 없다.
@@ -89,6 +90,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
       }
       await stopManual();
       await setSetting("geofence.lastExitAt", Date.now());
+      clearExitWatch();
     }
   } catch (e) {
     console.error("[앗] 위치 감지기 뻗음", e);
@@ -121,6 +123,67 @@ export async function whereAmI(): Promise<{
 async function stillInside(): Promise<boolean> {
   const now = await whereAmI();
   return now?.inside ?? false;
+}
+
+/**
+ * 위치를 보고 기록 상태를 맞춘다. 지오펜스 신호를 못 받았을 때의 안전망이다.
+ *
+ * 안드로이드는 진입·이탈 신호를 심심찮게 빠뜨린다 (실내, 절전, 신호 지연).
+ * 그러면 병동에 들어왔는데 안 켜지거나, 퇴근했는데 계속 켜져 있다. 그래서
+ * 신호를 기다리기만 하지 않고 **주기적으로 직접 본다** — tick(대개 15분)과,
+ * 기록 중에는 5분마다 도는 아래 감시가 이 함수를 부른다.
+ *
+ * 아무것도 안 하는 경우가 대부분이라 값이 싸다: 위치 한 번 읽고 끝난다.
+ */
+export async function syncByLocation(now = Date.now()): Promise<void> {
+  if (!(await geofenceEnabled())) return;
+  const here = await whereAmI();
+  if (!here || here.distance === null) return; // 위치를 못 읽으면 건드리지 않는다
+
+  const session = currentSession();
+  if (here.inside) {
+    if (session) return;
+    const day = await isWorkingDay(now);
+    if (!day.working) return;
+    await startManual(day.shiftId);
+    await setSetting("geofence.lastEnterAt", now);
+    watchExit();
+  } else if (session) {
+    await stopManual();
+    await setSetting("geofence.lastExitAt", now);
+  }
+}
+
+/**
+ * 기록 중 5분마다 "아직 병동인가"를 본다.
+ *
+ * 이탈 신호 하나만 믿으면, 그 신호가 안 오는 날 퇴근 뒤에도 기록이 계속 돈다.
+ * 기록 중에는 포그라운드 서비스를 잡고 있어 이 타이머가 확실히 돈다 —
+ * 기록이 아닐 때는 OS 가 앱을 재우므로 tick(15분)이 대신 본다.
+ */
+const EXIT_WATCH_MS = 5 * 60_000;
+let exitWatch: ReturnType<typeof setInterval> | null = null;
+
+function watchExit(): void {
+  if (exitWatch) return;
+  exitWatch = setInterval(() => {
+    void (async () => {
+      if (!currentSession()) {
+        clearExitWatch();
+        return;
+      }
+      if (!(await stillInside())) {
+        await stopManual();
+        await setSetting("geofence.lastExitAt", Date.now());
+        clearExitWatch();
+      }
+    })();
+  }, EXIT_WATCH_MS);
+}
+
+function clearExitWatch(): void {
+  if (exitWatch) clearInterval(exitWatch);
+  exitWatch = null;
 }
 
 export async function getWorkplace(): Promise<Workplace | null> {

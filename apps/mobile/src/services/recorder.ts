@@ -75,15 +75,26 @@ export interface SessionCallbacks {
 export class RecordingSession {
   private state: SessionState = "idle";
   private timer: ReturnType<typeof setTimeout> | null = null;
-  private chunkIndex = 0;
+  private chunkIndex: number;
   private chunkStartedAt = 0;
 
+  /**
+   * @param startIndex 이 근무에 이미 있는 조각 다음 번호.
+   *
+   *   0 에서 다시 세면 안 된다. 파일 이름도 DB 키도 `근무id + 번호`라서,
+   *   같은 근무에서 기록이 두 번 켜지면(점심에 나갔다 들어오면 그렇다)
+   *   두 번째 000 번이 첫 번째 000 번 **파일을 덮어쓰고** DB 는 키 충돌로
+   *   터진다. 아침 기록이 사라지는 길이었다.
+   */
   constructor(
     private readonly backend: AudioBackend,
     private readonly policy: RecordingPolicy,
     private readonly shiftId: string,
     private readonly callbacks: SessionCallbacks,
-  ) {}
+    startIndex = 0,
+  ) {
+    this.chunkIndex = startIndex;
+  }
 
   get isActive(): boolean {
     return this.state === "recording";
@@ -159,7 +170,13 @@ export class RecordingSession {
       durationSec: result.durationSec,
       sizeBytes: result.sizeBytes,
     };
-    await this.callbacks.onChunk(chunk);
+    try {
+      await this.callbacks.onChunk(chunk);
+    } catch (error) {
+      // 파일은 이미 저장됐다. 여기서 던지면 stop() 이 중간에 끊겨 세션이
+      // '기록 중'으로 갇히고, 그다음부터는 아무것도 시작되지 않는다.
+      this.callbacks.onError(error);
+    }
   }
 
   private clearTimer(): void {

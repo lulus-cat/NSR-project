@@ -47,6 +47,14 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       // 없다 — 실사용에서 콜랩 끊김 뒤 그대로 재현된 사고다. 러너는 프로세스
       // 안에서만 돌므로, 새로 열 때 남아 있는 'transcribing' 은 전부 유령이다.
       await db.runAsync("UPDATE recordings SET state = 'recorded' WHERE state = 'transcribing'");
+      // 녹음 도중에 앱이 죽으면 파일 없는 'recording' 줄이 남는다. 그대로 두면
+      // 근무 기록 화면에 '녹음 중'이 영영 떠 있고, 사용자는 지금 녹음되고 있는
+      // 줄 안다. 앱을 새로 여는 이 시점에 도는 세션은 없으니 전부 유령이다.
+      await db.runAsync(
+        `UPDATE recordings SET state = 'discarded',
+                discard_reason = '앱이 갑자기 꺼져서 저장되지 않았어요'
+          WHERE state = 'recording' AND file_uri IS NULL`,
+      );
       return db;
     })();
   }

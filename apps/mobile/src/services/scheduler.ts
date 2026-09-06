@@ -46,6 +46,7 @@ import {
   finishRecording,
   getSetting,
   listDutyEntries,
+  listRecordings,
   setSetting,
   totalStorageBytes,
 } from "../db";
@@ -171,6 +172,24 @@ export async function tick(now = Date.now()): Promise<{
 
   // tick 밖에서 켜진 기록인가 (홈 버튼·지오펜스). 이름이 아니라 시작한 경로로 본다.
   const manual = manualStartedAt > 0;
+
+  // 죽은 세션 되살리기. 조각을 새로 여는 데 실패하면(마이크를 뺏겼거나 저장이
+  // 막혔거나) 세션은 남아 있는데 기록은 멎는다. 화면에는 계속 '기록 중'이다.
+  // 여기서 한 번 더 켠다 — 사용자가 알아채고 다시 누르기를 기다릴 수 없다.
+  if (activeSession && !activeSession.isActive && activeShiftId) {
+    const dead = activeShiftId;
+    const startedAt = manualStartedAt;
+    await stopActive(now);
+    await startFor(
+      { shiftId: dead, code: "OTHER", label: "이어서 기록", date: dead.split(":")[0], startAt: now, endAt: now + 12 * 3600_000 },
+      policy,
+      now,
+    );
+    // 되살린 것이 tick 밖에서 켜졌던 기록이면 그 성격도 그대로 이어 준다.
+    if (startedAt > 0) manualStartedAt = startedAt;
+    return { recording: activeSession?.isActive ?? false, window, next };
+  }
+
   if (window && !manual) {
     if (!activeSession || activeShiftId !== window.shiftId) {
       await stopActive(now);
@@ -184,6 +203,16 @@ export async function tick(now = Date.now()): Promise<{
     await stopActive(now);
   }
 
+  // 위치로 한 번 더 맞춘다. 안드로이드는 지오펜스 진입·이탈 신호를 심심찮게
+  // 빠뜨린다 — 그때 기록이 안 켜지거나, 퇴근했는데 계속 켜져 있다.
+  // (지오펜스가 스케줄러를 부르므로 여기서는 늦게 불러 순환 참조를 피한다.)
+  try {
+    const { syncByLocation } = await import("./geofence");
+    await syncByLocation(now);
+  } catch {
+    // 위치가 없거나 꺼져 있으면 그만이다. 듀티표 판정은 위에서 이미 끝났다.
+  }
+
   await housekeeping(policy, now);
 
   return { recording: activeSession?.isActive ?? false, window, next };
@@ -194,6 +223,10 @@ async function startFor(
   policy: RecordingPolicy,
   now: number,
 ): Promise<void> {
+  // 이 근무에 이미 있는 조각 다음 번호부터. 0 에서 다시 세면 앞 파일을 덮는다.
+  const existing = await listRecordings(window.shiftId);
+  const startIndex = existing.reduce((max, r) => Math.max(max, r.seq), -1) + 1;
+
   const backend = createExpoAudioBackend();
   const session = new RecordingSession(backend, policy, window.shiftId, {
     async onChunk(chunk) {
@@ -220,7 +253,7 @@ async function startFor(
         message: error instanceof Error ? error.message : String(error),
       });
     },
-  });
+  }, startIndex);
 
   const started = await session.start(now);
   if (started) {
