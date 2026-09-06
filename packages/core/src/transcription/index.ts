@@ -8,3 +8,4 @@ export * from "./sentences.js";
 export * from "./speakers.js";
 export * from "./review.js";
 export * from "./tiro.js";
+export * from "./rewrite.js";

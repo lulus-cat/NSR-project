@@ -72,6 +72,9 @@ export default function Duty() {
     const scores = await listTaeumScores(120);
     const map = new Map<string, ReturnType<typeof taeumTemperature>>();
     for (const s of scores) {
+      // 안 잰 것은 그리지 않는다. 0점을 저체온으로 칠하면 한 달치가 통째로
+      // '태움 없음' 으로 보인다 — 홈 화면에서 고친 것과 같은 거짓말이다.
+      if (!s.measured) continue;
       const date = s.shiftId.split(":")[0];
       if (!map.has(date)) map.set(date, taeumTemperature(s.score));
     }

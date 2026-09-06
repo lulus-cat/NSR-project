@@ -50,7 +50,7 @@ import {
   transcriptToText,
 } from "../../src/services/export-bundle";
 import { exportNotePdf } from "../../src/services/note-doc";
-import { sendShift, serverReady, shiftSentAt } from "../../src/services/nsr-server";
+import { serverReady, shiftSentAt } from "../../src/services/nsr-server";
 
 /** epoch ms → "HH:MM 시작". 이름 없는 녹음 파일을 부를 때. */
 function startClock(ms: number): string {
@@ -134,25 +134,6 @@ export default function ShiftDetail() {
   const [sentAt, setSentAt] = useState<number | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const sendToServer = useCallback(async () => {
-    if (sending) return;
-    setSending(true);
-    setSendNote(null);
-    try {
-      if (!(await serverReady())) {
-        setSendNote("설정에서 주소를 넣고 잇기를 눌러 주세요.");
-        return;
-      }
-      const out = await sendShift(shiftId, (_pct: number, note?: string) => setSendNote(note ?? null));
-      setSendNote(`${out.sentences}문장을 보냈어요. 가린 것 ${out.redacted}건이에요.`);
-      setSentAt(await shiftSentAt(shiftId));
-    } catch (e) {
-      setSendNote(e instanceof Error ? e.message : "보내지 못했어요. 다시 눌러 주세요.");
-    } finally {
-      setSrvReady(await serverReady());
-      setSending(false);
-    }
-  }, [sending, shiftId]);
 
   /** 내보내기 확인 화면이 들고 있어야 할 것 — 무엇을, 어떤 이름으로, 어떤 꼴로. */
   const [preview, setPreview] = useState<{

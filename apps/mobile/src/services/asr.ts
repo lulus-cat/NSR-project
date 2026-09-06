@@ -44,6 +44,7 @@ import {
   saveCards,
   saveSegments,
   saveShiftReport,
+  getTaeumScore,
   saveTaeumScore,
   setRecordingState,
   type RecordingRow,
@@ -167,6 +168,10 @@ export async function refreshTaeumScore(shiftId: string): Promise<TaeumScore | n
   const { segments } = await listSegmentsAbsolute(shiftId);
   if (segments.length === 0) return null;
   const score = scoreShift(segments);
+  // 문장을 다 읽고 매긴 값이 이미 있으면 덮지 않는다. 규칙은 화자 이름표가 없으면
+  // 0점을 내놓기 때문에, 노트를 하나 더 가져온 것만으로 AI 가 잰 체온이 사라졌다.
+  const kept = await getTaeumScore(shiftId);
+  if (kept?.source === "ai") return kept;
   await saveTaeumScore(shiftId, score);
   return score;
 }

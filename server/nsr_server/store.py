@@ -305,7 +305,7 @@ class Store:
             "SELECT entry, meaning, note FROM terms WHERE pulled_at IS NULL AND source != 'phone'"
         ).fetchall()
         actions = self.db.execute(
-            "SELECT shift_id, kind, payload FROM ai_actions WHERE pulled_at IS NULL"
+            "SELECT shift_id, kind, payload, written_at FROM ai_actions WHERE pulled_at IS NULL"
         ).fetchall()
         return {
             "reports": [{"shiftId": r["shift_id"], "markdown": r["markdown"]} for r in reports],
@@ -313,7 +313,14 @@ class Store:
                 {"entry": t["entry"], "meaning": t["meaning"], "note": t["note"]} for t in terms
             ],
             "actions": [
-                {"shiftId": a["shift_id"], "kind": a["kind"], "payload": json.loads(a["payload"])}
+                {
+                    "shiftId": a["shift_id"],
+                    "kind": a["kind"],
+                    "payload": json.loads(a["payload"]),
+                    # 폰이 이 값을 그대로 돌려준다. 받아 가는 사이에 AI 가 고쳐 쓴
+                    # 것을 '가져갔다' 로 덮지 않기 위해서다.
+                    "writtenAt": a["written_at"],
+                }
                 for a in actions
             ],
         }
@@ -330,10 +337,19 @@ class Store:
             self.db.executemany(
                 "UPDATE terms SET pulled_at = ? WHERE entry = ?", [(now, e) for e in entries]
             )
+            # written_at 을 함께 본다. 폰이 받아 가는 동안(교정을 문장마다 반영하는
+            # 몇 초) AI 가 새 판을 써 넣을 수 있는데, 그것까지 '가져갔다' 로 덮으면
+            # 서버에는 남아 있는데 폰은 영영 못 받는다.
             self.db.executemany(
-                "UPDATE ai_actions SET pulled_at = ? WHERE shift_id = ? AND kind = ?",
+                """UPDATE ai_actions SET pulled_at = ?
+                   WHERE shift_id = ? AND kind = ? AND written_at <= ?""",
                 [
-                    (now, str(a.get("shiftId", "")), str(a.get("kind", "")))
+                    (
+                        now,
+                        str(a.get("shiftId", "")),
+                        str(a.get("kind", "")),
+                        int(a.get("writtenAt") or now),
+                    )
                     for a in (actions or [])
                     if isinstance(a, dict)
                 ],

@@ -42,6 +42,7 @@ import {
   listUserTerms,
   shiftsWithSegments,
   saveCards,
+  countSegments,
   saveShiftReport,
   saveTaeumScore,
   saveUserTerm,
@@ -55,8 +56,18 @@ const URL_KEY = "nsr.server.url";
 const TOKEN_KEY = "nsr.server.deviceToken";
 /** 연달아 몇 번 401 이 났나. 두 번이면 열쇠를 버린다. */
 const UNAUTH_KEY = "nsr.server.unauthorizedCount";
-/** 이 근무를 언제 보냈나. 안 남기면 사람이 보냈는지 알 길이 없다. */
+/**
+ * 이 근무를 언제, **몇 문장** 보냈나.
+ *
+ * 문장 수를 함께 남기는 이유: 한 근무는 노트 여럿이다(30분마다 끊긴다). 예전에는
+ * '보냈다' 만 남겨서 첫 노트를 올린 뒤로는 계속 건너뛰었다 — 8시간 근무가 서버에는
+ * 30분으로 들어가 있었고, 화면은 "9월 6일에 보냈어요" 라고 말했다.
+ */
 const sentKey = (shiftId: string) => `nsr.server.sent.${shiftId}`;
+interface SentMark {
+  at: number;
+  sentences: number;
+}
 /** 저절로 보내기를 켰나. 서버를 이었다는 것 자체가 보내겠다는 뜻이라 기본은 켬. */
 const AUTO_KEY = "nsr.server.autoSend";
 
@@ -301,7 +312,11 @@ export async function autoSendPending(): Promise<number> {
   if (!(await getAutoSend()) || !(await serverReady())) return 0;
   let sent = 0;
   for (const shiftId of await shiftsWithSegments()) {
-    if (await shiftSentAt(shiftId)) continue;
+    const mark = await getSetting<SentMark | number | null>(sentKey(shiftId), null);
+    const had = typeof mark === "object" && mark ? mark.sentences : -1;
+    // 문장이 늘었으면 다시 보낸다. 서버는 같은 근무를 통째로 갈아 끼우므로
+    // (put_shift 가 sentences 를 지우고 다시 넣는다) 다시 보내도 겹치지 않는다.
+    if (had >= 0 && had === (await countSegments(shiftId))) continue;
     try {
       await sendShift(shiftId);
       sent += 1;
@@ -321,7 +336,16 @@ export async function autoSendPending(): Promise<number> {
  *
  * 서버가 안 이어졌거나 저절로 보내기를 껐으면 아무 일도 안 하고 바로 돌아온다.
  */
-export async function syncWithServer(): Promise<{ sent: number; got: PullResult } | null> {
+let syncing: Promise<{ sent: number; got: PullResult } | null> | null = null;
+
+/** 한 번에 하나만 돈다. 홈과 설정이 둘 다 화면에 들어올 때 겹쳐 도는 것을 막는다. */
+export function syncWithServer(): Promise<{ sent: number; got: PullResult } | null> {
+  return (syncing ??= runSync().finally(() => {
+    syncing = null;
+  }));
+}
+
+async function runSync(): Promise<{ sent: number; got: PullResult } | null> {
   if (!(await serverReady())) return null;
   const sent = await autoSendPending();
   try {
@@ -334,7 +358,10 @@ export async function syncWithServer(): Promise<{ sent: number; got: PullResult 
 
 /** 이 근무를 서버에 보낸 시각(초). 안 보냈으면 null. */
 export async function shiftSentAt(shiftId: string): Promise<number | null> {
-  return (await getSetting<number>(sentKey(shiftId), 0)) || null;
+  const mark = await getSetting<SentMark | number | null>(sentKey(shiftId), null);
+  // 옛 판은 숫자만 남겼다. 그대로 읽어 준다.
+  if (typeof mark === "number") return mark || null;
+  return mark?.at ?? null;
 }
 
 export async function serverReady(): Promise<boolean> {
@@ -465,6 +492,7 @@ export async function sendShift(
     }))
     .filter((t) => clean(t.entry) && clean(t.meaning) && (!t.note || clean(t.note)));
 
+  if (out.length === 0) throw new Error("가리고 나니 보낼 문장이 없어요.");
   onProgress?.(70, "서버로 보내는 중");
   const res = await call(
     "/ingest",
@@ -487,7 +515,10 @@ export async function sendShift(
   if (!res.ok) throw new Error(await serverError(res, "근무 보내기"));
   // 보낸 것을 적어 둔다. 이게 없으면 화면이 매번 처음처럼 보여서, 같은 근무를
   // 몇 번씩 보내거나 아직 안 보낸 근무를 보냈다고 여기게 된다.
-  await setSetting(sentKey(shiftId), Math.floor(Date.now() / 1000));
+  await setSetting(sentKey(shiftId), {
+    at: Math.floor(Date.now() / 1000),
+    sentences: segments.length,
+  } satisfies SentMark);
   onProgress?.(100, "보냈어요");
   return { sentences: out.length, redacted };
 }
@@ -512,7 +543,7 @@ export async function pullFromServer(): Promise<PullResult> {
     reports: { shiftId: string; markdown: string }[];
     terms: { entry: string; meaning: string; note?: string | null }[];
     /** AI 가 정한 것 중 앱의 자료를 바꾸는 지시 — 화자 이름표와 확정된 교정. */
-    actions: { shiftId: string; kind: string; payload: unknown }[];
+    actions: { shiftId: string; kind: string; payload: unknown; writtenAt?: number }[];
   }>(res);
 
   const reports = body.reports ?? [];
@@ -550,7 +581,7 @@ export async function pullFromServer(): Promise<PullResult> {
   // 하나가 막혀도 나머지는 넣는다 — 그리고 못 넣은 것은 '가져갔다'고 알리지 않아
   // 다음 번에 다시 온다.
   const actions = body.actions ?? [];
-  const done: { shiftId: string; kind: string }[] = [];
+  const done: { shiftId: string; kind: string; writtenAt?: number }[] = [];
   let roles = 0;
   let fixes = 0;
   let taeum = 0;
@@ -570,7 +601,8 @@ export async function pullFromServer(): Promise<PullResult> {
         // 모르는 갈래는 건드리지 않고 그대로 둔다 (서버가 앞서 나갔을 때).
         continue;
       }
-      done.push({ shiftId: a.shiftId, kind: a.kind });
+      // writtenAt 을 그대로 돌려준다 — 받는 사이에 AI 가 고쳐 쓴 판을 덮지 않게.
+      done.push({ shiftId: a.shiftId, kind: a.kind, writtenAt: a.writtenAt });
     } catch (e) {
       void logDebug(`${a.kind} 반영 실패 ${a.shiftId}: ${e instanceof Error ? e.message : ""}`);
     }

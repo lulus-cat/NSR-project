@@ -6,6 +6,7 @@
  */
 
 import * as SQLite from "expo-sqlite";
+import { rewriteOnce } from "@nsr/core";
 import type {
   Card,
   DutyEntry,
@@ -550,7 +551,7 @@ export async function saveSegments(
 export async function shiftsWithSegments(): Promise<string[]> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ shift_id: string }>(
-    "SELECT DISTINCT shift_id FROM segments ORDER BY shift_id",
+    "SELECT DISTINCT shift_id FROM segments WHERE shift_id IS NOT NULL ORDER BY shift_id",
   );
   return rows.map((r) => r.shift_id);
 }
@@ -739,8 +740,18 @@ export interface AiCorrection {
  * edits 에 한 줄을 남긴다 — 나중에 하나씩 되돌릴 수 있어야 하기 때문이다
  * (CLAUDE.md 절대 규칙 1).
  *
- * 낱말 단위로만 바꾼다. 문장을 통째로 갈아 끼우면 무엇이 바뀌었는지 알 수 없고,
- * 화자가 실제로 한 말까지 같이 사라진다.
+ * 왼쪽에서 오른쪽으로 **한 번만** 훑는다
+ * ------------------------------------
+ * 낱말마다 따로 훑으면 앞 교정의 결과가 뒤 교정에 다시 걸린다.
+ * `[포리→폴리, 폴리→유치도뇨관]` 이 "포리" 를 "유치도뇨관" 으로 만든다 — 아무도
+ * 그렇게 시키지 않았다. 한 번만 훑으면 이미 바꾼 자리는 다시 안 본다.
+ *
+ * 두 번 받아도 같은 결과다
+ * ----------------------
+ * 서버는 같은 지시를 **일부러 다시 준다** (AI 가 고쳐 쓰면 pulled_at 이 지워진다).
+ * 그런데 `폴리 → 폴리 카테터` 처럼 바꿀 말이 결과 안에 들어 있으면, 다시 적용할 때
+ * 또 걸려서 "폴리 카테터 카테터" 가 된다. 그래서 이미 남긴 교정 기록이 있으면
+ * 그 낱말은 건너뛴다.
  */
 export async function applyCorrections(
   shiftId: string,
@@ -753,26 +764,50 @@ export async function applyCorrections(
     "SELECT id, text FROM segments WHERE shift_id = ?",
     [shiftId],
   );
+  // 이 근무에 이미 넣은 AI 교정. 같은 낱말 짝은 두 번 넣지 않는다.
+  const already = new Set(
+    (
+      await db.getAllAsync<{ segment_id: string; from_text: string; to_text: string }>(
+        `SELECT e.segment_id, e.from_text, e.to_text FROM edits e
+         JOIN segments s ON s.id = e.segment_id
+         WHERE s.shift_id = ? AND e.id LIKE '%#ai:%'`,
+        [shiftId],
+      )
+    ).map((e) => `${e.segment_id}\u0000${e.from_text}\u0000${e.to_text}`),
+  );
+
   let changed = 0;
   await db.withExclusiveTransactionAsync(async (tx) => {
     for (const row of rows) {
-      let text = row.text;
-      for (const c of clean) {
-        let at = text.indexOf(c.from);
-        while (at >= 0) {
-          await tx.runAsync(
-            `INSERT OR REPLACE INTO edits
-               (id, segment_id, start_pos, end_pos, from_text, to_text, reason, entry_id, confidence, accepted)
-             VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, 1)`,
-            [`${row.id}#ai${changed}`, row.id, at, at + c.from.length, c.from, c.to, c.reason ?? "misheard"],
-          );
-          text = text.slice(0, at) + c.to + text.slice(at + c.from.length);
-          changed += 1;
-          at = text.indexOf(c.from, at + c.to.length);
-        }
+      const todo = clean.filter(
+        (c) => !already.has(`${row.id}\u0000${c.from}\u0000${c.to}`),
+      );
+      if (todo.length === 0) continue;
+
+      // 글자를 고치는 규칙은 core 에 있다 (rewriteOnce). 여기서 또 쓰면 두 벌이
+      // 되고, 두 벌은 반드시 어긋난다 — 시험이 있는 쪽만 맞고 앱은 틀린다.
+      const { text: out, hits } = rewriteOnce(row.text, todo);
+      for (const [n, h] of hits.entries()) {
+        await tx.runAsync(
+          `INSERT OR REPLACE INTO edits
+             (id, segment_id, start_pos, end_pos, from_text, to_text, reason, entry_id, confidence, accepted)
+           VALUES (?, ?, ?, ?, ?, ?, ?, NULL, 1, 1)`,
+          [
+            // 자리가 아니라 내용으로 이름을 짓는다. 자리로 지으면 다음 교정이
+            // 앞 기록을 덮어써서 되돌릴 근거가 사라진다.
+            `${row.id}#ai:${n}:${h.from}`,
+            row.id,
+            h.at,
+            h.at + h.from.length,
+            h.from,
+            h.to,
+            h.reason,
+          ],
+        );
+        changed += 1;
       }
-      if (text !== row.text) {
-        await tx.runAsync("UPDATE segments SET text = ? WHERE id = ?", [text, row.id]);
+      if (out !== row.text) {
+        await tx.runAsync("UPDATE segments SET text = ? WHERE id = ?", [out, row.id]);
       }
     }
   });
@@ -900,7 +935,7 @@ export async function saveCards(cards: Card[], now: number): Promise<number> {
       const result = await db.runAsync(
         `INSERT INTO cards (id, kind, front, back, entry_id, shift_id, segment_id, context, source_ids, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO NOTHING`,
+         ON CONFLICT(id) DO UPDATE SET back = excluded.back`,
         [
           c.id,
           c.kind,
@@ -1062,8 +1097,16 @@ export async function listTaeumScores(limit = 60): Promise<
     let measured = true;
     try {
       const p = JSON.parse(r.payload) as TaeumScore;
-      // 옛 기록에는 labeledRatio 가 없다. 그때는 잰 것으로 본다.
-      measured = p.source === "ai" || (p.signals?.labeledRatio ?? 1) > 0;
+      // 옛 기록에는 labeledRatio 가 없다. 그렇다고 '쟀다' 로 보면, 이 고침이
+      // 노린 바로 그 0점짜리 옛 근무들이 그대로 저체온으로 그려진다.
+      // 옛 기록도 signals 는 갖고 있으니 그걸로 가른다 — 화자 이름표가 붙어
+      // 있었으면 선배 발화 비율이나 잡힌 사건이 0 일 수 없다.
+      const sig = p.signals;
+      measured =
+        p.source === "ai" ||
+        (sig?.labeledRatio ?? -1) > 0 ||
+        (sig?.labeledRatio === undefined &&
+          ((sig?.seniorSpeechRatio ?? 0) > 0 || (sig?.totalEvents ?? 0) > 0));
     } catch {
       // 읽을 수 없으면 건드리지 않는다.
     }

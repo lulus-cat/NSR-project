@@ -453,6 +453,30 @@ def _client(app):
     return TestClient(app, base_url="https://nsr.example.com")
 
 
+def test_폰과_서버가_같은_잣대인가():
+    """
+    같은 목록을 폰 시험(packages/core/test/deidentify.test.ts)도 읽는다.
+
+    서버가 더 촘촘하면 폰이 보낸 것이 422 로 되돌아오는데, 앱에는 손으로 다시
+    보내는 버튼이 없어서 그 근무는 영영 못 올린다. 폰이 더 촘촘하면 2차 검문소가
+    장식이 된다. 어느 쪽으로든 어긋나면 안 된다.
+    """
+    import json
+    import pathlib
+
+    from nsr_server.screen import screen_text
+
+    here = pathlib.Path(__file__).resolve().parents[2]
+    corpus = json.loads((here / "packages/core/test/pii-corpus.json").read_text("utf-8"))
+    for line in corpus["가려야 하는 것"]:
+        assert screen_text(line), line
+    for line in corpus["그대로 지나가야 하는 것"]:
+        assert not screen_text(line), line
+    # 폰이 더 촘촘한 쪽은 서버가 몰라도 된다 — 이미 가려져서 올라온다.
+    for line in corpus["폰만 가린다"]["문장"]:
+        assert not screen_text(line), line
+
+
 def test_한국어_문장에서도_2차_검문소가_잡는다():
     """`\\b` 는 파이썬에서 한글을 낱말로 봐서, 조사가 붙은 번호가 다 새어 나갔다."""
     from nsr_server.screen import screen_text

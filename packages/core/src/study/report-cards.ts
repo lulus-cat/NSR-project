@@ -15,6 +15,13 @@ const Q = /^\s*(?:[-*]\s*)?Q\s*[:.]\s*(.+)$/i;
 const A = /^\s*(?:[-*]\s*)?A\s*[:.]\s*(.+)$/i;
 const HEADING = /^#{1,6}\s/;
 
+/** 앞면 글에서 짧고 안정된 이름을 만든다 (djb2). 같은 물음이면 같은 이름이다. */
+function keyOf(text: string): string {
+  let h = 5381;
+  for (let i = 0; i < text.length; i++) h = ((h << 5) + h + text.charCodeAt(i)) >>> 0;
+  return h.toString(36);
+}
+
 /** `## 카드` 절만 잘라낸다. 다른 절의 Q/A 를 카드로 만들지 않는다. */
 function cardSection(markdown: string): string[] {
   const lines = markdown.split(/\r?\n/);
@@ -43,8 +50,10 @@ export function cardsFromReport(
     const b = back.join(" ").trim();
     if (front && b) {
       cards.push({
-        // 근무와 차례로 id 를 만든다. 같은 보고서를 두 번 받아도 한 장이다.
-        id: `rep-${shiftId}-${cards.length + 1}`,
+        // 차례가 아니라 **앞면 글**로 id 를 짓는다. 차례로 지으면 보고서를 고쳐
+        // 다시 받았을 때 물음이 하나 끼어드는 것만으로 그 뒤가 통째로 밀려서,
+        // 옛 물음에 새 답이 붙고 마지막 장은 중복으로 하나 더 생긴다.
+        id: `rep-${shiftId}-${keyOf(front)}`,
         kind: "formal",
         front: front.trim(),
         back: b,

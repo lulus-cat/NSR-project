@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -136,10 +136,16 @@ export default function Study() {
     return decks.find(([d]) => d === deck)?.[1] ?? [];
   }, [cards, deck, decks, dueIds]);
 
-  // 묶음이 바뀌면 처음부터. 같은 묶음이면 돌던 것을 이어 간다.
+  // 묶음이 바뀌면 처음부터. 길이가 아니라 **내용**으로 본다 — 오늘 볼 카드는 화면에
+  // 들어올 때마다 다시 고르는데, 한 장이 들어오고 한 장이 빠지면 길이는 그대로다.
+  // 그러면 없는 카드 번호를 든 채로 "이 묶음에는 카드가 없어요" 가 뜬다.
+  const deckKey = deckIds.join(",");
   useEffect(() => {
+    graded.current = new Set();
     setDrill(deckIds.length > 0 ? startDrill(deckIds) : null);
-  }, [deck, deckIds.length]);
+    // deckIds 는 deckKey 가 같으면 내용도 같다.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckKey]);
 
   const currentId = drill?.queue[0];
   const current = currentId ? cardById.get(currentId) : undefined;
@@ -151,17 +157,41 @@ export default function Study() {
    * 앉은 자리에서 다 외웠다고 카드가 영영 사라지면 안 되고, 반대로 며칠 뒤 날짜만
    * 잡고 지금 안 보여 주면 지금 못 외운다.
    */
+  /**
+   * 한 장에 답한다.
+   *
+   * **간격 반복 점수는 한 묶음에서 카드마다 한 번만** 쓴다. 되풀이할 때마다 쓰면
+   * srs.ts 가 지키는 규칙("실패한 카드는 다음 날 다시. 같은 세션 안에서 반복시키지
+   * 않는다")이 깨진다 — 한 자리에서 세 번 '더 볼래' 를 누르면 lapses 가 3이 되고
+   * easeFactor 가 바닥(1.3)까지 떨어져, 앉은 자리에서 '계속 틀리는 카드' 가 된다.
+   * 반대쪽도 마찬가지다. 몇 분 만에 다음 복습이 15일 뒤로 밀린다.
+   *
+   * 그래서 **처음 답한 것**만 점수로 친다. 그게 정직한 신호다. 그 뒤의 되풀이는
+   * 눈앞의 줄(drill)만 움직인다.
+   */
+  const graded = useRef<Set<string>>(new Set());
+  const answering = useRef(false);
   const answer = useCallback(
     async (known: boolean) => {
-      if (!currentId) return;
-      const now = Date.now();
-      const prev = stateById.get(currentId) ?? newCardState(currentId, now);
-      const next = review(prev, known ? GRADE_KNOWN : GRADE_AGAIN, now);
-      next.dueAt = shiftDueDateOffDuty(next.dueAt, (dayStart) => !nightDays.has(dayStart));
-      await saveReviewState(next);
-      setStates((prevStates) => [...prevStates.filter((st) => st.cardId !== currentId), next]);
-      setDrill((d) => (d ? answerDrill(d, known) : d));
-      if (known) setDone((v) => v + 1);
+      // 미는 손과 아래 버튼이 한 장에 두 번 답하지 못하게. 두 번 답하면 한 장이
+      // 통째로 건너뛰어진다 — 안 보이고 다시 안 나온다.
+      if (!currentId || answering.current) return;
+      answering.current = true;
+      try {
+        if (!graded.current.has(currentId)) {
+          graded.current.add(currentId);
+          const now = Date.now();
+          const prev = stateById.get(currentId) ?? newCardState(currentId, now);
+          const next = review(prev, known ? GRADE_KNOWN : GRADE_AGAIN, now);
+          next.dueAt = shiftDueDateOffDuty(next.dueAt, (dayStart) => !nightDays.has(dayStart));
+          await saveReviewState(next);
+          setStates((prevStates) => [...prevStates.filter((st) => st.cardId !== currentId), next]);
+        }
+        setDrill((d) => (d ? answerDrill(d, known) : d));
+        if (known) setDone((v) => v + 1);
+      } finally {
+        answering.current = false;
+      }
     },
     [currentId, nightDays, stateById],
   );
@@ -338,14 +368,34 @@ export default function Study() {
                     />
                   </View>
 
+                  {/* 회차와 카드 번호를 열쇠로 준다. 한 장짜리 묶음이나 앞뒤 글이 같은
+                      카드가 이어지면, 다시 그릴 이유가 없어서 카드가 화면 밖에 나간
+                      채로 남았다 — 진행 막대와 버튼만 있고 카드가 안 보였다. */}
                   <Flashcard
+                    key={`${drill.round}:${currentId}`}
                     front={current.front}
                     back={current.back}
                     hint={current.kind !== "cloze" ? (current.context ?? undefined) : undefined}
                     onAnswer={(known) => void answer(known)}
                   />
 
-                  <Small>누르면 뒤집혀요. 오른쪽으로 밀면 외웠어요.</Small>
+                  <Small>누르면 뒤집혀요.</Small>
+                  <Small>오른쪽으로 밀면 외웠어요.</Small>
+                  {sources.length > 0 ? (
+                    <Card>
+                      <Small>더 볼 자료</Small>
+                      {sources.map((src) =>
+                        src ? (
+                          <View key={src.id} style={{ gap: 2, paddingVertical: space.xs }}>
+                            <Body>{src.name}</Body>
+                            <Small>
+                              {src.publisher} · {src.url}
+                            </Small>
+                          </View>
+                        ) : null,
+                      )}
+                    </Card>
+                  ) : null}
                   {/* 미는 것만으로는 못 쓰는 손이 있다. 같은 일을 하는 버튼을 함께 둔다 */}
                   <View style={{ flexDirection: "row", gap: space.sm }}>
                     <View style={{ flex: 1 }}>
@@ -447,7 +497,7 @@ export default function Study() {
             {sets.length === 0 ? (
               <Card>
                 <Body muted>
-                  {search ? "찾는 카드가 없어요." : "카드가 없어요. 근무를 보내고 결과를 받으면 생겨요."}
+                  {search ? "찾는 카드가 없어요." : "카드가 없어요. 근무를 보내면 저절로 생겨요."}
                 </Body>
               </Card>
             ) : (
@@ -598,7 +648,7 @@ export default function Study() {
         {mode === "reports" ? (
           <Small>
             
-  클로드가 쓴 보고서는 설정에서 '결과 받기' 로 가져와요.
+  보고서는 앱을 열 때마다 저절로 들어와요.
 </Small>
         ) : null}
       </ScrollView>

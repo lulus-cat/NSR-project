@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import {
   checkBeforeExport,
@@ -215,6 +216,38 @@ describe("이름 — 직함이 끼거나 호칭이 다를 때", () => {
   it("평범한 임상 문장은 숫자가 있어도 안 건드린다", () => {
     for (const line of ["혈압 120 80 이에요", "산소 2L 넣었어요", "8시간 근무했어요"]) {
       expect(deidentify(line, { disable: [] }).redactions.length, line).toBe(0);
+    }
+  });
+});
+
+describe("폰과 서버가 같은 잣대인가", () => {
+  // 같은 목록을 서버 시험(server/tests/test_server.py)도 읽는다. 한쪽만 고치면
+  // 그쪽 시험이 깨진다 — 어긋난 채로 배포되는 것이 이 프로젝트에서 제일 나쁜 일이다.
+  const corpus = JSON.parse(
+    readFileSync(new URL("./pii-corpus.json", import.meta.url), "utf-8"),
+  ) as {
+    "가려야 하는 것": string[];
+    "그대로 지나가야 하는 것": string[];
+    "폰만 가린다": { 문장: string[] };
+  };
+
+  it("가려야 하는 것을 다 가린다", () => {
+    for (const line of corpus["가려야 하는 것"]) {
+      expect(deidentify(line, { disable: [] }).redactions.length, line).toBeGreaterThan(0);
+    }
+  });
+
+  it("평범한 임상 문장은 안 건드린다", () => {
+    for (const line of corpus["그대로 지나가야 하는 것"]) {
+      expect(deidentify(line, { disable: [] }).redactions.length, line).toBe(0);
+    }
+  });
+
+  it("폰이 더 촘촘한 것은 그대로 둔다", () => {
+    // 서버에 없는 규칙(날짜)이라 폰만 가린다. 이 방향은 안전하다 —
+    // 서버가 되돌릴 일이 없다.
+    for (const line of corpus["폰만 가린다"].문장) {
+      expect(deidentify(line, { disable: [] }).redactions.length, line).toBeGreaterThan(0);
     }
   });
 });

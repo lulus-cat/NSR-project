@@ -38,6 +38,8 @@ const THRESHOLD = 110;
 /** 느리게 밀어도 이 속도를 넘기면 넘어간 것으로 본다 (툭 치고 놓는 손). */
 const FLING = 700;
 const OFF = Dimensions.get("window").width * 1.3;
+/** 움직임 줄이기에서 카드가 물러나는 거리. 자리를 옮기지 않고 살짝만 민다. */
+const CALM_OFF = 24;
 
 /** 화면 안에서 모양이 바뀌는 움직임 — 강한 ease-in-out. */
 const MORPH = Easing.bezier(0.77, 0, 0.175, 1);
@@ -65,6 +67,14 @@ export function Flashcard({
   }, []);
 
   const x = useSharedValue(0);
+  /**
+   * 나가는 중인가.
+   *
+   * reanimated 는 애니메이션이 끝나기 전에 값을 건드리면 콜백을 `finished=false`
+   * 로 부른다(valueSetter.ts). 그걸 안 보면 한 번 민 카드가 두 번 답해지고, 그
+   * 사이 한 장이 통째로 건너뛰어진다 — 안 보이고 다시 안 나온다.
+   */
+  const busy = useSharedValue(false);
   /** 0 앞면 · 1 뒷면. 그 사이 값이 도는 중이다. */
   const face = useSharedValue(0);
   /** 다음 장이 뒤에서 올라오는 값. 1 이면 제자리. */
@@ -84,6 +94,7 @@ export function Flashcard({
     rise.value = withSpring(1, { damping: 18, stiffness: 180 });
   }, [front, back, calm, x, face, rise]);
 
+  /** 손이 아닌 길(접근성 동작)로 뒤집을 때. */
   const flip = () => {
     const to = flipped ? 0 : 1;
     setFlipped(!flipped);
@@ -92,15 +103,13 @@ export function Flashcard({
 
   const leave = (known: boolean) => {
     "worklet";
-    if (calmRef.value) {
-      // 움직임을 줄인 사람에게는 자리 이동 없이 흐려지게만.
-      x.value = withTiming(known ? 24 : -24, { duration: 160, easing: LEAVE }, () => {
-        runOnJS(onAnswer)(known);
-      });
-      return;
-    }
-    x.value = withTiming(known ? OFF : -OFF, { duration: 180, easing: LEAVE }, () => {
-      runOnJS(onAnswer)(known);
+    if (busy.value) return;
+    busy.value = true;
+    // 움직임을 줄인 사람에게는 조금만 밀고 흐려지게 한다.
+    const to = calmRef.value ? (known ? CALM_OFF : -CALM_OFF) : known ? OFF : -OFF;
+    x.value = withTiming(to, { duration: calmRef.value ? 160 : 180, easing: LEAVE }, (finished) => {
+      if (finished) runOnJS(onAnswer)(known);
+      else busy.value = false;
     });
   };
 
@@ -109,12 +118,18 @@ export function Flashcard({
     .activeOffsetX([-14, 14])
     .failOffsetY([-18, 18])
     .onChange((e) => {
+      if (busy.value) return;
       x.value += e.changeX;
     })
-    .onEnd((e) => {
-      const far = Math.abs(x.value) > THRESHOLD;
-      const fast = Math.abs(e.velocityX) > FLING;
-      if (far || fast) {
+    .onEnd((e, success) => {
+      if (busy.value) return;
+      // 앱이 뒤로 가거나 다른 손이 끼어들면 success 가 거짓으로 온다. 그때 밀린
+      // 자리만 보고 답으로 치면, 사람이 주지 않은 점수가 기록된다.
+      if (!success) {
+        x.value = withSpring(0, { damping: 20, stiffness: 220 });
+        return;
+      }
+      if (Math.abs(x.value) > THRESHOLD || Math.abs(e.velocityX) > FLING) {
         leave(x.value > 0);
         return;
       }
@@ -122,12 +137,24 @@ export function Flashcard({
       x.value = withSpring(0, { damping: 20, stiffness: 220, velocity: e.velocityX });
     });
 
-  const tap = Gesture.Tap().maxDistance(10).onEnd(() => runOnJS(flip)());
+  const tap = Gesture.Tap()
+    .maxDistance(10)
+    .onEnd(() => {
+      if (busy.value) return;
+      // 뒤집힌 상태를 공유값에서 읽는다. React 상태로 읽으면 빠르게 두 번 눌렀을 때
+      // 둘 다 같은 값을 보고 같은 곳으로 돌려서 두 번째 누름이 삼켜진다.
+      const to = face.value < 0.5 ? 1 : 0;
+      face.value = withTiming(to, { duration: calmRef.value ? 140 : 200, easing: MORPH });
+      runOnJS(setFlipped)(to === 1);
+    });
 
   const card = useAnimatedStyle(() => {
-    const away = Math.min(Math.abs(x.value) / OFF, 1);
+    // 흐려지는 정도는 '얼마나 갔나' 로 잰다. 움직임 줄이기는 24px 만 가므로
+    // 같은 잣대(OFF)로 나누면 13% 밖에 안 흐려져서 나간 것이 안 보인다.
+    const span = calmRef.value ? CALM_OFF : OFF;
+    const away = Math.min(Math.abs(x.value) / span, 1);
     return {
-      opacity: calmRef.value ? 1 - away * 3 : 1 - away * 0.4,
+      opacity: calmRef.value ? 1 - away * 0.9 : 1 - away * 0.4,
       transform: [
         { translateX: calmRef.value ? 0 : x.value },
         {
@@ -141,8 +168,9 @@ export function Flashcard({
     };
   });
 
-  // 두 면을 겹쳐 두고 뒷면만 미리 180도 돌려 둔다. 도는 동안 뒷면이 비쳐 보이지 않게
-  // backfaceVisibility 를 끈다. 움직임 줄이기에서는 돌지 않고 겹쳐 넘어간다.
+  // 두 면을 겹쳐 두고 뒷면만 미리 180도 돌려 둔다. 절반을 넘는 순간 보이는 면을
+  // 바꿔서 뒷면이 뒤집힌 채로 비치지 않게 한다.
+  // 움직임 줄이기에서는 돌지 않고 겹쳐 넘어간다.
   const frontFace = useAnimatedStyle(() =>
     calmRef.value
       ? { opacity: 1 - face.value }
@@ -187,15 +215,16 @@ export function Flashcard({
       <Animated.View
         accessibilityRole="button"
         accessibilityLabel={flipped ? `뒷면. ${back}` : `앞면. ${front}`}
-        accessibilityHint="누르면 뒤집혀요. 오른쪽으로 밀면 외웠다, 왼쪽으로 밀면 더 볼래예요."
+        accessibilityHint="누르면 뒤집혀요. 오른쪽으로 밀면 외웠어요, 왼쪽으로 밀면 더 볼래요."
         accessibilityActions={[
-          { name: "magicTap", label: "뒤집기" },
-          { name: "increment", label: "외웠어요" },
-          { name: "decrement", label: "더 볼래요" },
+          { name: "뒤집기", label: "뒤집기" },
+          { name: "외웠어요", label: "외웠어요" },
+          { name: "더 볼래요", label: "더 볼래요" },
         ]}
         onAccessibilityAction={(e) => {
-          if (e.nativeEvent.actionName === "increment") onAnswer(true);
-          else if (e.nativeEvent.actionName === "decrement") onAnswer(false);
+          const what = e.nativeEvent.actionName;
+          if (what === "외웠어요") onAnswer(true);
+          else if (what === "더 볼래요") onAnswer(false);
           else flip();
         }}
         style={[{ minHeight: 260 }, card]}

@@ -31,6 +31,8 @@ import {
   getServerUrl,
   linkDevice,
   pollLink,
+  getAutoSend,
+  setAutoSend,
   syncWithServer,
   recoverDevice,
   serverState,
@@ -294,10 +296,13 @@ export default function Settings() {
   const urlDirty = useRef(false);
   // 이어진 기기 목록과 복구 번호. 이어져 있을 때만 서버가 준다.
   const [srvState, setSrvState] = useState<ServerState | null>(null);
+  /** 근무를 저절로 올릴까. 전사본이 기기 밖으로 나가는 일이라 끄는 길이 있어야 한다. */
+  const [autoSend, setAuto] = useState(true);
   const refreshServer = useCallback(async () => {
     if (!urlDirty.current) setSrvUrl(await getServerUrl());
     const linked = (await getDeviceToken()) !== null;
     setSrvHasToken(linked);
+    setAuto(await getAutoSend());
     if (!linked) {
       setSrvState(null);
       return;
@@ -643,8 +648,9 @@ export default function Settings() {
       {/* 분석 서버 — 근무를 보내고 AI 가 만든 결과를 받아온다 */}
       <Card>
         <GroupHead icon="cloud-outline" color="#7A5AC7" title="분석 서버" />
-        <Small>근무를 보내면 AI 가 읽고 보고서를 써 줘요.</Small>
+        <Small muted={false}>전사본이 이 서버로 나가요.</Small>
         <Small>이름 같은 민감한 말은 가리고 보내요.</Small>
+        <Small>보내면 AI 가 읽고 보고서를 써 줘요.</Small>
         <TextInput
           value={srvUrl}
           onChangeText={(v) => {
@@ -728,8 +734,16 @@ export default function Settings() {
         ) : null}
 
         {srvNote ? <Small muted={false}>{srvNote}</Small> : null}
-        <Small>보낸 뒤에는 클로드·GPT 에서 분석해요.</Small>
         <Small>결과는 앱을 열 때마다 저절로 들어와요.</Small>
+        <Toggle
+          label="저절로 보내기"
+          description="전사본이 생기면 이 서버로 올려요."
+          value={autoSend}
+          onChange={(v) => {
+            setAuto(v);
+            void setAutoSend(v);
+          }}
+        />
         <Divider />
 
         {/* 승인 번호 — AI 연결과 새 기기가 같은 칸을 쓴다. 서버가 알아서 가른다 */}
