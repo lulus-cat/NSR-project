@@ -45,8 +45,10 @@ import json
 import secrets
 import time
 from typing import Any
+from urllib.parse import quote
 
 from mcp.server.mcpserver import MCPServer
+from mcp.server.mcpserver.exceptions import ToolError
 from mcp.server.transport_security import TransportSecuritySettings
 from starlette.applications import Starlette
 from starlette.requests import Request
@@ -54,7 +56,7 @@ from starlette.responses import JSONResponse, PlainTextResponse
 from starlette.routing import Mount, Route
 
 from mcp.server.auth.settings import AuthSettings, ClientRegistrationOptions
-from pydantic import AnyHttpUrl
+from pydantic import AnyHttpUrl, BaseModel
 from starlette.responses import HTMLResponse
 
 from .config import Config
@@ -95,6 +97,36 @@ def only_digits(value: Any) -> str:
     대기표에도 안 맞아서, 맞게 누른 사람이 "번호가 틀렸다"를 보게 된다.
     """
     return "".join(ch for ch in str(value or "") if ch in "0123456789")
+
+
+
+# ── 챗지피티 커넥터 규격 ────────────────────────────────────
+#
+# 개발자 모드가 아닌 챗지피티는 `search` 와 `fetch` 두 도구가 **이 모양 그대로**
+# 있는 서버만 받는다. 반환형을 파이단틱으로 적어야 SDK 가 output schema 와
+# structuredContent 를 함께 내보낸다 — dict 로 두면 글자만 나가고 챗지피티가
+# 결과를 못 읽는다 (실제로 확인했다).
+#
+# 새로 여는 자료는 없다. 이미 도구로 열어 둔 것(근무 전사본·보고서·병동 사전)에
+# 이름표를 붙여 그 규격으로 내주는 것뿐이라 개인정보 경계는 그대로다.
+
+
+class SearchHit(BaseModel):
+    id: str
+    title: str
+    url: str
+
+
+class SearchResult(BaseModel):
+    results: list[SearchHit]
+
+
+class FetchResult(BaseModel):
+    id: str
+    title: str
+    text: str
+    url: str
+    metadata: dict[str, str]
 
 
 def transport_security(config: Config) -> TransportSecuritySettings:
@@ -141,6 +173,51 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     )
 
     # ── 대화 AI 가 쓰는 도구 ───────────────────────────────
+
+    # ── 챗지피티 커넥터가 찾는 두 도구 ─────────────────────
+    #
+    # 클로드는 아래 도구들을 이름으로 골라 쓰지만, 챗지피티는 개발자 모드가
+    # 아니면 search/fetch 가 없는 서버를 아예 안 받는다. 둘은 읽기 전용이고,
+    # 안쪽은 위 도구들과 같은 자료를 본다.
+
+    def doc_url(doc_id: str) -> str:
+        # 인용에 쓰이는 이름표다. 열어도 자료는 안 나온다(/doc 참조) —
+        # 주소만 보고 남이 남의 근무를 읽을 수는 없어야 한다.
+        # 사전 항목에는 빈칸도 빗금도 들어간다("b/p 체크"). 안 감싸면 주소가 깨진다.
+        return f"{base}/doc/{quote(doc_id, safe=':@')}"
+
+    @mcp.tool()
+    def search(query: str) -> SearchResult:
+        """
+        근무 전사본·보고서·병동 사전을 말 하나로 훑는다. 읽기 전용.
+
+        찾은 것마다 id 를 준다. 본문은 그 id 로 fetch 를 불러 읽는다.
+        """
+        hits = store.search_docs(query, 20)
+        return SearchResult(
+            results=[
+                SearchHit(id=h["id"], title=f"{h['title']} — {h['snippet']}", url=doc_url(h["id"]))
+                for h in hits
+            ]
+        )
+
+    @mcp.tool()
+    def fetch(id: str) -> FetchResult:
+        """search 가 준 id 로 본문을 읽는다. 읽기 전용."""
+        doc = store.fetch_doc(id)
+        if doc is None:
+            # ToolError 여야 한다. 다른 예외는 SDK 가 '터졌다' 로 보아 모델에게
+            # "Error executing tool fetch" 만 주고, 서버 로그에 트레이스백을
+            # 남긴다 — 그 안에 id 가 딸려 들어간다. 그래서 **id 를 말에 넣지
+            # 않는다.** 이 자리는 INFO 한 줄로만 남는다.
+            raise ToolError("그런 자료가 없습니다. search 로 id 를 먼저 찾으십시오.")
+        return FetchResult(
+            id=id,
+            title=doc["title"],
+            text=doc["text"],
+            url=doc_url(id),
+            metadata={"kind": doc["kind"]},
+        )
 
     @mcp.tool()
     def list_shifts(limit: int = 20) -> str:
@@ -752,11 +829,29 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
     # "로컬 서버구나" 판단해 DNS 리바인딩 보호를 자동으로 켠다. 그러면 허용
     # 목록이 127.0.0.1·localhost 뿐이라, nginx·caddy 가 넘긴 진짜 도메인
     # Host 를 421 Invalid Host header 로 거부한다 (실제로 겪은 사고다).
+    async def doc_label(request: Request) -> HTMLResponse:
+        """
+        인용 이름표. **자료를 주지 않는다.**
+
+        챗지피티는 search/fetch 결과마다 url 을 요구하고 그걸 인용에 건다.
+        여기서 본문을 내주면 주소만 아는 사람이 남의 근무를 읽게 된다 —
+        커넥터는 로그인을 거치지만 이 주소는 안 거친다. 그래서 이름만 되비춘다.
+        """
+        return HTMLResponse(
+            "<!doctype html><meta charset=utf-8>"
+            "<title>NSR 기록</title>"
+            "<p style='font:16px system-ui;padding:2rem;line-height:1.6'>"
+            "이 주소는 인용에 쓰는 이름표입니다.<br>"
+            "내용은 이어 둔 AI 커넥터에서만 읽을 수 있습니다.</p>",
+            status_code=404,
+        )
+
     mcp_app = mcp.streamable_http_app(transport_security=transport_security(config))
 
     app = Starlette(
         routes=[
             Route("/healthz", healthz),
+            Route("/doc/{rest:path}", doc_label, methods=["GET"]),
             Route("/ingest", ingest, methods=["POST"]),
             Route("/pull", pull, methods=["GET"]),
             Route("/pulled", pulled, methods=["POST"]),
@@ -784,7 +879,11 @@ def build_app(config: Config | None = None, store: Store | None = None) -> Starl
         "put_corrections": put_corrections,
         "set_taeum": set_taeum,
         "add_term": add_term,
+        "search": search,
+        "fetch": fetch,
     }
+    # 규격 시험이 SDK 가 실제로 내보내는 모양을 본다 (structuredContent·output schema).
+    app.state.mcp = mcp
     return app
 
 

@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import contextlib
+import itertools
 import json
 import os
 import sqlite3
@@ -119,6 +120,33 @@ CREATE TABLE IF NOT EXISTS terms (
 );
 """
 
+
+
+def _clock(sec: float) -> str:
+    """[83:20] 은 시:분으로 읽힌다. 한 시간을 넘으면 시를 앞에 붙인다."""
+    n = int(sec)
+    h, m, r = n // 3600, (n % 3600) // 60, n % 60
+    return f"{h}:{m:02d}:{r:02d}" if h else f"{m:02d}:{r:02d}"
+
+
+def _like(term: str) -> str:
+    """LIKE 에 넣을 말. `%`·`_` 를 글자 그대로 만든다.
+
+    안 막으면 '%' 한 글자가 모든 줄에 걸리고, "95%" 같은 진짜 검색어도 엉뚱한
+    줄을 문다. 쓰는 쪽은 반드시 ESCAPE '\\' 를 함께 적는다.
+    """
+    out = term.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    return f"%{out}%"
+
+
+def _snippet(text: str, needle: str, span: int = 90) -> str:
+    """찾은 말 둘레만 잘라 준다. 보고서 전체를 목록에 쏟지 않기."""
+    at = text.lower().find(needle.lower())
+    if at < 0:
+        return text[:span].replace("\n", " ").strip()
+    start = max(0, at - span // 2)
+    out = text[start : start + span].replace("\n", " ").strip()
+    return ("…" if start > 0 else "") + out + ("…" if start + span < len(text) else "")
 
 def _num(value: Any) -> float:
     """
@@ -368,13 +396,127 @@ class Store:
             )
 
     def search_terms(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
-        like = f"%{query.strip()}%"
+        like = _like(query.strip())
         rows = self.db.execute(
             """SELECT entry, meaning, note FROM terms
-                WHERE entry LIKE ? OR meaning LIKE ? ORDER BY entry LIMIT ?""",
+                WHERE entry LIKE ? ESCAPE '\\' OR meaning LIKE ? ESCAPE '\\'
+                ORDER BY entry LIMIT ?""",
             (like, like, limit),
         ).fetchall()
         return [{"entry": r["entry"], "meaning": r["meaning"], "note": r["note"]} for r in rows]
+
+    # ── GPT 커넥터가 쓰는 search / fetch 의 밑바닥 ───────────────
+    #
+    # 챗지피티는 개발자 모드가 아니면 `search` 와 `fetch` 두 도구가 없는 서버를
+    # 아예 안 받는다. 새 자료를 여는 게 아니라 **이미 열어 둔 것**(근무 전사본·
+    # 보고서·병동 사전)에 이름표를 붙여 그 규격으로 내주는 것뿐이다.
+
+    def search_docs(self, query: str, limit: int = 20) -> list[dict[str, Any]]:
+        """말 하나로 근무·보고서·사전을 훑는다. id 는 fetch 가 되받는 이름표다."""
+        q = query.strip()
+        if not q:
+            return []
+        like = _like(q)
+
+        reports = [
+            {
+                "id": f"report:{r['shift_id']}",
+                "title": f"{r['shift_id']} 근무 보고서",
+                "snippet": _snippet(r["markdown"], q),
+            }
+            for r in self.db.execute(
+                """SELECT shift_id, markdown FROM reports WHERE markdown LIKE ? ESCAPE '\\'
+                    ORDER BY shift_id DESC LIMIT ?""",
+                (like, limit),
+            ).fetchall()
+        ]
+        shifts = [
+            {
+                "id": f"shift:{r['shift_id']}",
+                "title": f"{r['date']} {r['code']} 근무 전사본",
+                "snippet": f"문장 {r['sentences']}개",
+            }
+            for r in self.db.execute(
+                """SELECT s.shift_id, s.date, s.code, s.sentences FROM shifts s
+                    WHERE s.shift_id LIKE ? ESCAPE '\\' OR s.date LIKE ? ESCAPE '\\'
+                       OR EXISTS (SELECT 1 FROM sentences t
+                                   WHERE t.shift_id = s.shift_id
+                                     AND t.text LIKE ? ESCAPE '\\')
+                    ORDER BY s.date DESC, s.shift_id DESC LIMIT ?""",
+                (like, like, like, limit),
+            ).fetchall()
+        ]
+        terms = [
+            {"id": f"term:{t['entry']}", "title": f"병동 사전 — {t['entry']}", "snippet": t["meaning"]}
+            for t in self.search_terms(q, limit)
+        ]
+
+        # 한 갈래가 자리를 다 먹지 않게 돌아가며 담는다. 보고서만 스무 개
+        # 걸리면 정작 찾던 전사본이 한 줄도 안 나온다.
+        out: list[dict[str, Any]] = []
+        seen: set[str] = set()
+        for row in itertools.zip_longest(reports, shifts, terms):
+            for item in row:
+                if item and item["id"] not in seen and len(out) < limit:
+                    seen.add(item["id"])
+                    out.append(item)
+        return out
+
+    # 한 번에 주는 문장 수. 넘으면 `shift:<id>@<offset>` 으로 이어 읽는다 —
+    # fetch 밖에 못 쓰는 커넥터도 뒷부분에 닿을 수 있어야 한다.
+    FETCH_PAGE = 1000
+
+    def fetch_doc(self, doc_id: str) -> dict[str, Any] | None:
+        """search 가 준 이름표로 본문을 준다. 없는 이름표면 None."""
+        kind, _, rest = doc_id.partition(":")
+        if not rest:
+            return None
+
+        if kind == "report":
+            md = self.get_report(rest)
+            if md is None:
+                return None
+            return {"title": f"{rest} 근무 보고서", "text": md, "kind": "report"}
+
+        if kind == "shift":
+            shift_id, _, tail = rest.partition("@")
+            offset = int(tail) if tail.isdigit() else 0
+            page = self.get_sentences(shift_id, offset, self.FETCH_PAGE)
+            # 문장이 없는 근무도 근무다. None 을 주면 search 가 준 이름표를
+            # fetch 가 모른다고 하는 꼴이 된다.
+            if page["total"] == 0 and not self._shift_exists(shift_id):
+                return None
+            lines = [f"[{_clock(x['at'])}] {x['speaker'] or '화자 미상'}: {x['text']}" for x in page["sentences"]]
+            if not lines:
+                lines = ["(이 근무에는 문장이 없습니다.)"]
+            # 다 못 준 것을 숨기지 않는다 — 반쯤 읽고 다 읽은 줄 알면 안 된다.
+            if page["nextOffset"] is not None:
+                lines.append(
+                    f"(문장 {page['total']}개 가운데 {offset + 1}~{offset + page['returned']}번입니다. "
+                    f"이어 읽으려면 fetch 에 \"shift:{shift_id}@{page['nextOffset']}\" 를 주십시오.)"
+                )
+            return {"title": f"{shift_id} 근무 전사본", "text": "\n".join(lines), "kind": "shift"}
+
+        if kind == "term":
+            row = self.db.execute(
+                "SELECT entry, meaning, note FROM terms WHERE entry = ?", (rest,)
+            ).fetchone()
+            if not row:
+                return None
+            body = f"{row['entry']} — {row['meaning']}"
+            if row["note"]:
+                body += f"\n메모: {row['note']}"
+            return {"title": f"병동 사전 — {row['entry']}", "text": body, "kind": "term"}
+
+        return None
+
+    def _shift_exists(self, shift_id: str) -> bool:
+        return (
+            self.db.execute(
+                "SELECT 1 FROM shifts WHERE shift_id = ?", (shift_id,)
+            ).fetchone()
+            is not None
+        )
 
     def counts(self) -> dict[str, int]:
         one = lambda sql: self.db.execute(sql).fetchone()[0]  # noqa: E731

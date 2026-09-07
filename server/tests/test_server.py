@@ -982,3 +982,197 @@ def test_별표로_가린_주민번호도_잡는다():
 
 def test_가려진_문장은_여전히_통과한다():
     assert screen_text("[이름]님 폴리 확인했어요. [등록번호] 맞아요. [전화번호]") == {}
+
+
+# ── 챗지피티 커넥터 (search / fetch) ──────────────────────────
+
+
+def _seed_shift(app, shift_id="2026-09-06:N"):
+    """근무 하나와 보고서·사전을 넣어 둔다."""
+    store = app.state.store
+    store.put_shift(
+        {
+            "shiftId": shift_id,
+            "date": shift_id.split(":")[0],
+            "code": shift_id.split(":")[1],
+            "minutes": 480,
+            "sentences": [
+                # put_shift 가 읽는 열쇠는 "t" 다. "at" 로 넣으면 시각이 다 0 이 되어
+                # [시:분:초] 를 시험한 셈이 안 된다.
+                {"t": 65.0, "speaker": "spk_0", "text": "폴리 소변주머니 확인했습니다"},
+                {"t": 5000.0, "speaker": None, "text": "방광스캔 먼저 하세요"},
+            ],
+            "terms": [],
+        }
+    )
+    store.put_report(shift_id, "# 근무\n## 카드\nQ: 물음\nA: 답")
+    store.put_term("폴리", "유치도뇨관", None)
+    return store
+
+
+def test_챗지피티가_찾고_읽는다(tmp_path, monkeypatch):
+    app, _ = _app(tmp_path, monkeypatch)
+    _seed_shift(app)
+    tools = app.state.tools
+
+    hits = tools["search"]("폴리").results
+    ids = [h.id for h in hits]
+    assert "shift:2026-09-06:N" in ids  # 문장 안의 말로 근무가 걸린다
+    assert "term:폴리" in ids
+    assert all(h.url.startswith("https://nsr.example.com/doc/") for h in hits)
+    assert all(h.title for h in hits)
+
+    doc = tools["fetch"]("shift:2026-09-06:N")
+    assert "방광스캔" in doc.text and doc.metadata["kind"] == "shift"
+    assert doc.url and doc.id == "shift:2026-09-06:N"
+
+    assert "## 카드" in tools["fetch"]("report:2026-09-06:N").text
+    assert "유치도뇨관" in tools["fetch"]("term:폴리").text
+
+
+def test_없는_이름표는_빈_글이_아니라_오류다(tmp_path, monkeypatch):
+    """
+    빈 글을 주면 챗지피티가 '읽었는데 비었다' 로 받아들인다.
+
+    ToolError 여야 한다 — 다른 예외는 SDK 가 '터졌다' 로 보아 모델에게 아무
+    설명도 안 주고 서버 로그에 트레이스백(그 안에 id 가 있다)을 남긴다.
+    """
+    import pytest
+    from mcp.server.mcpserver.exceptions import ToolError
+
+    app, _ = _app(tmp_path, monkeypatch)
+    tools = app.state.tools
+    for bad in ["shift:없는근무", "term:환자실명", "이름표아님", "", "shift:"]:
+        with pytest.raises(ToolError) as e:
+            tools["fetch"](bad)
+        assert bad not in str(e.value) or not bad  # 로그에 id 를 흘리지 않는다
+
+
+def test_없는_이름표가_서버를_안_터뜨린다(tmp_path, monkeypatch):
+    """모델은 설명을 받고, 서버는 크래시로 안 센다."""
+    import anyio
+    from mcp.server.mcpserver.exceptions import UnexpectedToolError
+
+    app, _ = _app(tmp_path, monkeypatch)
+
+    async def go():
+        try:
+            res = await app.state.mcp.call_tool("fetch", {"id": "shift:없다"})
+        except UnexpectedToolError:  # pragma: no cover
+            raise AssertionError("크래시로 셌다 — ToolError 여야 한다")
+        except Exception as e:
+            assert "search 로 id 를 먼저" in str(e)
+            assert "없다" not in str(e)
+            return
+        assert res.is_error and "search 로 id 를 먼저" in res.content[0].text
+
+    anyio.run(go)
+
+
+def test_빈_말로_찾으면_전부를_쏟지_않는다(tmp_path, monkeypatch):
+    """LIKE '%%' 는 모든 줄에 걸린다. 빈 말은 아무것도 안 찾는 게 맞다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    _seed_shift(app)
+    assert app.state.tools["search"]("   ").results == []
+
+
+def test_챗지피티_규격대로_나간다(tmp_path, monkeypatch):
+    """
+    개발자 모드가 아닌 챗지피티는 structuredContent 를 읽는다.
+
+    반환형을 dict 로 두면 글자만 나가고 structuredContent 가 비어서, 챗지피티가
+    결과를 못 읽는다. 규격이 깨졌는지는 여기서만 잡힌다.
+    """
+    import anyio
+
+    app, _ = _app(tmp_path, monkeypatch)
+    _seed_shift(app)
+    mcp = app.state.mcp
+
+    async def go():
+        names = {t.name: t for t in await mcp.list_tools()}
+        assert "search" in names and "fetch" in names
+        for n in ("search", "fetch"):
+            assert names[n].output_schema, f"{n} 에 output schema 가 없다"
+
+        res = await mcp.call_tool("search", {"query": "폴리"})
+        assert res.structured_content and res.structured_content["results"]
+        first = res.structured_content["results"][0]
+        assert set(first) >= {"id", "title", "url"}
+        assert res.content and res.content[0].type == "text"
+
+        res = await mcp.call_tool("fetch", {"id": "report:2026-09-06:N"})
+        assert set(res.structured_content) >= {"id", "title", "text", "url"}
+
+    anyio.run(go)
+
+
+def test_인용_주소는_자료를_주지_않는다(tmp_path, monkeypatch):
+    """주소만 아는 사람이 남의 근무를 읽으면 안 된다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    _seed_shift(app)
+    r = _client(app).get("/doc/shift:2026-09-06:N")
+    assert r.status_code == 404
+    assert "방광스캔" not in r.text and "폴리" not in r.text
+
+
+def test_한_갈래가_자리를_다_먹지_않는다(tmp_path, monkeypatch):
+    """보고서만 스무 개 걸리면 정작 찾던 전사본이 한 줄도 안 나왔다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    store = _seed_shift(app)
+    for i in range(30):
+        sid = f"2026-08-{i + 1:02d}:D"
+        store.put_shift({"shiftId": sid, "date": sid[:10], "code": "D", "minutes": 480,
+                         "sentences": [], "terms": []})
+        store.put_report(sid, "폴리 이야기가 든 보고서")
+    kinds = {h.id.split(":")[0] for h in app.state.tools["search"]("폴리").results}
+    assert kinds == {"report", "shift", "term"}
+
+
+def test_검색어의_퍼센트는_글자다(tmp_path, monkeypatch):
+    """'%' 한 글자가 모든 줄에 걸리면 빈 말 막은 것이 헛일이 된다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    _seed_shift(app)
+    assert app.state.tools["search"]("%").results == []
+    assert app.state.tools["search"]("_").results == []
+
+
+def test_시각은_한_시간을_넘겨도_읽힌다(tmp_path, monkeypatch):
+    """[83:20] 은 시:분으로 읽힌다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    _seed_shift(app)
+    text = app.state.tools["fetch"]("shift:2026-09-06:N").text
+    assert "[01:05]" in text and "[1:23:20]" in text
+    assert "화자 미상" in text and "None" not in text
+
+
+def test_문장_없는_근무도_읽힌다(tmp_path, monkeypatch):
+    """search 가 준 이름표를 fetch 가 모른다고 하면 안 된다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    app.state.store.put_shift({"shiftId": "2026-07-01:D", "date": "2026-07-01",
+                               "code": "D", "minutes": 0, "sentences": [], "terms": []})
+    hit = [h for h in app.state.tools["search"]("2026-07-01").results if h.id.startswith("shift:")]
+    assert hit
+    assert "문장이 없습니다" in app.state.tools["fetch"](hit[0].id).text
+
+
+def test_긴_근무도_끝까지_닿는다(tmp_path, monkeypatch):
+    """fetch 밖에 못 쓰는 커넥터도 뒷부분을 읽을 수 있어야 한다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    store = app.state.store
+    n = store.FETCH_PAGE + 5
+    store.put_shift({"shiftId": "2026-06-01:D", "date": "2026-06-01", "code": "D", "minutes": 480,
+                     "sentences": [{"t": float(i), "speaker": "spk_0", "text": f"문장{i}"}
+                                   for i in range(n)], "terms": []})
+    first = app.state.tools["fetch"]("shift:2026-06-01:D").text
+    assert f"shift:2026-06-01:D@{store.FETCH_PAGE}" in first
+    tail = app.state.tools["fetch"](f"shift:2026-06-01:D@{store.FETCH_PAGE}").text
+    assert f"문장{n - 1}" in tail
+
+
+def test_인용_주소가_안_깨진다(tmp_path, monkeypatch):
+    """사전 항목에는 빈칸도 빗금도 들어간다."""
+    app, _ = _app(tmp_path, monkeypatch)
+    app.state.store.put_term("b/p 체크", "혈압 재기", None)
+    url = [h for h in app.state.tools["search"]("b/p").results if h.id.startswith("term:")][0].url
+    assert " " not in url and url.endswith("/doc/term:b%2Fp%20%EC%B2%B4%ED%81%AC")
