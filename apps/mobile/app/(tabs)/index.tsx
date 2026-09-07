@@ -518,7 +518,9 @@ export default function Home() {
               <>
                 <Badge text="아직 못 쟀어요" tone="warn" />
                 <Small muted={false}>누가 누구인지 정해야 잴 수 있어요.</Small>
-                <Small>AI 에게 화자를 정해 달라고 해 주세요.</Small>
+                {/* 보고서에 점수가 있는데 화면은 비어 있던 사고 — AI 가 글로만
+                    쓰고 set_taeum 을 안 부르면 여기까지 안 온다. 둘 다 짚는다. */}
+                <Small>AI 에게 화자와 근무 체온을 정해 달라고 하세요.</Small>
               </>
             ) : (
               <Small>근무를 분석하면 병동 온도를 보여드려요.</Small>
