@@ -18,7 +18,7 @@ import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
-import { DEFAULT_TEMPLATES, type ShiftCode } from "@nsr/core";
+import { DEFAULT_TEMPLATES, reportWithoutCards, type ShiftCode } from "@nsr/core";
 import { Badge, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
 import { Markdown } from "../../src/components/markdown";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
@@ -793,7 +793,10 @@ export default function ShiftDetail() {
           <Heading>근무 보고서</Heading>
           <Small>클로드·GPT 가 읽고 쓴 글이에요.</Small>
           <Divider />
-          <Markdown text={reportMd} />
+          {/* 카드 절은 빼고 그린다. 카드는 학습 탭이 따로 보여 준다 —
+              보고서 안에 Q/A 가 스무 줄씩 깔리면 정작 읽을 것이 밀린다.
+              글에는 그대로 남는다(카드가 폰에 들어오는 유일한 길이다). */}
+          <Markdown text={reportWithoutCards(reportMd)} />
           {confirmations.length > 0 ? (
             <>
               <Divider />

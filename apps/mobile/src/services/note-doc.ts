@@ -85,6 +85,17 @@ export function markdownToHtml(body: string): string {
       continue;
     }
 
+    const image = /^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)\s*$/.exec(line.trim());
+    if (image) {
+      closeList();
+      out.push(
+        `<figure><img src="${esc(image[2])}" alt="${esc(image[1])}"/>` +
+          (image[1] ? `<figcaption>${esc(image[1])}</figcaption>` : "") +
+          `</figure>`,
+      );
+      continue;
+    }
+
     // 표 — 화면과 같은 해석기(core parseTable)를 쓴다.
     if (/^\s*\|/.test(line)) {
       const start = i;
@@ -192,6 +203,9 @@ export function noteHtml(title: string, body: string): string {
   h3 { font-size: 12pt; margin: 8pt 0 2pt; line-height: 1.3; }
   h4 { font-size: 11pt; margin: 8pt 0 2pt; line-height: 1.3; }
   h5, h6 { font-size: 10pt; margin: 6pt 0 2pt; line-height: 1.3; color: #444; }
+  figure { margin: 6pt 0; page-break-inside: avoid; }
+  figure img { max-width: 100%; max-height: 3.2in; }
+  figcaption { font-size: 8.5pt; color: #555; margin-top: 2pt; }
   table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 9.5pt; }
   th, td { border: 0.5pt solid #999; padding: 3pt 5pt; vertical-align: top; }
   th { background: #F0EFEC; font-weight: 700; }

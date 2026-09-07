@@ -6,6 +6,7 @@
  */
 import { describe, expect, it } from "vitest";
 import { joinBlocks, parseTable, splitBlocks } from "../src/notes/blocks.js";
+import { reportWithoutCards } from "../src/study/report-cards.js";
 
 const 예시보고서 = [
   "# 2026-09-06 데이 근무",
@@ -116,5 +117,40 @@ describe("parseTable", () => {
 
   it("몸이 없어도 머리만으로 표다", () => {
     expect(parseTable("| a | b |\n| --- | --- |")?.rows).toEqual([]);
+  });
+});
+
+describe("reportWithoutCards", () => {
+  it("`## 카드` 절만 걷어낸다", () => {
+    const md = [
+      "# 근무",
+      "## 타임라인",
+      "본문",
+      "## 카드",
+      "Q: 물음",
+      "A: 답",
+      "## 복습",
+      "- 하나",
+    ].join("\n");
+    const out = reportWithoutCards(md);
+    expect(out).not.toContain("Q: 물음");
+    expect(out).not.toContain("## 카드");
+    expect(out).toContain("## 타임라인");
+    expect(out).toContain("## 복습");
+    expect(out).toContain("- 하나");
+  });
+
+  it("`## 사건 카드` 는 건드리지 않는다 — 카드 절이 아니다", () => {
+    const md = "## 사건 카드\n- 있었던 일\n";
+    expect(reportWithoutCards(md)).toContain("사건 카드");
+  });
+
+  it("카드 절이 맨 끝이어도 된다", () => {
+    expect(reportWithoutCards("## 복습\n- 하나\n## 카드\nQ: 물음\nA: 답")).not.toContain("Q:");
+  });
+
+  it("카드 절이 없으면 그대로 둔다", () => {
+    const md = "# 근무\n## 타임라인\n본문";
+    expect(reportWithoutCards(md)).toBe(md);
   });
 });

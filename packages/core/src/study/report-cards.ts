@@ -89,3 +89,20 @@ export function cardsFromReport(
   flush();
   return cards;
 }
+
+/**
+ * 보고서에서 `## 카드` 절을 걷어낸다 — 화면에 보여 줄 때 쓴다.
+ *
+ * 카드는 학습 탭이 따로 보여 준다. 보고서 안에 Q/A 가 스무 줄씩 깔리면 정작
+ * 읽을 것이 밀린다. 그렇다고 AI 더러 카드를 빼고 쓰라고 할 수는 없다 —
+ * 이 절이 카드가 폰에 들어오는 **유일한 길**이라 빼면 카드가 한 장도 안 생긴다.
+ * 그래서 글은 그대로 받고, 보여 줄 때만 이 절을 뺀다.
+ */
+export function reportWithoutCards(markdown: string): string {
+  const lines = markdown.split(/\r?\n/);
+  const start = lines.findIndex((l) => /^#{1,6}\s*카드\s*$/.test(l.trim()));
+  if (start < 0) return markdown;
+  const after = lines.slice(start + 1).findIndex((l) => HEADING.test(l));
+  const end = after < 0 ? lines.length : start + 1 + after;
+  return [...lines.slice(0, start), ...lines.slice(end)].join("\n").replace(/\n{3,}$/, "\n");
+}

@@ -9,8 +9,8 @@
  * 여기서 완성된 모양으로 그려진다. 그래서 `text` 는 노트 전체일 수도, 블록
  * 하나일 수도 있다.
  */
-import type { ReactNode } from "react";
-import { Pressable, ScrollView, Text, View } from "react-native";
+import { useState, type ReactNode } from "react";
+import { Image, Pressable, ScrollView, Text, View } from "react-native";
 import { parseTable, type ParsedTable } from "@nsr/core";
 import { radius, space, type, useTheme, type Theme } from "../theme";
 
@@ -200,6 +200,40 @@ function TableBlock({
   );
 }
 
+/** 그림 한 장. 비율은 받아 온 뒤에 정해진다 — 미리 고정하면 다 찌그러진다. */
+function ImageBlock({ alt, uri, t }: { alt: string; uri: string; t: Theme }) {
+  const [ratio, setRatio] = useState(16 / 9);
+  const [failed, setFailed] = useState(false);
+  if (failed) {
+    return (
+      <Text style={[type.small, { color: t.textMuted }]}>
+        {alt ? `그림을 못 받았어요 — ${alt}` : "그림을 못 받았어요."}
+      </Text>
+    );
+  }
+  return (
+    <View style={{ gap: space.xxs, marginVertical: space.xs }}>
+      <Image
+        source={{ uri }}
+        accessibilityLabel={alt || undefined}
+        onError={() => setFailed(true)}
+        onLoad={(e) => {
+          const { width, height } = e.nativeEvent.source;
+          if (width > 0 && height > 0) setRatio(width / height);
+        }}
+        resizeMode="contain"
+        style={{
+          width: "100%",
+          aspectRatio: ratio,
+          borderRadius: radius.md,
+          backgroundColor: t.surfaceAlt,
+        }}
+      />
+      {alt ? <Text style={[type.caption, { color: t.textMuted }]}>{alt}</Text> : null}
+    </View>
+  );
+}
+
 export function Markdown({
   text,
   handlers = {},
@@ -258,6 +292,14 @@ export function Markdown({
           {renderInline(heading[2], t, handlers, key)}
         </Text>,
       );
+      continue;
+    }
+
+    // 그림 — 약 사진처럼 글로는 안 되는 자리. 주소만 있고 그림이 안 뜨면
+    // 대체 글자가 남아서, 무엇이 빠졌는지는 알 수 있다.
+    const image = /^!\[([^\]]*)\]\((https?:\/\/[^\s)]+)\)\s*$/.exec(line.trim());
+    if (image) {
+      blocks.push(<ImageBlock key={key} alt={image[1]} uri={image[2]} t={t} />);
       continue;
     }
 
