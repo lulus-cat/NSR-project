@@ -8,6 +8,8 @@
  * 개인정보: 노트는 사용자가 직접 쓴 글이고 PDF 는 기기 안에서 만들어져
  * 공유 시트로만 나간다 — 서버 전송이 없다.
  */
+import { parseTable } from "@nsr/core";
+
 /** 종이 판형 — 사용자가 고른 기본값. 바꾸려면 여기서. */
 export const PAGE = {
   marginInch: 1.17,
@@ -75,12 +77,36 @@ export function markdownToHtml(body: string): string {
       continue;
     }
 
-    const heading = /^(#{1,3})\s+(.*)$/.exec(line);
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
     if (heading) {
       closeList();
       const level = heading[1].length;
       out.push(`<h${level}>${inline(heading[2])}</h${level}>`);
       continue;
+    }
+
+    // 표 — 화면과 같은 해석기(core parseTable)를 쓴다.
+    if (/^\s*\|/.test(line)) {
+      const start = i;
+      while (i + 1 < lines.length && /^\s*\|/.test(lines[i + 1])) i++;
+      const table = parseTable(lines.slice(start, i + 1).join("\n"));
+      if (table) {
+        closeList();
+        const head = table.header
+          .map((h, c) => `<th style="text-align:${table.align[c]}">${inline(h)}</th>`)
+          .join("");
+        const body = table.rows
+          .map(
+            (r) =>
+              `<tr>${r
+                .map((c, ci) => `<td style="text-align:${table.align[ci]}">${inline(c)}</td>`)
+                .join("")}</tr>`,
+          )
+          .join("");
+        out.push(`<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`);
+        continue;
+      }
+      i = start; // 표가 아니면 한 줄씩 글로.
     }
 
     if (/^\s*---+\s*$/.test(line)) {
@@ -164,6 +190,11 @@ export function noteHtml(title: string, body: string): string {
   h1 { font-size: 17pt; margin: 0 0 6pt; line-height: 1.3; }
   h2 { font-size: 14pt; margin: 10pt 0 3pt; line-height: 1.3; }
   h3 { font-size: 12pt; margin: 8pt 0 2pt; line-height: 1.3; }
+  h4 { font-size: 11pt; margin: 8pt 0 2pt; line-height: 1.3; }
+  h5, h6 { font-size: 10pt; margin: 6pt 0 2pt; line-height: 1.3; color: #444; }
+  table { border-collapse: collapse; width: 100%; margin: 6pt 0; font-size: 9.5pt; }
+  th, td { border: 0.5pt solid #999; padding: 3pt 5pt; vertical-align: top; }
+  th { background: #F0EFEC; font-weight: 700; }
   p { margin: 0 0 3pt; }
   ul, ol { margin: 0 0 3pt; padding-left: 16pt; }
   li { margin: 0 0 1pt; }
