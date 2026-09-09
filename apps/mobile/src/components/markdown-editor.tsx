@@ -12,6 +12,11 @@
  *
  * 블록마다 입력창이 따로면 그 제약이 사라진다 — 제목 블록은 입력창 하나가
  * 통째로 제목 크기다. 크기를 섞는 게 아니라서 커서가 안 어긋난다.
+ *
+ * 열린 블록 안에서도 마커는 흐리게, 그 안은 굵게·기울임으로 보인다. 엔터는
+ * 목록 머리를 잇고, 빈 항목에서 한 번 더 치면 끝낸다. 백스페이스는 빈 머리를
+ * 통째로 지운다. 탭은 두 칸 들여쓰기다. (Ctrl+B 같은 조합키는 RN 이 안드로이드에서
+ * 앱에 전해 주지 않아서 도구 줄이 그 자리다.)
  */
 import {
   forwardRef,
@@ -31,7 +36,7 @@ import {
   type TextInputSelectionChangeEventData,
 } from "react-native";
 import type { ReactNode } from "react";
-import { joinBlocks, splitBlocks, type Block } from "@nsr/core";
+import { continueLine, emptyListIndent, joinBlocks, splitBlocks, type Block } from "@nsr/core";
 import { Markdown, type MarkdownHandlers } from "./markdown";
 import { radius, space, type, useTheme, type Theme } from "../theme";
 
@@ -42,6 +47,8 @@ export interface MarkdownEditorHandle {
   toggleLinePrefix(prefix: string, group?: string[]): void;
   /** 커서 위치에 그대로 끼워 넣는다. */
   insert(snippet: string): void;
+  /** 커서가 걸친 줄을 두 칸 들여쓰거나(+1) 내어쓴다(-1). */
+  indent(delta: 1 | -1): void;
 }
 
 /** 줄 머리 후보 — toggleLinePrefix 의 기본 교체 대상. 긴 것부터 본다. */
@@ -75,41 +82,44 @@ const HEADING_SIZE = [
 const INLINE_RE =
   /(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`|\[\[[^\]\n]+\]\]|#[\p{L}\p{N}/_-]+)/gu;
 
-/** 열린 블록 안의 문법 — 마커까지 그대로 보이되 색·굵기만 입힌다(크기는 안 건드린다). */
+/**
+ * 열린 블록 안의 문법. 마커(`**`·`*`·`` ` ``·`[[`)는 **흐리게**, 그 안은 완성된
+ * 모양(굵게·기울임·색)으로. 마커를 지울 수는 없다 — 글자가 그대로 있어야 커서
+ * 자리가 맞는다. 대신 눈에 안 띄게 해서 고치는 중에도 문서처럼 읽히게 한다.
+ * (크기는 안 건드린다. 한 입력창 안에서 크기를 섞으면 안드로이드 커서가 어긋난다.)
+ */
 function inlineSpans(line: string, t: Theme, keyBase: string): ReactNode[] {
   const out: ReactNode[] = [];
   let last = 0;
   let m: RegExpExecArray | null;
   let i = 0;
   INLINE_RE.lastIndex = 0;
+  const faint = { color: t.textMuted, opacity: 0.55 } as const;
+  const wrap = (key: string, open: string, inner: string, close: string, style: object) => (
+    <Text key={key}>
+      <Text style={faint}>{open}</Text>
+      <Text style={style}>{inner}</Text>
+      <Text style={faint}>{close}</Text>
+    </Text>
+  );
   while ((m = INLINE_RE.exec(line)) !== null) {
     if (m.index > last) out.push(line.slice(last, m.index));
     const tok = m[0];
     const key = `${keyBase}:${i++}`;
     if (tok.startsWith("**")) {
-      out.push(
-        <Text key={key} style={{ fontWeight: "700" }}>
-          {tok}
-        </Text>,
-      );
+      out.push(wrap(key, "**", tok.slice(2, -2), "**", { fontWeight: "700" }));
     } else if (tok.startsWith("`")) {
-      out.push(
-        <Text key={key} style={{ color: t.warn }}>
-          {tok}
-        </Text>,
-      );
-    } else if (tok.startsWith("[[") || tok.startsWith("#")) {
+      out.push(wrap(key, "`", tok.slice(1, -1), "`", { color: t.warn, fontFamily: "monospace" }));
+    } else if (tok.startsWith("[[")) {
+      out.push(wrap(key, "[[", tok.slice(2, -2), "]]", { color: t.accent, fontWeight: "600" }));
+    } else if (tok.startsWith("#")) {
       out.push(
         <Text key={key} style={{ color: t.accent, fontWeight: "600" }}>
           {tok}
         </Text>,
       );
     } else {
-      out.push(
-        <Text key={key} style={{ fontStyle: "italic" }}>
-          {tok}
-        </Text>,
-      );
+      out.push(wrap(key, "*", tok.slice(1, -1), "*", { fontStyle: "italic" }));
     }
     last = m.index + tok.length;
   }
@@ -223,20 +233,65 @@ export const MarkdownEditor = forwardRef<
 
   /** 열린 블록의 글자를 바꾼다. 엔터가 들어오면 그 자리에서 블록을 가른다. */
   const changeBlock = useCallback(
-    (next: string) => {
+    (raw: string) => {
+      let next = raw;
       const bs = frozen.current;
       if (!bs || focus === null || !bs[focus]) return;
+      const prev = bs[focus].text;
       const kind = bs[focus].kind;
+      let snap: number | null = null;
+
+      // 하드웨어 키보드의 탭은 글자(\t)로 들어온다. 코드가 아니면 두 칸으로.
+      // 글자가 하나 늘어난 만큼 커서를 밀어야 두 칸 사이에 안 떨어진다.
+      if (kind !== "code" && raw.includes("\t")) {
+        const tabs = (raw.match(/\t/g) ?? []).length;
+        snap = raw.lastIndexOf("\t") + 1 + tabs;
+        next = raw.replace(/\t/g, "  ");
+      }
+
+      // 빈 목록 머리(`- `) 끝에서 지우면 머리째 지운다 — 한 글자씩 세 번 지우게
+      // 하지 않는다. onKeyPress 에서 하면 안 된다: 안드로이드는 키를 알린 **뒤에**
+      // 글자를 지우고 onChangeText 를 또 보내서, 여기서 고친 것을 도로 덮는다.
+      // 그래서 "마지막 한 글자가 빠진 빈 머리" 가 들어오면 그때 잡는다.
+      const indent = emptyListIndent(prev);
+      if (indent !== null && next === prev.slice(0, -1)) {
+        next = indent;
+        snap = indent.length;
+      }
+
       bs[focus] = { ...bs[focus], text: next };
       onChange(joinBlocks(bs));
+      if (snap !== null) {
+        selRef.current = { start: snap, end: snap };
+        setForcedSelection({ start: snap, end: snap });
+      }
 
       if (next.includes("\n") && !MULTILINE.includes(kind)) {
         const re = splitBlocks(next);
+        // 엔터로 새 줄이 생겼고 앞줄이 목록이면 머리를 이어 준다. 빈 항목에서
+        // 한 번 더 쳤으면 그 머리를 지워 목록을 끝낸다.
+        let cursor = 0;
+        const fresh = re[re.length - 1];
+        const before = re[re.length - 2];
+        let touched = false;
+        if (re.length >= 2 && fresh.text === "" && before) {
+          const c = continueLine(before.text);
+          if (c.endList) {
+            // 머리를 지우고 **그 줄에** 남는다. 새 빈 줄까지 두면 빈 줄이 둘이 된다.
+            re.splice(re.length - 2, 2, { kind: "blank", text: "" });
+            touched = true;
+          } else if (c.marker) {
+            re[re.length - 1] = { ...fresh, text: c.marker };
+            cursor = c.marker.length;
+            touched = true;
+          }
+        }
         frozen.current = [...bs.slice(0, focus), ...re, ...bs.slice(focus + 1)];
+        if (touched) onChange(joinBlocks(frozen.current));
         const at = focus + re.length - 1;
         lastFocus.current = at;
-        selRef.current = { start: 0, end: 0 };
-        setForcedSelection({ start: 0, end: 0 });
+        selRef.current = { start: cursor, end: cursor };
+        setForcedSelection({ start: cursor, end: cursor });
         setFocus(at);
       }
     },
@@ -318,23 +373,49 @@ export const MarkdownEditor = forwardRef<
           if (lineEnd < 0) lineEnd = text.length;
           const segment = text.slice(lineStart, lineEnd);
           const lines = segment.split("\n");
-          const allHave = lines.every((l) => l.startsWith(prefix));
+          // 들여쓴 줄(`  - 항목`)도 머리를 알아본다. 공백을 떼어 두고 나중에 붙인다.
+          const split = (l: string) => {
+            const ws = /^\s*/.exec(l)?.[0] ?? "";
+            return { ws, rest: l.slice(ws.length) };
+          };
+          const allHave = lines.every((l) => split(l).rest.startsWith(prefix));
           const changed = lines.map((l) => {
+            const { ws, rest } = split(l);
             // 다른 머리가 있으면 먼저 뗀다 — 목록 위에 제목을 겹쳐 쓰는 사고 방지.
-            let bare = l;
+            let bare = rest;
             for (const p of group) {
               if (bare.startsWith(p)) {
                 bare = bare.slice(p.length);
                 break;
               }
             }
-            return allHave ? bare : prefix + bare;
+            return ws + (allHave ? bare : prefix + bare);
           });
           const nextSegment = changed.join("\n");
           const delta = nextSegment.length - segment.length;
           return {
             text: text.slice(0, lineStart) + nextSegment + text.slice(lineEnd),
             sel: { start: Math.max(lineStart, start + delta), end: end + delta },
+          };
+        });
+      },
+      indent(delta: 1 | -1) {
+        edit((text, { start, end }) => {
+          const lineStart = text.lastIndexOf("\n", Math.max(0, start - 1)) + 1;
+          let lineEnd = text.indexOf("\n", end);
+          if (lineEnd < 0) lineEnd = text.length;
+          const lines = text.slice(lineStart, lineEnd).split("\n");
+          // 제목과 인용은 첫 칸에 있어야 문법이다. 들여쓰면 그냥 글이 된다.
+          const fixed = (l: string) => /^\s*(?:#{1,6}\s|>)/.test(l);
+          const changed = lines.map((l) =>
+            fixed(l) ? l : delta > 0 ? `  ${l}` : l.replace(/^ {1,2}/, ""),
+          );
+          const nextSegment = changed.join("\n");
+          const first = changed[0].length - lines[0].length;
+          const total = nextSegment.length - (lineEnd - lineStart);
+          return {
+            text: text.slice(0, lineStart) + nextSegment + text.slice(lineEnd),
+            sel: { start: Math.max(lineStart, start + first), end: Math.max(lineStart, end + total) },
           };
         });
       },

@@ -146,3 +146,29 @@ export function parseTable(text: string): ParsedTable | null {
 
   return { header, rows, align };
 }
+
+/** 목록·할 일·번호·인용의 줄 머리. */
+export const LIST_LINE = /^(\s*)(?:([-*+]) (\[[ xX]\] )?|(\d+)\. |(>) )(.*)$/;
+
+/**
+ * 목록 줄 뒤에서 엔터를 쳤을 때 다음 줄이 무엇으로 시작할지.
+ *
+ * 메모앱들이 다 그렇게 한다 — `- 하나` 에서 엔터면 `- ` 가 미리 와 있고,
+ * 빈 `- ` 에서 한 번 더 치면 목록이 끝난다(머리가 지워진다). 번호는 하나 는다.
+ * 할 일은 체크가 풀린 채로 이어진다 — 앞 항목을 끝냈다고 다음도 끝난 게 아니다.
+ */
+export function continueLine(prev: string): { marker: string; endList: boolean } {
+  const m = LIST_LINE.exec(prev);
+  if (!m) return { marker: "", endList: false };
+  const [, indent, bullet, task, num, quote, body] = m;
+  if (body.trim() === "") return { marker: "", endList: true };
+  if (num) return { marker: `${indent}${Number(num) + 1}. `, endList: false };
+  if (quote) return { marker: `${indent}> `, endList: false };
+  return { marker: `${indent}${bullet} ${task ? "[ ] " : ""}`, endList: false };
+}
+
+/** 빈 목록 머리(`- `·`3. `·`- [ ] `·`> `)면 그 들여쓰기를, 아니면 null. */
+export function emptyListIndent(line: string): string | null {
+  const m = LIST_LINE.exec(line);
+  return m && m[6].trim() === "" ? m[1] : null;
+}

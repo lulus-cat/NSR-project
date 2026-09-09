@@ -51,6 +51,8 @@ const TOOLS: {
   { key: "num", label: "1.", hint: "번호 목록", run: (e) => e.toggleLinePrefix("1. ") },
   { key: "task", icon: "checkbox-outline", hint: "할 일", run: (e) => e.toggleLinePrefix("- [ ] ") },
   { key: "quote", label: "인용", hint: "인용 (>)", run: (e) => e.toggleLinePrefix("> ") },
+  { key: "indent", icon: "chevron-forward-outline", hint: "들여쓰기", run: (e) => e.indent(1) },
+  { key: "outdent", icon: "chevron-back-outline", hint: "내어쓰기", run: (e) => e.indent(-1) },
   {
     key: "table",
     icon: "grid-outline",
@@ -330,6 +332,8 @@ export default function NoteEditor() {
         }
       />
       <Small>줄을 누르면 그 줄만 열려요. 나머지는 모양 그대로예요.</Small>
+      <Small>목록에서 엔터를 치면 다음 항목이 이어져요.</Small>
+      <Small>빈 항목에서 한 번 더 치면 목록이 끝나요.</Small>
 
       {/* 백링크 */}
       {backlinks.length > 0 ? (

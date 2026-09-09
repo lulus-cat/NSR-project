@@ -134,7 +134,12 @@ export async function saveImportedSegments(input: {
 
   for (let i = 0; i < sentences.length; i++) {
     if (i % CHUNK === 0) {
-      input.onProgress?.(100, `뱉어낸 글자 예쁘게 빚는 중 — ${i}/${sentences.length} 문장`);
+      // 100 을 매번 주던 자리 — 막대가 시작하자마자 끝까지 차고 글자만 올라갔다.
+      // 이 단계는 40 에서 받아 95 까지 채운다(앞 단계가 10·40, 저장이 남는다).
+      input.onProgress?.(
+        40 + Math.round((i / Math.max(1, sentences.length)) * 55),
+        `뱉어낸 글자 예쁘게 빚는 중 — ${i}/${sentences.length} 문장`,
+      );
       await new Promise((resolve) => setTimeout(resolve, 0));
     }
     const sentence = sentences[i];

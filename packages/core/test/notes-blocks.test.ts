@@ -5,7 +5,13 @@
  * 다시 붙이기 때문이다. 그래서 제일 중요한 시험은 "쪼갰다 붙이면 그대로인가"다.
  */
 import { describe, expect, it } from "vitest";
-import { joinBlocks, parseTable, splitBlocks } from "../src/notes/blocks.js";
+import {
+  continueLine,
+  emptyListIndent,
+  joinBlocks,
+  parseTable,
+  splitBlocks,
+} from "../src/notes/blocks.js";
 import { reportWithoutCards } from "../src/study/report-cards.js";
 
 const 예시보고서 = [
@@ -152,5 +158,53 @@ describe("reportWithoutCards", () => {
   it("카드 절이 없으면 그대로 둔다", () => {
     const md = "# 근무\n## 타임라인\n본문";
     expect(reportWithoutCards(md)).toBe(md);
+  });
+});
+
+
+describe("continueLine — 엔터 뒤 다음 줄 머리", () => {
+  it("글머리는 그대로 잇는다", () => {
+    expect(continueLine("- 하나")).toEqual({ marker: "- ", endList: false });
+    expect(continueLine("* 하나")).toEqual({ marker: "* ", endList: false });
+  });
+
+  it("번호는 하나 는다", () => {
+    expect(continueLine("3. 셋")).toEqual({ marker: "4. ", endList: false });
+  });
+
+  it("할 일은 체크가 풀린 채로 이어진다", () => {
+    expect(continueLine("- [x] 했음")).toEqual({ marker: "- [ ] ", endList: false });
+  });
+
+  it("인용은 인용으로", () => {
+    expect(continueLine("> 말")).toEqual({ marker: "> ", endList: false });
+  });
+
+  it("들여쓰기를 지킨다", () => {
+    expect(continueLine("  - 안쪽")).toEqual({ marker: "  - ", endList: false });
+  });
+
+  it("빈 항목에서 한 번 더 치면 목록이 끝난다", () => {
+    expect(continueLine("- ")).toEqual({ marker: "", endList: true });
+    expect(continueLine("2. ")).toEqual({ marker: "", endList: true });
+    expect(continueLine("- [ ] ")).toEqual({ marker: "", endList: true });
+  });
+
+  it("목록이 아니면 아무것도 안 한다", () => {
+    expect(continueLine("그냥 글")).toEqual({ marker: "", endList: false });
+    expect(continueLine("## 제목")).toEqual({ marker: "", endList: false });
+    expect(continueLine("")).toEqual({ marker: "", endList: false });
+  });
+});
+
+describe("emptyListIndent", () => {
+  it("빈 머리면 들여쓰기를 준다", () => {
+    expect(emptyListIndent("- ")).toBe("");
+    expect(emptyListIndent("  3. ")).toBe("  ");
+    expect(emptyListIndent("- [ ] ")).toBe("");
+  });
+  it("내용이 있거나 목록이 아니면 null", () => {
+    expect(emptyListIndent("- 하나")).toBeNull();
+    expect(emptyListIndent("글")).toBeNull();
   });
 });
