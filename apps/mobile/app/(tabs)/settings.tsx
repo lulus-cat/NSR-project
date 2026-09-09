@@ -75,6 +75,14 @@ import type { PiiKind } from "@nsr/core";
 import { buildIssueUrl, clearDebugLog, readDebugLog, type DebugEntry } from "../../src/services/debug";
 
 /** 값을 누르면 프리셋 칩이 펼쳐지는 행. 숫자 설정을 손으로 고르는 자리다. */
+/** 분 값을 사람 말로. 60 을 넘으면 시간으로, 딱 안 떨어지면 "1시간 30분". */
+function minutesText(v: number): string {
+  if (v < 60) return `${v}분`;
+  const h = Math.floor(v / 60);
+  const m = v % 60;
+  return m ? `${h}시간 ${m}분` : `${h}시간`;
+}
+
 function PresetRow({
   label,
   hint,
@@ -1289,7 +1297,8 @@ export default function Settings() {
           label="파일 분할"
           value={policy.segmentMinutes}
           unit="분"
-          options={[10, 20, 30, 50]}
+          options={[30, 60, 120, 180, 240]}
+          format={minutesText}
           onSelect={(v) => void app.updatePolicy({ ...policy, segmentMinutes: v })}
           hint="긴 근무를 나눠 담아요. 중간에 끊겨도 앞부분은 남아요."
         />
@@ -1565,7 +1574,7 @@ export default function Settings() {
         <Small>
           기본 정책값: 근무 {DEFAULT_RECORDING_POLICY.leadMinutes}분 전 시작 ·
           {" "}
-          {DEFAULT_RECORDING_POLICY.segmentMinutes}분 분할 ·
+          {minutesText(DEFAULT_RECORDING_POLICY.segmentMinutes)} 분할 ·
           {" "}
           {DEFAULT_RECORDING_POLICY.retentionDays}일 보관
         </Small>

@@ -191,8 +191,10 @@ export interface RecordingPolicy {
   /** 자동 녹음을 켤 근무 코드. */
   codes: ShiftCode[];
   /**
-   * 파일 분할 간격(분). 8시간을 한 파일로 두면 손상 시 전부 잃고,
-   * 전사도 늦어진다. 30분 단위 분할이면 근무 중에도 순차 전사가 가능하다.
+   * 파일 분할 간격(분). 8시간을 한 파일로 두면 앱이 죽거나 파일이 상했을 때
+   * 전부 잃는다. 3시간이면 근무 하나가 두세 조각이다 — 티로에 보낼 파일 수가
+   * 적고, 잃어도 한 조각이다. (앱이 전사하던 시절엔 30분이었다. 지금은 티로가
+   * 전사하니 잘게 나눌 이유가 없다.)
    */
   segmentMinutes: number;
   /** 로컬 저장 상한(MB). 넘으면 오래된 것부터 지운다. */
@@ -214,7 +216,7 @@ export const DEFAULT_RECORDING_POLICY: RecordingPolicy = {
   leadMinutes: 45,
   trailMinutes: 40,
   codes: ["D", "E", "N", "ADM", "SPC"],
-  segmentMinutes: 30,
+  segmentMinutes: 180,
   maxStorageMb: 4096,
   retentionDays: 30,
   silentStart: true,

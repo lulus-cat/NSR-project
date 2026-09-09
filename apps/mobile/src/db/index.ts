@@ -331,19 +331,30 @@ export async function expireRecordings(olderThan: number): Promise<string[]> {
   // 조용히 사라졌다 — 이 저장소에서 가장 나쁜 일이다. 게다가 태움 점수와
   // 카드에는 그 문장이 그대로 남아 있어서, 지울 것은 남고 남길 것만 지워졌다.
   //
-  // 그리고 **전사본이 있는 것만** 소리를 지운다. 아직 글자로 못 바꾼 녹음은
+  // 그리고 **글자가 들어온 것만** 소리를 지운다. 아직 안 보낸 녹음('recorded')은
   // 그 소리가 유일한 사본이라 기한이 지나도 건드리지 않는다.
+  //
+  // 녹음기가 만든 줄은 티로 흐름에서 **영영 'transcribed' 가 되지 않는다** —
+  // 전사본은 tiro-* 줄로 따로 들어온다. 그래서 'transcribed' 만 보던 시절에는
+  // 30일 보관이 그 파일들에 한 번도 적용되지 않았다. 설정의 약속이 거짓이었다.
+  //
+  // 'sent' 를 그냥 믿지도 않는다. 안드로이드 공유 창은 취소해도 "보냈다" 고
+  // 돌아오고, 사람이 누르는 표시 단추도 있다. **같은 근무에 전사본 줄이 있어야**
+  // 소리가 정말 티로에 닿은 것이다. 그때만 지운다.
+  const cond = `started_at < ? AND file_uri IS NOT NULL AND (
+        state = 'transcribed'
+        OR (state = 'sent' AND EXISTS (
+              SELECT 1 FROM recordings t
+               WHERE t.shift_id = recordings.shift_id AND t.state = 'transcribed'))
+      )`;
   const rows = await db.getAllAsync<{ id: string; file_uri: string | null }>(
-    `SELECT id, file_uri FROM recordings
-      WHERE started_at < ? AND file_uri IS NOT NULL AND state = 'transcribed'`,
+    `SELECT id, file_uri FROM recordings WHERE ${cond}`,
     [olderThan],
   );
   if (rows.length === 0) return [];
-  await db.runAsync(
-    `UPDATE recordings SET file_uri = NULL, size_bytes = 0
-      WHERE started_at < ? AND file_uri IS NOT NULL AND state = 'transcribed'`,
-    [olderThan],
-  );
+  await db.runAsync(`UPDATE recordings SET file_uri = NULL, size_bytes = 0 WHERE ${cond}`, [
+    olderThan,
+  ]);
   return rows.map((r) => r.file_uri).filter((u): u is string => !!u);
 }
 

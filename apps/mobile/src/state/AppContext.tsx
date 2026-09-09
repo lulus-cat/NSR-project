@@ -135,13 +135,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
     void (async () => {
-      const lock = await getSetting<boolean>(SETTINGS_KEYS.appLock, false);
-      appLockEnabled.current = lock;
-      if (lock) setLocked(true);
-      await registerBackgroundTask();
-      // 지오펜스는 켜 둔 사용자에 한해 복구한다. OS 가 재부팅 등으로 지웠을 수 있다.
-      await restoreGeofence();
-      await refresh();
+      // 하나가 터져도 앱은 떠야 한다. 예전에는 첫 DB 열기·백그라운드 작업 등록·
+      // 첫 tick 가운데 하나만 던져도 ready 가 영영 안 서서 시작 화면에 갇혔다.
+      // 잠금은 못 읽으면 **잠근 쪽**으로 — 열어 두는 실수보다 낫다.
+      const readLock = async () => {
+        let lock = true;
+        try {
+          lock = await getSetting<boolean>(SETTINGS_KEYS.appLock, false);
+        } finally {
+          appLockEnabled.current = lock;
+          if (lock) setLocked(true);
+        }
+      };
+      for (const step of [readLock, registerBackgroundTask, restoreGeofence, refresh]) {
+        try {
+          await step();
+        } catch (e) {
+          console.error("[NSR] 시작 단계 실패", e);
+        }
+      }
       if (!cancelled) setReady(true);
     })();
     return () => {
