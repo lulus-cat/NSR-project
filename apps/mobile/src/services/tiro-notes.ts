@@ -22,12 +22,12 @@ import {
   type TiroParagraph,
 } from "@nsr/core";
 import {
-  countSegments,
   createRecording,
   deleteRecordingRow,
   finishImportedTranscript,
   getRecording,
   listRecordings,
+  segmentCountsByRecording,
   setRecordingState,
   setSetting,
 } from "../db";
@@ -146,7 +146,7 @@ function shiftStartMs(date: string, code: ShiftCode): number {
  * 같은 노트를 두 번 가져오지 않는다 — 기록 id 가 노트 guid 로 정해져 있어서,
  * 이미 있으면 그 자리를 알려주고 멈춘다.
  */
-export async function importTiroNote(input: {
+async function importOne(input: {
   note: TiroNote;
   date: string;
   code: ShiftCode;
@@ -157,15 +157,30 @@ export async function importTiroNote(input: {
   const id = `tiro-${input.note.guid}`;
   const already = await getRecording(id);
   if (already) {
+    // 이 노트가 **다른 근무**에 이미 들어가 있으면 건드리지 않는다.
+    // 예전에는 그냥 지웠는데, 줄을 지우면 그 근무의 문장까지 딸려 나간다 —
+    // 사용자는 다른 날 전사본이 조용히 비는 것을 나중에야 안다.
+    // shift_id 가 비어 있는 줄은 어느 근무에도 안 붙은 찌꺼기다. 그건 지워도 된다.
+    if (already.shift_id && already.shift_id !== `${input.date}:${input.code}`) {
+      throw new Error(
+        `이 노트는 ${already.shift_id.split(":")[0]} 근무에 이미 있어요. 거기서 지우고 다시 해 주세요.`,
+      );
+    }
+
     // 글자가 실제로 들어와 있을 때만 막는다.
     //
     // 예전에는 줄만 있으면 무조건 막았다. 그런데 줄은 가져오기 **시작할 때**
     // 만들어지고 문장은 몇 분 뒤에 들어온다. 그 사이에 앱이 죽거나 사용자가
     // '전사만 지우기' 를 누르면, 줄만 남아서 그 노트는 영영 다시 가져올 수
     // 없었다 — 화면 어디에도 그 사실이 안 적혀 있었다.
-    const has = await countSegments(`${input.date}:${input.code}`);
-    const mine = (await listRecordings(`${input.date}:${input.code}`)).find((r) => r.id === id);
-    if (has > 0 && mine) {
+    //
+    // **이 기록 하나만 센다.** 근무 전체를 세면, 노트를 여럿 가져올 때 앞 노트가
+    // 넣은 문장 때문에 뒤 노트가 "이미 가져왔다" 로 막힌다. 그리고 그 막힘은
+    // 줄을 지우기 전에 일어나서, 그 노트는 영영 못 들어온다.
+    const mineHas = already.shift_id
+      ? ((await segmentCountsByRecording(already.shift_id)).get(id) ?? 0)
+      : 0;
+    if (mineHas > 0) {
       throw new Error("이미 가져온 노트예요. 근무 기록에서 열어 보세요.");
     }
     await deleteRecordingRow(id);
@@ -221,19 +236,101 @@ export async function importTiroNote(input: {
     onProgress: input.onProgress,
   });
   await setRecordingState(id, "transcribed");
-  // 문장이 생긴 지금이 태움 점수를 다시 셀 자리다 (규칙 기반이라 값이 싸다).
-  await refreshTaeumScore(shiftId);
-  // 홈의 "새 전사 결과가 나왔어요" 줄이 이 값을 본다. 쓰는 곳이 없어서 그 줄은
-  // 지금까지 한 번도 뜬 적이 없었다 (쓰던 코드가 전사 경로와 함께 지워졌다).
-  await setSetting("transcribe.lastResult", { shiftId, sentences, seen: false });
-  // 문장이 생겼으니 분석 서버로 저절로 보낸다. 가린 사본만 나가고, 서버가
-  // 안 이어졌거나 설정에서 껐으면 아무 일도 안 한다 (nsr-server 의 autoSendPending).
-  // 여기서 막혀도 가져오기 자체는 성공이라, 실패를 위로 던지지 않는다.
-  void import("./nsr-server").then((m) => m.autoSendPending()).catch(() => {});
+  // 태움 다시 세기·홈 알림·서버로 보내기는 **여기서 안 한다.** 노트를 넷 고르면
+  // 넷 다 돌아 값이 싸지 않고, 홈에는 마지막 한 편만 남아 "1개 들어왔다"로
+  // 보인다. 묶음이 다 끝난 뒤 importTiroNotes 가 한 번만 한다.
   return { shiftId, recordingId: id, sentences, locked };
   } catch (e) {
     // 반쯤 만들어진 줄을 남기지 않는다. 남기면 그 노트를 다시 못 가져온다.
     await deleteRecordingRow(id).catch(() => {});
     throw e;
   }
+}
+
+export interface ImportFailure {
+  title: string;
+  reason: string;
+}
+
+export interface ImportManyResult {
+  shiftId: string;
+  /** 들어온 기록의 id — 따로 두면 화면이 이 중 첫 것을 열어야 한다. */
+  recordingIds: string[];
+  /** 실제로 들어온 노트 수. */
+  imported: number;
+  sentences: number;
+  locked: number;
+  /** 못 가져온 노트. 하나가 막혀도 나머지는 들어간다. */
+  failed: ImportFailure[];
+}
+
+/**
+ * 노트 여러 편을 근무 하나로 가져온다.
+ *
+ * **차례는 녹음이 시작된 시각순이다.** 고른 차례가 아니다 — 전사본은 시간 순서로
+ * 읽혀야 하고, 사용자가 목록에서 아래 것을 먼저 눌렀다고 그 말이 앞에 오면 안 된다.
+ *
+ * **하나가 막혀도 멈추지 않는다.** 넷 중 셋째가 잠긴 노트라고 앞의 둘을 되돌리면
+ * 이미 들어온 글을 지우는 셈이다. 못 가져온 것은 모아서 이름과 까닭을 돌려준다 —
+ * 화면이 그걸 그대로 보여 준다.
+ */
+export async function importTiroNotes(input: {
+  notes: TiroNote[];
+  date: string;
+  code: ShiftCode;
+  /** 참이면 같은 근무의 다른 기록과 합치지 않고 따로 본다. */
+  separate: boolean;
+  onProgress?: (pct: number, note?: string) => void;
+}): Promise<ImportManyResult> {
+  const shiftId = `${input.date}:${input.code}`;
+  const notes = [...input.notes].sort((a, b) => a.startedAt - b.startedAt);
+  if (notes.length === 0) throw new Error("가져올 노트를 골라 주세요.");
+
+  const recordingIds: string[] = [];
+  let imported = 0;
+  let sentences = 0;
+  let locked = 0;
+  const failed: ImportFailure[] = [];
+
+  for (const [i, note] of notes.entries()) {
+    const head = notes.length > 1 ? `${i + 1}/${notes.length} ` : "";
+    try {
+      const out = await importOne({
+        note,
+        date: input.date,
+        code: input.code,
+        separate: input.separate,
+        // 한 편의 0~100 을 묶음 전체의 제 몫으로 옮긴다.
+        onProgress: (pct, msg) =>
+          input.onProgress?.(
+            Math.round(((i + pct / 100) / notes.length) * 100),
+            msg ? `${head}${msg}` : undefined,
+          ),
+      });
+      imported += 1;
+      recordingIds.push(out.recordingId);
+      sentences += out.sentences;
+      locked += out.locked;
+    } catch (e) {
+      failed.push({
+        title: note.title,
+        reason: e instanceof Error ? e.message : "가져오지 못했어요.",
+      });
+    }
+  }
+
+  // 한 편도 못 들어왔으면 화면이 성공으로 넘어가면 안 된다.
+  if (imported === 0) {
+    throw new Error(failed[0]?.reason ?? "가져오지 못했어요. 다시 눌러 주세요.");
+  }
+
+  // 여기서 한 번만 한다 — 편마다 하면 태움을 여러 번 다시 세고, 홈에는 마지막
+  // 한 편의 문장 수만 남는다.
+  await refreshTaeumScore(shiftId);
+  await setSetting("transcribe.lastResult", { shiftId, sentences, seen: false });
+  // 가린 사본만 나간다. 서버가 안 이어졌거나 설정에서 껐으면 아무 일도 안 한다.
+  // 여기서 막혀도 가져오기 자체는 성공이라 실패를 위로 던지지 않는다.
+  void import("./nsr-server").then((m) => m.autoSendPending()).catch(() => {});
+
+  return { shiftId, recordingIds, imported, sentences, locked, failed };
 }
