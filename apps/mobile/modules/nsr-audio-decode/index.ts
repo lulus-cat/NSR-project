@@ -14,6 +14,7 @@ const Native = requireOptionalNativeModule<{
   workUpdate(title: string, body: string): void;
   workNeedsMic(): void;
   workStop(): void;
+  workAlive(): boolean;
 }>("NsrAudioDecode");
 
 /**
@@ -58,13 +59,22 @@ export async function decodeToWav16k(srcUri: string, dstUri: string): Promise<st
  * 안드로이드 14+ 는 화면이 꺼진 뒤의 마이크 접근을 이 유형으로만 허용한다.
  * 녹음이 아닌 작업(내려받기)에 켜면 RECORD_AUDIO 가 없을 때 서비스가 죽는다.
  */
-export function workStart(title: string, body: string, mic = false): boolean {
-  if (!Native?.workStart) return false;
+export type WorkStart = "started" | "failed" | "unavailable";
+
+/**
+ * "failed" 는 안드로이드가 **지금은 안 된다** 고 한 것이다 — 12 부터는 앱이
+ * 뒤에 있을 때 포그라운드 서비스를 못 연다(ForegroundServiceStartNotAllowed).
+ * "unavailable" 은 이 환경에 서비스가 없는 것(아이폰·시뮬레이터)이라 정상이다.
+ * 둘을 같은 false 로 뭉개면 녹음 쪽이 "서비스 없이 마이크를 켠 채" 화면이
+ * 꺼지는 순간 마이크를 잃는다.
+ */
+export function workStart(title: string, body: string, mic = false): WorkStart {
+  if (!Native?.workStart) return "unavailable";
   try {
     Native.workStart(title, body, mic);
-    return true;
+    return "started";
   } catch {
-    return false;
+    return "failed";
   }
 }
 
@@ -82,6 +92,16 @@ export function workUpdate(title: string, body: string): void {
     Native?.workUpdate?.(title, body);
   } catch {
     // 서비스가 없으면 그만이다.
+  }
+}
+
+/** 서비스가 지금 떠 있는가. 없는 환경(아이폰)은 null — 모른다는 뜻이다. */
+export function workAlive(): boolean | null {
+  if (!Native?.workAlive) return null;
+  try {
+    return Native.workAlive();
+  } catch {
+    return null;
   }
 }
 

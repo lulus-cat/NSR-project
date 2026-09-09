@@ -273,16 +273,29 @@ export async function setWorkplacePlace(hit: PlaceHit, radius = DEFAULT_RADIUS):
  * 반경만 바꾼다. 병원 규모가 제각각이라(작은 의원부터 대학병원 부지까지)
  * 사람이 고르는 값이다. 켜져 있으면 새 반경으로 다시 건다.
  */
-export async function setRadius(radius: number): Promise<Workplace | null> {
+export async function setRadius(
+  radius: number,
+): Promise<{ workplace: Workplace; message?: string } | null> {
   const wp = await getWorkplace();
   if (!wp) return null;
   const next = { ...wp, radius };
   await setSetting(GEO_KEYS.workplace, next);
   if (await geofenceEnabled()) {
     await setGeofence(false);
-    await setGeofence(true);
+    // 다시 켜다 막히면(그사이 권한이 빠졌다든지, 위치 서비스가 꺼졌다든지)
+    // 감지가 꺼진 채 남는다. 그걸 삼키면 화면은 켜진 것처럼 보이고 출근해도
+    // 아무 일이 안 난다. 던지는 것도 돌려주는 것으로 바꾼다.
+    try {
+      const r = await setGeofence(true);
+      if (!r.ok) return { workplace: next, message: r.message };
+    } catch (e) {
+      return {
+        workplace: next,
+        message: e instanceof Error ? e.message : "근무지 감지를 다시 켜지 못했어요. 위치를 켜 주세요.",
+      };
+    }
   }
-  return next;
+  return { workplace: next };
 }
 
 export async function clearWorkplace(): Promise<void> {

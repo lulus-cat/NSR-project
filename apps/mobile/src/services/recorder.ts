@@ -24,7 +24,8 @@ import {
 } from "expo-audio";
 import type { RecordingPolicy } from "@nsr/core";
 import { fileSize, moveIntoRecordings, recordingFileUri } from "./files";
-import { beginWork, endWork } from "./progress-notify";
+import { Platform } from "react-native";
+import { beginWork, endWork, serviceAlive } from "./progress-notify";
 
 /** 진행 알림의 이름. 참조를 세는 쪽(progress-notify)이 이 이름으로 짝을 맞춘다. */
 const RECORDING_WORK_ID = "recording";
@@ -45,6 +46,12 @@ export interface AudioBackend {
   /** 세션 정리. */
   releaseSession(): Promise<void>;
   isRecording(): boolean;
+  /**
+   * 마이크가 살아 있는지 볼 두 가지. `level` 은 입력 세기(dB) — 죽은 입력은
+   * -160 에 붙는다. 못 재면 null. `sec` 는 담긴 초(아이폰은 진짜 초, 안드로이드는
+   * 벽시계라 마이크가 죽어도 는다 — 그래서 level 이 먼저다).
+   */
+  signal(): { sec: number; level: number | null };
 }
 
 export type SessionState = "idle" | "recording" | "stopping";
@@ -91,6 +98,15 @@ export class RecordingSession {
    * 화면은 꺼졌는데 마이크는 켜진 채 남는다.
    */
   private rotating: Promise<void> | null = null;
+  /**
+   * 마이크 감시. 1분마다 담긴 초를 본다. 두 번 연속 안 늘면 마이크는 죽은 것이다 —
+   * 전화·다른 앱·OS 회수. 조각이 3시간이라 파일 크기로 알아채려면 반나절이 간다.
+   */
+  private watchdog: ReturnType<typeof setInterval> | null = null;
+  private lastProgress = -1;
+  private stalls = 0;
+  /** beginWork 가 서비스를 열었다고 했는가. 열었으면 뒤에 살아 있는지 되묻는다. */
+  private serviceStarted = false;
   /**
    * 마이크를 뺏겨 빈 파일이 **두 번 연속** 나왔다. 살아 있는 척하지 않는다 —
    * tick 이 되살린다.
@@ -141,8 +157,19 @@ export class RecordingSession {
     // 잡는 것과 놓는 것을 **세션이** 짝지어 쥔다. 백엔드에 두었더니 시작이
     // 실패한 경로에서 놓지 못하고 참조가 새서, 아무것도 기록하지 않는 채
     // "기록 중" 알림만 영영 떠 있었다.
-    await beginWork("기록 중", "화면을 꺼도 계속 기록해요", true);
+    const service = await beginWork("기록 중", "화면을 꺼도 계속 기록해요", true);
     this.holdsService = true;
+    this.serviceStarted = service === "started";
+    // 안드로이드가 "지금은 서비스를 못 연다" 고 하면(앱이 뒤에 있을 때, 12+)
+    // 마이크를 켜지 않는다. 켜면 화면이 꺼지는 순간 잃고, 그 뒤로 빈 파일만
+    // 쌓이면서 화면은 '기록 중' 이다. 실패로 남겨 두면 앱을 여는 순간 tick 이 연다.
+    if (service === "failed") {
+      this.callbacks.onError(
+        new Error("앱이 뒤에 있어 마이크를 못 켰어요. 앱을 한 번 열어 주세요."),
+      );
+      await this.release();
+      return false;
+    }
 
     try {
       await this.backend.prepareSession({ silent: this.policy.silentStart });
@@ -163,6 +190,7 @@ export class RecordingSession {
 
   /** 서비스를 놓는다. 두 번 불러도 한 번만 놓는다. */
   private async release(): Promise<void> {
+    this.clearWatchdog();
     await this.backend.releaseSession();
     if (!this.holdsService) return;
     this.holdsService = false;
@@ -208,6 +236,56 @@ export class RecordingSession {
       return;
     }
     this.scheduleRotation();
+    this.startWatchdog();
+  }
+
+  /** 죽은 입력의 dB. 두 플랫폼 다 -160 을 바닥으로 준다. 조용한 방은 -60~-90 이다. */
+  private static readonly SILENT_DB = -150;
+
+  private startWatchdog(): void {
+    if (this.watchdog) return;
+    this.lastProgress = -1;
+    this.stalls = 0;
+    this.watchdog = setInterval(() => {
+      if (this.state !== "recording" || this.dead) return;
+      // 회전 중이면 다음 분에 본다. 겹치면 회전 둘이 한 녹음기를 두고 싸운다.
+      if (this.rotating) return;
+
+      // 서비스가 떠 있어야 화면이 꺼져도 마이크가 산다. 안드로이드 14 는 앱이
+      // 뒤에 있을 때 서비스 안에서 뒤늦게 거부하고, 그건 JS 로 안 올라온다.
+      if (Platform.OS === "android" && this.serviceStarted && serviceAlive() === false) {
+        this.die("앱이 뒤에 있어 기록 서비스가 안 떴어요. 앱을 한 번 열어 주세요.");
+        return;
+      }
+
+      const { sec, level } = this.backend.signal();
+      let stalled: boolean;
+      if (level !== null) {
+        // 입력 세기가 바닥이면 마이크가 없는 것이다 — 전화·다른 앱·OS 회수.
+        stalled = level <= RecordingSession.SILENT_DB;
+      } else {
+        // 세기를 못 재는 환경: 담긴 초가 안 늘면 멈춘 것. (회전 직후에는 0 에서
+        // 다시 시작해 줄어들 수 있으니 '줄었다' 는 정상으로 본다.)
+        stalled = this.lastProgress >= 0 && sec >= this.lastProgress && sec - this.lastProgress < 1;
+        this.lastProgress = sec;
+      }
+      this.stalls = stalled ? this.stalls + 1 : 0;
+      // 3분 연속. 1분은 통화 한 통에도 걸린다.
+      if (this.stalls < 3) return;
+      this.die("마이크가 멈췄어요. 다른 앱이 쓰고 있는지 봐 주세요.");
+    }, 60_000);
+  }
+
+  /** 마이크가 죽었다고 보고 조각을 닫는다. tick 이 새 백엔드로 되살린다. */
+  private die(reason: string): void {
+    this.dead = true;
+    this.callbacks.onError(new Error(reason));
+    void this.rotate(Date.now());
+  }
+
+  private clearWatchdog(): void {
+    if (this.watchdog) clearInterval(this.watchdog);
+    this.watchdog = null;
   }
 
   private scheduleRotation(): void {
@@ -335,7 +413,12 @@ export function createExpoAudioBackend(): AudioBackend {
 
     async start(fileName) {
       currentName = fileName;
-      recorder = new AudioModule.AudioRecorder(RecordingPresets.HIGH_QUALITY);
+      // 세기 재기를 켠다 — 마이크가 죽었는지는 이것으로만 안다(안드로이드의
+      // currentTime 은 벽시계라 마이크가 죽어도 는다).
+      recorder = new AudioModule.AudioRecorder({
+        ...RecordingPresets.HIGH_QUALITY,
+        isMeteringEnabled: true,
+      });
       await recorder.prepareToRecordAsync();
       recorder.record();
       recording = true;
@@ -367,6 +450,19 @@ export function createExpoAudioBackend(): AudioBackend {
 
     isRecording() {
       return recording;
+    },
+
+    signal() {
+      try {
+        if (!recorder || !recording) return { sec: 0, level: null };
+        const status = recorder.getStatus();
+        return {
+          sec: recorder.currentTime,
+          level: typeof status.metering === "number" ? status.metering : null,
+        };
+      } catch {
+        return { sec: 0, level: null };
+      }
     },
   };
 }

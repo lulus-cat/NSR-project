@@ -11,11 +11,20 @@
  * 서비스가 없는 환경(iOS 등)에서는 예전처럼 일반 알림으로만 보여준다.
  */
 
-import { workNeedsMic, workStart, workStop, workUpdate } from "../../modules/nsr-audio-decode";
+import {
+  workAlive,
+  workNeedsMic,
+  workStart,
+  workStop,
+  workUpdate,
+  type WorkStart,
+} from "../../modules/nsr-audio-decode";
 
 const lastPct = new Map<string, number>();
 let workRefs = 0;
 let fgsActive = false;
+/** 마지막으로 서비스를 열려다 난 결과. 뒤에 오는 사람이 "왜 없는지" 를 알아야 한다. */
+let lastStart: WorkStart = "unavailable";
 
 export async function ensureNotifPermission(): Promise<void> {
   try {
@@ -31,17 +40,36 @@ export async function ensureNotifPermission(): Promise<void> {
  * 작업 시작 — 포그라운드 서비스를 잡는다(가능한 환경에서).
  * 사용자가 버튼을 누른 직후(앱이 포그라운드일 때) 불러야 한다.
  */
-export async function beginWork(title: string, body: string, mic = false): Promise<void> {
+export async function beginWork(title: string, body: string, mic = false): Promise<WorkStart> {
   await ensureNotifPermission();
   workRefs += 1;
   if (workRefs === 1) {
-    fgsActive = workStart(title, body, mic);
-  } else if (fgsActive) {
+    lastStart = workStart(title, body, mic);
+    fgsActive = lastStart === "started";
+    return lastStart;
+  }
+  if (fgsActive) {
     // 내려받기가 먼저 서비스를 잡고 있다가 녹음이 시작되는 경우가 있다.
     // 그때 유형을 안 올리면 화면을 끄는 순간 마이크가 끊긴다.
     if (mic) workNeedsMic();
     workUpdate(title, body);
+    return "started";
   }
+  // 앞 사람이 열다 막혔으면("failed") 지금도 막힌 것이다. "unavailable" 로
+  // 뭉개면 녹음이 아이폰인 줄 알고 서비스 없이 마이크를 켠다.
+  return lastStart;
+}
+
+/**
+ * 서비스가 정말 떠 있는가. null 은 모른다는 뜻(서비스가 없는 환경).
+ *
+ * startForeground 는 서비스 안에서 뒤늦게 거부될 수 있다(안드로이드 14, 앱이
+ * 뒤에 있을 때). 그 실패는 beginWork 가 돌아온 뒤에 나서, 녹음이 조금 뒤에
+ * 이걸로 되묻는다.
+ */
+export function serviceAlive(): boolean | null {
+  if (!fgsActive) return null;
+  return workAlive();
 }
 
 /**

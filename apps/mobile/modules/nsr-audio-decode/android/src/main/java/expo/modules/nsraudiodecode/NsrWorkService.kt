@@ -89,15 +89,24 @@ class NsrWorkService : Service() {
   private fun goForeground(title: String, body: String, mic: Boolean) {
     ensureChannel()
     val notification = build(title, body)
-    if (Build.VERSION.SDK_INT >= 29) {
-      val type =
-        if (mic) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
-        else ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-      startForeground(NOTIF_ID, notification, type)
-    } else {
-      startForeground(NOTIF_ID, notification)
+    try {
+      if (Build.VERSION.SDK_INT >= 29) {
+        val type =
+          if (mic) ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE
+          else ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+        startForeground(NOTIF_ID, notification, type)
+      } else {
+        startForeground(NOTIF_ID, notification)
+      }
+      if (mic) hasMic = true
+    } catch (e: Throwable) {
+      // 안드로이드 14 는 앱이 뒤에 있을 때 마이크 유형을 거부한다(SecurityException).
+      // 여기서 던지면 서비스가 아니라 **앱이 통째로** 죽는다. 조용히 내려가고,
+      // JS 쪽은 마이크 감시가 몇 분 안에 알아챈다.
+      android.util.Log.w("NsrWorkService", "startForeground 거부: ${e.javaClass.simpleName}")
+      instance = null
+      stopSelf()
     }
-    if (mic) hasMic = true
   }
 
   /** 작업 종료 — 알림을 내리고 서비스를 끝낸다. */

@@ -41,7 +41,12 @@ import {
   listTaeumScores,
   pendingTranscriptions,
 } from "../../src/db";
-import { buildSchedule, startManual, stopManual } from "../../src/services/scheduler";
+import {
+  buildSchedule,
+  recentRecordingError,
+  startManual,
+  stopManual,
+} from "../../src/services/scheduler";
 import { syncWithServer } from "../../src/services/nsr-server";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
 
@@ -325,6 +330,8 @@ export default function Home() {
   const [micBusy, setMicBusy] = useState(false);
   const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
+  /** 하루 안에 기록이 실패한 적이 있다. 설정에 자세히 적혀 있다. */
+  const [recProblem, setRecProblem] = useState<string | null>(null);
   const [weekStrip, setWeekStrip] = useState<
     { date: string; day: number; code?: string; label?: string }[]
   >([]);
@@ -354,6 +361,9 @@ export default function Home() {
     );
 
     setDueCount(dueStates(await listReviewStates(), Date.now(), 9999).length);
+    // 자동 기록이 조용히 실패한 것을 사람이 알 길이 없었다 — 마이크를 눌러 또
+    // 실패해야 봤다. 하루 안의 실패는 홈에 한 줄 띄운다.
+    setRecProblem((await recentRecordingError())?.message ?? null);
     const pending = await pendingTranscriptions();
     setPendingCount(pending.length);
     setPendingRows(pending);
@@ -548,6 +558,18 @@ export default function Home() {
                 onPress={() =>
                   router.push(`/transcript/${encodeURIComponent(newResult.shiftId)}`)
                 }
+              />
+              <DashedDivider />
+            </>
+          ) : null}
+          {recProblem ? (
+            <>
+              <BriefRow
+                icon="alert-circle-outline"
+                label="기록에 문제가 있었어요"
+                value="설정 보기"
+                valueColor={t.warn}
+                onPress={() => router.push("/settings")}
               />
               <DashedDivider />
             </>

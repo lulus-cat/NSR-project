@@ -73,6 +73,9 @@ class NsrAudioDecodeModule : Module() {
     Function("workStop") {
       NsrWorkService.instance?.stopWork()
     }
+    // startForeground 는 서비스 안에서 뒤늦게 터진다(안드로이드 14, 앱이 뒤에 있을 때).
+    // 그 실패는 JS 로 안 올라오므로, JS 가 조금 뒤에 이걸로 되묻는다.
+    Function("workAlive") { NsrWorkService.instance != null }
   }
 }
 

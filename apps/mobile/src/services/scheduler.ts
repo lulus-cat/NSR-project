@@ -58,7 +58,7 @@ import {
   totalStorageBytes,
 } from "../db";
 import { RecordingSession, createExpoAudioBackend } from "./recorder";
-import { deleteFile, orphanRecordings } from "./files";
+import { deleteFile, fileSize, orphanRecordings } from "./files";
 
 export const BACKGROUND_TASK_NAME = "nsr-duty-recording-tick";
 
@@ -298,6 +298,8 @@ async function startFor(
     activeShiftId = window.shiftId;
     activeOwner = owner;
     activeStartedAt = now;
+    // 켜졌으면 지난 실패는 지난 일이다. 안 지우면 홈이 하루 내내 "문제가 있었어요" 다.
+    await setSetting("recording.lastError", null);
   }
   // 실패하면 아무것도 안 남긴다. 예전에는 '수동으로 켰음' 표시만 남아서,
   // 그 뒤로 듀티 자동 기록이 영영 안 켜졌다 (세션은 없는데 표시는 있었다).
@@ -368,7 +370,8 @@ async function housekeeping(policy: RecordingPolicy, now: number): Promise<void>
         endedAt: now,
         durationSec: 0,
         fileUri: found.uri,
-        sizeBytes: 0,
+        // 0 으로 두면 용량 합계에서 빠져 상한 경고가 이 파일들을 못 본다.
+        sizeBytes: fileSize(found.uri),
       });
       void setSetting("recording.recovered", { at: now, shiftId: found.shiftId });
     }
@@ -380,6 +383,9 @@ async function housekeeping(policy: RecordingPolicy, now: number): Promise<void>
   if (used > policy.maxStorageMb * 1024 * 1024) {
     // 용량 초과는 사용자에게 알려야 한다. 조용히 지우면 증거가 사라진다.
     await setSetting("recording.storageWarning", { at: now, usedBytes: used });
+  } else {
+    // 지워서 내려왔으면 경고도 내린다.
+    await setSetting("recording.storageWarning", null);
   }
 }
 
@@ -421,6 +427,14 @@ export async function registerBackgroundTask(): Promise<void> {
   });
 }
 
+/** 최근 기록 실패. 홈과 설정이 같은 창(24시간)으로 본다 — 두 화면이 다르게 말하지 않게. */
+export async function recentRecordingError(
+  now = Date.now(),
+): Promise<{ at: number; message: string } | null> {
+  const e = await getSetting<{ at: number; message: string } | null>("recording.lastError", null);
+  return e && now - e.at < 24 * 3600_000 ? e : null;
+}
+
 export interface PlatformCapability {
   /** 사용자가 앱을 열지 않아도 근무 시각에 기록이 시작되는가. */
   fullyAutomatic: boolean;
@@ -433,8 +447,8 @@ export function platformCapability(iosContinuousSession: boolean): PlatformCapab
     return {
       fullyAutomatic: true,
       explanation:
-        "출근 시간에 맞춰 기록이 저절로 켜져요. 대신 알림이 계속 떠 있어요. " +
-        "소리도 진동도 없는 알림이고, 안드로이드 규칙이라 끌 수 없어요.",
+        "출근 시간에 맞춰 기록이 켜져요. 소리 없는 알림이 계속 떠 있어요. " +
+        "안드로이드 14부터는 그날 앱을 한 번 열어 둬야 켜질 때가 있어요.",
     };
   }
   if (iosContinuousSession) {

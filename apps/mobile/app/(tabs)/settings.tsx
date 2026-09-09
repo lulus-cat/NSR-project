@@ -21,6 +21,7 @@ import {
   loadDutyTemplates,
   platformCapability,
   saveDutyTemplateOverride,
+  recentRecordingError,
 } from "../../src/services/scheduler";
 import { deleteAllRecordings } from "../../src/services/files";
 import {
@@ -219,6 +220,11 @@ export default function Settings() {
   const [appLock, setAppLock] = useState(false);
   const [iosContinuous, setIosContinuous] = useState(false);
   const [workplace, setWorkplace] = useState<Workplace | null>(null);
+  const [recDiag, setRecDiag] = useState<{
+    lastError: { at: number; message: string } | null;
+    restricted: boolean;
+    storageOver: number | null;
+  }>({ lastError: null, restricted: false, storageOver: null });
   const [geoOn, setGeoOn] = useState(false);
   const [geoMsg, setGeoMsg] = useState<string | null>(null);
   // 근무지가 아직 없는 사람이 '근무지'를 눌렀을 때 — 지정 UI 를 먼저 보여줘야 한다.
@@ -244,6 +250,13 @@ export default function Settings() {
     setIosContinuous(await getSetting<boolean>(SETTINGS_KEYS.iosContinuousSession, false));
     setWorkplace(await getWorkplace());
     setGeoOn(await geofenceEnabled());
+    // 기록이 조용히 실패하던 자리. 지금까지는 적어 두기만 하고 아무 화면도 안 읽었다.
+    const [lastError, restricted, storage] = await Promise.all([
+      recentRecordingError(),
+      getSetting<boolean>("recording.backgroundRestricted", false),
+      getSetting<{ at: number; usedBytes: number } | null>("recording.storageWarning", null),
+    ]);
+    setRecDiag({ lastError, restricted, storageOver: storage?.usedBytes ?? null });
     setStorageMb(Math.round(((await totalStorageBytes()) / (1024 * 1024)) * 10) / 10);
     setPrivacy(await loadPrivacySettings());
     setAutoUpdate(await autoCheckEnabled());
@@ -942,6 +955,24 @@ export default function Settings() {
         </View>
         <Small>{capability.explanation}</Small>
         {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
+        {recDiag.lastError ? (
+          <>
+            <Badge text="최근 기록 문제" tone="warn" />
+            <Small muted={false}>
+              {new Date(recDiag.lastError.at).toLocaleString("ko-KR", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" })}
+              {" · "}
+              {recDiag.lastError.message}
+            </Small>
+          </>
+        ) : null}
+        {recDiag.restricted ? (
+          <Small muted={false}>폰이 백그라운드 실행을 막았어요. 배터리 설정에서 풀어 주세요.</Small>
+        ) : null}
+        {recDiag.storageOver !== null ? (
+          <Small muted={false}>
+            기록이 {Math.round(recDiag.storageOver / (1024 * 1024))}MB 로 상한을 넘었어요. 보낸 녹음을 지워 주세요.
+          </Small>
+        ) : null}
 
         {mode === "duty" ? (
           <>
@@ -1152,9 +1183,14 @@ export default function Settings() {
                         accessibilityRole="button"
                         accessibilityState={{ selected: on }}
                         onPress={async () => {
-                          const next = await setRadius(r);
-                          if (next) setWorkplace(next);
-                          setGeoMsg(`반경을 ${r}m 로 바꿨어요.`);
+                          const res = await setRadius(r);
+                          if (res) setWorkplace(res.workplace);
+                          if (res?.message) {
+                            setGeoOn(false);
+                            setGeoMsg(res.message);
+                          } else {
+                            setGeoMsg(`반경을 ${r}m 로 바꿨어요.`);
+                          }
                         }}
                         style={{
                           flex: 1,
