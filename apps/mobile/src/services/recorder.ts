@@ -83,6 +83,24 @@ export class RecordingSession {
   private chunkStartedAt = 0;
   /** 포그라운드 서비스를 이 세션이 쥐고 있는가. 짝을 맞추려고 센다. */
   private holdsService = false;
+  /**
+   * 지금 도는 회전(파일 닫고 다음 열기). stop() 이 이걸 기다린다.
+   *
+   * 안 기다리면 타이머가 막 회전을 시작한 순간에 사용자가 정지를 눌렀을 때
+   * 둘이 같은 녹음기를 두 번 멈추고, 회전은 정지 뒤에 **새 파일을 또 연다** —
+   * 화면은 꺼졌는데 마이크는 켜진 채 남는다.
+   */
+  private rotating: Promise<void> | null = null;
+  /**
+   * 마이크를 뺏겨 빈 파일이 **두 번 연속** 나왔다. 살아 있는 척하지 않는다 —
+   * tick 이 되살린다.
+   *
+   * 한 번으로 죽이지 않는 이유: 전화가 3분 왔다 가면 그 조각은 비지만 다음
+   * 조각부터는 멀쩡히 담긴다. 한 번에 주저앉히면 tick 이 올 때까지(15분에서
+   * 한 시간) 아무것도 안 담긴다. 예전 코드는 경계에서 무조건 다시 열었다.
+   */
+  private dead = false;
+  private emptyStreak = 0;
 
   /**
    * @param startIndex 이 근무에 이미 있는 조각 다음 번호.
@@ -103,11 +121,13 @@ export class RecordingSession {
   }
 
   get isActive(): boolean {
-    return this.state === "recording";
+    return this.state === "recording" && !this.dead;
   }
 
   async start(now: number): Promise<boolean> {
     if (this.state !== "idle") return true;
+    this.dead = false;
+    this.emptyStreak = 0;
     const granted = await this.backend.ensurePermission();
     if (!granted) return false;
 
@@ -151,6 +171,8 @@ export class RecordingSession {
 
   /** 근무 종료 또는 사용자 중지. */
   async stop(now: number): Promise<void> {
+    // 회전 중이면 끝나기를 기다린다. 그 뒤의 상태로 판단해야 한다.
+    if (this.rotating) await this.rotating.catch(() => {});
     // 상태가 무엇이든 서비스는 놓는다. 예전에는 idle 이면 곧장 돌아가서,
     // 조각 열기에 실패한 세션이 서비스를 쥔 채 버려졌다.
     if (this.state !== "recording") {
@@ -160,7 +182,8 @@ export class RecordingSession {
     this.state = "stopping";
     this.clearTimer();
     try {
-      await this.finishChunk(now);
+      const chunk = await this.closeChunk(now);
+      if (chunk) await this.persistChunk(chunk);
     } finally {
       await this.release();
       this.state = "idle";
@@ -196,19 +219,41 @@ export class RecordingSession {
   }
 
   /** 현재 파일을 닫고 즉시 다음 파일을 연다. 사이의 공백을 최소화한다. */
-  private async rotate(now: number): Promise<void> {
-    if (this.state !== "recording") return;
-    try {
-      await this.finishChunk(now);
-      this.chunkIndex += 1;
-      await this.beginChunk(now);
-    } catch (error) {
-      this.callbacks.onError(error);
-    }
+  private rotate(now: number): Promise<void> {
+    if (this.state !== "recording") return Promise.resolve();
+    const run = (async () => {
+      let previous: RecordedChunk | null = null;
+      try {
+        previous = await this.closeChunk(now);
+        // 닫는 사이에 정지가 들어왔거나 마이크를 뺏겼으면 새 파일을 열지 않는다.
+        if (this.state === "recording" && !this.dead) {
+          this.chunkIndex += 1;
+          await this.beginChunk(now);
+        }
+      } catch (error) {
+        // 닫다가 터졌으면 녹음기 상태를 믿을 수 없다. 살아 있는 척하면 tick 이
+        // 안 되살리고, 화면은 '기록 중' 인 채 아무것도 안 담긴다.
+        this.callbacks.onError(error);
+        this.state = "idle";
+      }
+      // DB 쓰기는 **다음 파일이 돌기 시작한 뒤에** 한다. (파일 옮기기는 아직
+      // backend.stop() 안에서 먼저 일어난다 — 이름 바꾸기라 보통 한순간이다.)
+      if (previous) await this.persistChunk(previous);
+      if (this.state !== "recording" || this.dead) {
+        this.state = "idle";
+        // release 가 터져도 여기서 삼킨다 — 밖은 `void rotate()` 라 받을 곳이 없다.
+        await this.release().catch((error) => this.callbacks.onError(error));
+      }
+    })();
+    this.rotating = run;
+    return run.finally(() => {
+      if (this.rotating === run) this.rotating = null;
+    });
   }
 
-  private async finishChunk(now: number): Promise<void> {
-    if (!this.backend.isRecording()) return;
+  /** 녹음기를 멈추고 조각을 돌려준다. 저장은 하지 않는다. */
+  private async closeChunk(now: number): Promise<RecordedChunk | null> {
+    if (!this.backend.isRecording()) return null;
     const result = await this.backend.stop();
     const chunk: RecordedChunk = {
       index: this.chunkIndex,
@@ -219,9 +264,21 @@ export class RecordingSession {
       sizeBytes: result.sizeBytes,
     };
     // 0바이트거나 몇 초 만에 끝난 조각은 마이크를 뺏긴 것이다.
-    if (chunk.sizeBytes === 0 || (chunk.durationSec < 1 && now - this.chunkStartedAt > 5_000)) {
+    const empty =
+      chunk.sizeBytes === 0 || (chunk.durationSec < 1 && now - this.chunkStartedAt > 5_000);
+    if (empty) {
+      this.emptyStreak += 1;
       this.callbacks.onEmptyChunk?.(chunk);
+      // 두 번 연속이면 다음 파일을 열어도 소용없다. 살아 있다고 보고하면 tick 이
+      // 되살리지 않는다 — 예전에는 알림 글만 남기고 끝이었다.
+      if (this.emptyStreak >= 2) this.dead = true;
+    } else {
+      this.emptyStreak = 0;
     }
+    return chunk;
+  }
+
+  private async persistChunk(chunk: RecordedChunk): Promise<void> {
     try {
       await this.callbacks.onChunk(chunk);
     } catch (error) {
@@ -288,15 +345,16 @@ export function createExpoAudioBackend(): AudioBackend {
 
     async stop() {
       if (!recorder) throw new Error("녹음이 켜져 있지 않아요. 다시 눌러 주세요.");
-      await recorder.stop();
+      const r = recorder;
+      // 멈추다 터져도 깃발은 내린다. 안 내리면 다음 정지가 죽은 녹음기를 또
+      // 멈추려 들고, isRecording() 은 영영 참이다.
       recording = false;
+      recorder = null;
+      await r.stop();
 
       const durationSec =
-        recorder.currentTime > 0
-          ? recorder.currentTime
-          : Math.max(0, (Date.now() - startedAtMs) / 1000);
-      const tempUri = recorder.uri ?? "";
-      recorder = null;
+        r.currentTime > 0 ? r.currentTime : Math.max(0, (Date.now() - startedAtMs) / 1000);
+      const tempUri = r.uri ?? "";
 
       const uri = tempUri ? moveIntoRecordings(tempUri, currentName) : "";
       // 크기를 못 구해도 기록 자체는 유효하다. 저장 용량 계산만 부정확해진다.

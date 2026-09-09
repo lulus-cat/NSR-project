@@ -16,8 +16,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { DEFAULT_TEMPLATES, toDateString, type ShiftCode } from "@nsr/core";
 import { MonthGrid, type DayMark } from "../src/components/month-grid";
-import { Body, Button, Card, Divider, Heading, Small } from "../src/components/ui";
-import { CONTENT_MAX, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
+import { Body, Button, Card, Divider, GaugeBar, Heading, Small } from "../src/components/ui";
+import { CONTENT_MAX, TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../src/theme";
 import {
   listDutyEntries,
   listRecordings,
@@ -62,6 +62,7 @@ export default function TiroNotes() {
   const [separate, setSeparate] = useState(false);
   const [busy, setBusy] = useState(false);
   const [note, setNote] = useState<string | null>(null);
+  const [pct, setPct] = useState(0);
   const [error, setError] = useState<string | null>(null);
 
   const today = useMemo(() => toDateString(Date.now()), []);
@@ -175,13 +176,17 @@ export default function TiroNotes() {
     setBusy(true);
     setError(null);
     setNote(null);
+    setPct(0);
     try {
       const out = await importTiroNotes({
         notes: chosen,
         date,
         code,
         separate,
-        onProgress: (_pct: number, msg?: string) => setNote(msg ?? null),
+        onProgress: (p: number, msg?: string) => {
+          setPct(p);
+          if (msg) setNote(msg);
+        },
       });
       // 하나가 막혀도 나머지는 들어갔다. 조용히 넘어가면 사용자는 다 들어온 줄 안다.
       if (out.failed.length > 0) {
@@ -215,8 +220,42 @@ export default function TiroNotes() {
   }, [busy, chosen, code, date, existing.length, router, separate]);
 
   return (
+    <View style={{ flex: 1, backgroundColor: t.bg }}>
+    {busy ? (
+      <View
+        accessibilityViewIsModal
+        accessibilityLiveRegion="polite"
+        style={{
+          position: "absolute",
+          top: 0,
+          right: 0,
+          bottom: 0,
+          left: 0,
+          zIndex: 10,
+          backgroundColor: t.bg,
+          alignItems: "center",
+          justifyContent: "center",
+          padding: space.xl,
+          gap: space.lg,
+        }}
+      >
+        <Ionicons name="cloud-download-outline" size={40} color={t.accent} />
+        <Text style={[type.title, TABULAR, { color: t.text }]}>{pct}%</Text>
+        <View style={{ width: "100%", maxWidth: 360 }}>
+          <GaugeBar ratio={pct / 100} color={t.accent} height={8} />
+        </View>
+        <Text style={[type.body, { color: t.textMuted, textAlign: "center" }]}>
+          {note ?? "티로에서 받아오는 중"}
+        </Text>
+        <Small>노트 {chosen.length}개를 가져오고 있어요.</Small>
+        <Small>끝나면 전사본으로 넘어가요.</Small>
+      </View>
+    ) : null}
     <ScrollView
-      style={{ flex: 1, backgroundColor: t.bg }}
+      style={{ flex: 1 }}
+      // 안드로이드 토크백은 덮개 뒤도 읽는다 — 가져오는 중에 아래 체크박스를
+      // 누르면 목록이 바뀐다. (iOS 는 덮개의 accessibilityViewIsModal 이 막는다)
+      importantForAccessibility={busy ? "no-hide-descendants" : "auto"}
       contentContainerStyle={{
         padding: space.lg,
         paddingBottom: insets.bottom + space.bottom,
@@ -378,7 +417,6 @@ export default function TiroNotes() {
         </Card>
       ) : null}
 
-      {note ? <Small muted={false}>{note}</Small> : null}
       {error ? <Text style={[type.small, { color: t.danger }]}>{error}</Text> : null}
       <Button
         label={chosen.length > 1 ? `노트 ${chosen.length}개 가져오기` : chosen.length === 1 ? "노트 가져오기" : "노트부터 고르기"}
@@ -395,5 +433,6 @@ export default function TiroNotes() {
       <Small>소리는 티로에 남고 글자만 가져와요.</Small>
       <Small>가져온 글자는 폰 안에만 저장돼요.</Small>
     </ScrollView>
+    </View>
   );
 }
