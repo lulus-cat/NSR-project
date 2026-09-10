@@ -119,8 +119,19 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const completeOnboarding = useCallback(async () => {
+    // 설정을 마쳤다는 표시가 **먼저**다. 이게 안 써지면 앱이 온보딩에 갇힌다.
     await setSetting(SETTINGS_KEYS.onboarded, true);
     setOnboarded(true);
+    // 앱 잠금을 켜고 시작한다. 이 폰 안에는 환자 대화가 든다 — 잠금이 기본으로
+    // 꺼져 있으면 처음 켠 사람은 그런 게 있는지도 모르고 지나간다.
+    // 첫 화면부터 잠그면 준비도 못 하니 여기서 켠다. 생체인증이 없는 폰은
+    // unlock() 이 그냥 열어 준다. 실패해도 시작은 막지 않는다 — 설정에 있다.
+    try {
+      await setSetting(SETTINGS_KEYS.appLock, true);
+      appLockEnabled.current = true;
+    } catch (e) {
+      console.error("[NSR] 앱 잠금을 켜지 못했다", e);
+    }
   }, []);
 
   const updatePolicy = useCallback(async (next: RecordingPolicy) => {

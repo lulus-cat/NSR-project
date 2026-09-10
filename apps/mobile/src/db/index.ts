@@ -6,7 +6,7 @@
  */
 
 import * as SQLite from "expo-sqlite";
-import { rewriteOnce } from "@nsr/core";
+import { cardsFromReport, rewriteOnce } from "@nsr/core";
 import type {
   Card,
   DutyEntry,
@@ -1144,6 +1144,25 @@ export async function saveShiftReport(
        markdown = excluded.markdown, payload = excluded.payload, created_at = excluded.created_at`,
     [shiftId, markdown, JSON.stringify(payload), Date.now()],
   );
+}
+
+/**
+ * 보고서 한 장을 받아들인다 — 글을 넣고, 그 안의 카드를 학습에 넣는다.
+ *
+ * 오는 길이 둘이다: 서버가 밀어 준 것(A 경로)과 사람이 붙여넣은 것(B 경로).
+ * 두 길이 똑같이 처리돼야 한다 — 예전에 서버 쪽에만 카드 만들기가 있어서,
+ * 붙여넣은 보고서는 글로만 남고 복습 탭에는 한 장도 안 생겼다.
+ */
+export async function applyShiftReport(
+  shiftId: string,
+  markdown: string,
+  source: "server" | "paste",
+): Promise<{ cards: number }> {
+  // payload 에 마크다운을 함께 남긴다. `{source}` 만 넣던 것이 로컬 분석 결과를
+  // 지웠고, 임상 모드의 '카드 추가' 는 payload 안에서 근거 id 를 찾는다.
+  await saveShiftReport(shiftId, markdown, { source, markdown });
+  const made = cardsFromReport(shiftId, markdown);
+  return { cards: made.length ? await saveCards(made, Date.now()) : 0 };
 }
 
 export interface ShiftReportRow {

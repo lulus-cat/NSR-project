@@ -41,15 +41,14 @@ import {
   applySpeakerRoles,
   listUserTerms,
   shiftsWithSegments,
-  saveCards,
+  applyShiftReport,
   countSegments,
-  saveShiftReport,
   saveTaeumScore,
   saveUserTerm,
   setSetting,
 } from "../db";
 import { redactForNetwork } from "./export";
-import { cardsFromReport, deidentify, taeumFromReading } from "@nsr/core";
+import { deidentify, taeumFromReading } from "@nsr/core";
 import { logDebug } from "./debug";
 
 const URL_KEY = "nsr.server.url";
@@ -550,14 +549,8 @@ export async function pullFromServer(): Promise<PullResult> {
   const terms = body.terms ?? [];
   let cards = 0;
   for (const r of reports) {
-    // payload 에 마크다운을 함께 남긴다. `{source:"server"}` 만 넣던 것이
-    // 로컬 분석 결과를 지웠고, 임상 모드의 '카드 추가' 는 payload 안에서
-    // 근거 id 를 찾기 때문에 그 뒤로 아무것도 못 넣었다.
-    await saveShiftReport(r.shiftId, r.markdown, { source: "server", markdown: r.markdown });
-    // 보고서의 '## 카드' 절을 학습 카드로 만든다. 예전에는 AI 가 카드 15장을
-    // 만들었다고 말해도 복습 탭에는 한 장도 없었다 — 글로만 있었기 때문이다.
-    const made = cardsFromReport(r.shiftId, r.markdown);
-    if (made.length) cards += await saveCards(made, Date.now());
+    // 붙여넣은 보고서와 **같은 길**을 쓴다 (db 의 applyShiftReport).
+    cards += (await applyShiftReport(r.shiftId, r.markdown, "server")).cards;
   }
   const mine = new Set((await listUserTerms()).map((u) => u.ko));
   for (const t of terms) {

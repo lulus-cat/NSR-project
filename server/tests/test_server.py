@@ -182,10 +182,21 @@ def test_오리진을_직접_적으면_그것만_쓴다():
     assert s.allowed_origins == ["https://claude.ai", "https://내회사.example"]
 
 
-def test_별표는_보호를_끈다():
+def test_별표로는_보호를_못_끈다():
+    """
+    한때 `NSR_PUBLIC_HOST=*` 로 보호를 통째로 끌 수 있었다.
+
+    혼자 쓸 때는 "권하지 않음" 으로 족했지만, 남들이 각자 서버를 세우기 시작하면
+    막힌 사람이 검색해서 제일 먼저 찾는 것이 그 한 줄이다. 끄면 DNS 리바인딩으로
+    남의 브라우저가 그 서버를 대신 부를 수 있다. 이제 도메인만 받는다.
+    """
+    import pytest
+
     from nsr_server.app import transport_security
 
-    assert transport_security(_config("*")).enable_dns_rebinding_protection is False
+    with pytest.raises(SystemExit) as e:
+        transport_security(_config("*"))
+    assert "*" in str(e.value)
 
 
 def test_도메인을_안_적으면_이유를_말하고_멈춘다():

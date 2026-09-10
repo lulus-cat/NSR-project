@@ -73,4 +73,83 @@ if grep -q '^org\.gradle\.jvmargs=' "$PROPS"; then
 fi
 echo "gradle 메모리: $(sed -n 's/^org\.gradle\.jvmargs=//p' "$PROPS")"
 
+# ── 4. 서명 ──────────────────────────────────────────────────────────
+#
+# 왜 필요한가
+# ----------
+# 지금까지는 안드로이드가 만들어 주는 **디버그 열쇠**로 서명했다. 혼자 쓸 때는
+# 그걸로 충분했다. 남에게 나눠 주기 시작하면 아니다 — 디버그 열쇠는 모두의
+# 컴퓨터에 똑같이 들어 있어서, **누구나 "NSR" 인 척하는 APK 를 만들어**
+# 배포할 수 있고 폰은 그걸 같은 앱의 새 판으로 받아들인다.
+#
+# 그리고 열쇠가 바뀌면 안드로이드는 업데이트를 거부한다. 지금 디버그 열쇠로
+# 퍼뜨린 뒤에 제대로 된 열쇠로 바꾸면, 받은 사람은 전부 **지우고 다시 깔아야**
+# 한다(그때 앱 안의 녹음과 전사본이 같이 사라진다). 그래서 공개 전에 바꾼다.
+#
+# 열쇠는 저장소에 없다. NSR_KEYSTORE_BASE64 로 들어온다(GitHub Actions 비밀).
+# 없으면 예전처럼 디버그 서명으로 만든다 — 남의 포크에서도 빌드는 돌아야 한다.
+GRADLE="$ANDROID_DIR/app/build.gradle"
+
+if [ -n "${NSR_KEYSTORE_BASE64:-}" ]; then
+  KEYSTORE="$ANDROID_DIR/app/nsr-release.keystore"
+  printf '%s' "$NSR_KEYSTORE_BASE64" | base64 -d > "$KEYSTORE"
+
+  # 비밀번호는 gradle.properties 로 넘긴다. 명령줄 인자로 주면 `ps` 에 보인다.
+  # 이 파일은 prebuild 산출물이라 커밋되지 않는다.
+  sed -i.bak '/^NSR_STORE_FILE=/d;/^NSR_STORE_PASSWORD=/d;/^NSR_KEY_ALIAS=/d;/^NSR_KEY_PASSWORD=/d' "$PROPS"
+  rm -f "$PROPS.bak"
+  {
+    echo "NSR_STORE_FILE=nsr-release.keystore"
+    echo "NSR_STORE_PASSWORD=${NSR_KEYSTORE_PASSWORD:?열쇠 비밀번호가 없습니다}"
+    echo "NSR_KEY_ALIAS=${NSR_KEY_ALIAS:-nsr}"
+    echo "NSR_KEY_PASSWORD=${NSR_KEY_PASSWORD:-${NSR_KEYSTORE_PASSWORD}}"
+  } >> "$PROPS"
+
+  # 이미 손본 파일이면 그냥 둔다. 두 번 돌리면 블록이 겹쳐 들어가고,
+  # 그다음 실행이 "템플릿이 바뀌었다" 는 엉뚱한 말로 죽는다.
+  if grep -q 'NSR_STORE_FILE' "$GRADLE"; then
+    echo "서명: 이미 배포용 열쇠로 되어 있습니다."
+    echo "안드로이드 빌드 준비 끝."
+    exit 0
+  fi
+
+  # 템플릿의 signingConfigs 에 release 를 더한다. 앵커가 없으면 **멈춘다** —
+  # 조용히 넘어가면 디버그 서명 APK 가 릴리스로 올라간다.
+  if ! grep -q 'signingConfigs {' "$GRADLE"; then
+    echo "build.gradle 에서 signingConfigs 를 못 찾았습니다. 템플릿이 바뀌었습니다." >&2
+    exit 1
+  fi
+  python3 - "$GRADLE" <<'PYEOF'
+import re, sys
+
+path = sys.argv[1]
+body = open(path, encoding="utf-8").read()
+
+block = """    signingConfigs {
+        release {
+            storeFile file(NSR_STORE_FILE)
+            storePassword NSR_STORE_PASSWORD
+            keyAlias NSR_KEY_ALIAS
+            keyPassword NSR_KEY_PASSWORD
+        }
+"""
+body, n = re.subn(r"    signingConfigs \{\n", block, body, count=1)
+if n != 1:
+    sys.exit("signingConfigs 블록을 못 열었습니다.")
+
+# buildTypes.release 안의 debug 서명을 release 로 바꾼다. 다른 곳의
+# signingConfigs.debug(=buildTypes.debug)는 그대로 둔다.
+head = body.index("buildTypes {")
+tail = body.index("release {", head)
+before, after = body[:tail], body[tail:]
+after, n = re.subn(r"signingConfig signingConfigs\.debug", "signingConfig signingConfigs.release", after, count=1)
+if n != 1:
+    sys.exit("buildTypes.release 의 서명 줄을 못 찾았습니다.")
+open(path, "w", encoding="utf-8").write(before + after)
+print("서명: 배포용 열쇠로 바꿨습니다.")
+PYEOF
+else
+  echo "서명: 배포용 열쇠가 없어 디버그 서명으로 만듭니다 (나눠 주지 마십시오)."
+fi
+
 echo "안드로이드 빌드 준비 끝."

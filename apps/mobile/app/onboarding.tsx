@@ -53,6 +53,18 @@ const ITEMS: { key: string; title: string; body: string }[] = [
       "녹음 중 마이크 표시는 폰이 켜는 거라 숨길 수 없어요. 앱이 소리를 내지는 않아요.",
   },
   {
+    key: "retention",
+    title: "소리는 30일 뒤 저절로 지워져요",
+    body:
+      "글자로 바꾼 녹음만 지워요. 아직 안 보낸 녹음은 그대로 둬요. 설정에서 기간을 바꿔요.",
+  },
+  {
+    key: "lock",
+    title: "앱 잠금이 켜진 채로 시작해요",
+    body:
+      "앱을 열 때 지문이나 얼굴로 풀어요. 설정에서 끌 수 있어요.",
+  },
+  {
     key: "score",
     title: "온도는 판정이 아니라 기록이에요",
     body:
@@ -102,6 +114,10 @@ export default function Onboarding() {
   const [hits, setHits] = useState<PlaceHit[]>([]);
   const [picked, setPicked] = useState<PlaceHit | null>(null);
   const [searchMsg, setSearchMsg] = useState<string | null>(null);
+  // 3단계 — 티로 열쇠. 여기서 넣으면 첫 가져오기에서 안 막힌다.
+  const [tiroKey, setTiroKeyText] = useState("");
+  const [tiroSaved, setTiroSaved] = useState(false);
+
   // 2단계 — 파트
   const [part, setPart] = useState<string | null>(draft.part);
   // 저장이 실패해도 화면은 넘어간다. 대신 무슨 일이 있었는지는 알린다.
@@ -120,6 +136,21 @@ export default function Onboarding() {
   const allChecked = ITEMS.every((i) => checked[i.key]);
 
   const next = () => setStep((s) => Math.min(s + 1, STEPS.length - 1));
+
+  /** 티로 열쇠를 보안 저장소에 넣는다. 빈 칸이면 아무것도 안 한다. */
+  const saveTiro = async () => {
+    if (!tiroKey.trim()) return;
+    try {
+      const { setTiroKey } = await import("../src/services/asr");
+      await setTiroKey(tiroKey);
+      setTiroSaved(true);
+      setSaveMsg(null);
+    } catch {
+      // 조용히 넘어가면 첫 가져오기에서야 안다.
+      setTiroSaved(false);
+      setSaveMsg("열쇠를 저장하지 못했어요. 설정에서 다시 넣어 주세요.");
+    }
+  };
 
   /**
    * 저장은 화면 전환을 막지 않는다.
@@ -307,8 +338,38 @@ export default function Onboarding() {
               <Heading>3. 글자를 가져와요</Heading>
               <Small>티로가 다 받아적으면 홈에서 가져오기를 눌러요.</Small>
             </Card>
-            <Small>티로 열쇠는 설정에 넣어요. 나중에 넣어도 돼요.</Small>
-            <Button label="다음" tone="primary" onPress={() => next()} />
+            <Card>
+              <Heading>티로 열쇠</Heading>
+              <Small>티로 홈페이지 → 설정 → API 에서 만들어요.</Small>
+              <Small>xxx.secret 처럼 점 뒤까지 통째로 붙여넣어요.</Small>
+              <TextInput
+                value={tiroKey}
+                onChangeText={setTiroKeyText}
+                placeholder="티로 열쇠"
+                placeholderTextColor={t.textMuted}
+                autoCapitalize="none"
+                autoCorrect={false}
+                secureTextEntry
+                style={{
+                  minHeight: TOUCH_MIN,
+                  borderRadius: radius.md,
+                  backgroundColor: t.surfaceAlt,
+                  paddingHorizontal: space.md,
+                  color: t.text,
+                  fontSize: 15,
+                }}
+              />
+              <Button
+                label={tiroSaved ? "열쇠 저장됨" : "열쇠 저장"}
+                tone={tiroSaved ? "default" : "primary"}
+                onPress={() => void saveTiro()}
+              />
+              <Small>열쇠는 이 폰의 보안 저장소에만 들어가요.</Small>
+            </Card>
+            <Small>나중에 설정에서 넣어도 돼요.</Small>
+            {/* 적어 놓고 저장을 안 누른 채 넘어가는 사람이 많다. 그러면 첫
+                가져오기에서 막히는데, 그게 이 칸을 만든 이유다. 넘어갈 때 넣는다. */}
+            <Button label="다음" tone="primary" onPress={() => void saveTiro().then(next)} />
             {saveMsg ? <Small muted={false}>{saveMsg}</Small> : null}
           </>
         ) : null}

@@ -133,15 +133,18 @@ def transport_security(config: Config) -> TransportSecuritySettings:
     """
     프록시 뒤에서 살아남는 설정.
 
-    `NSR_PUBLIC_HOST` 가 `*` 면 보호를 끈다 — 주소 안의 토큰이 유일한 문지기가
-    되므로 권하지 않는다. 도메인을 적어 두는 편이 낫다.
+    한때 `NSR_PUBLIC_HOST=*` 로 보호를 통째로 끌 수 있었다. **없앴다.**
+    혼자 쓸 때는 "권하지 않음" 으로 족했지만, 이 서버를 남들이 각자 세우기
+    시작하면 막힌 사람이 검색해서 제일 먼저 찾는 것이 그 한 줄이다. 끄면
+    주소 안의 토큰이 유일한 문지기가 되고, DNS 리바인딩으로 남의 브라우저가
+    그 서버를 대신 부를 수 있다. 도메인을 적는 것이 정답이라 그것만 남긴다.
     """
-    if config.public_host == "*":
-        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
-    if not config.public_host:
+    if not config.public_host or config.public_host == "*":
         raise SystemExit(
-            "환경변수 NSR_PUBLIC_HOST 가 비어 있습니다. 바깥에서 부르는 도메인을 넣으십시오.\n"
+            "환경변수 NSR_PUBLIC_HOST 에 바깥에서 부르는 도메인을 넣으십시오.\n"
             "  NSR_PUBLIC_HOST=nsr.example.com\n"
+            "'*' 는 받지 않습니다 — 보호가 꺼져 남의 브라우저가 이 서버를 대신\n"
+            "부를 수 있습니다(DNS 리바인딩). 도메인을 그대로 적으십시오.\n"
             "이 값이 없으면 커넥터가 421 Invalid Host header 로 막힙니다."
         )
     return TransportSecuritySettings(
@@ -154,6 +157,9 @@ def transport_security(config: Config) -> TransportSecuritySettings:
 
 def build_app(config: Config | None = None, store: Store | None = None) -> Starlette:
     config = config or Config()
+    # 도메인 검사를 **맨 앞에서** 한다. 아래의 AnyHttpUrl("https://") 이 먼저
+    # 터지면 사람은 pydantic 오류만 보고 무엇을 넣어야 하는지 모른다.
+    transport_security(config)
     store = store or Store(config.db_path)
 
     auth = NsrOAuthProvider(store, config.public_host)

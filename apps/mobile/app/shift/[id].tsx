@@ -12,7 +12,7 @@
  * 두 탭은 뺐다.
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Alert, Pressable, ScrollView, View } from "react-native";
+import { Alert, Pressable, ScrollView, TextInput, View } from "react-native";
 import { Text } from "react-native";
 import { useFocusEffect, useLocalSearchParams, useRouter } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -151,6 +151,10 @@ export default function ShiftDetail() {
 
   /** 이 근무만이 아니라 **모든 날**의 밀린 녹음. 어느 날 것이 남았는지 잊지 않게. */
   const [allPending, setAllPending] = useState<RecordingRow[]>([]);
+  /** 서버 없이 쓰는 길 — AI 가 준 보고서를 사람이 되돌려 넣는 자리. */
+  const [pasteMd, setPasteMd] = useState("");
+  const [pasteBusy, setPasteBusy] = useState(false);
+  const [pasteNote, setPasteNote] = useState<string | null>(null);
   /** 참이면 음성 파일 목록이 모든 날의 밀린 녹음을 보여준다. */
   const [showAll, setShowAll] = useState(false);
 
@@ -589,6 +593,9 @@ export default function ShiftDetail() {
 
   return (
     <ScrollView
+      // 보고서를 붙여넣고 바로 버튼을 누르면, 이게 없으면 첫 탭이 키보드만
+      // 내리고 버튼에는 안 닿는다.
+      keyboardShouldPersistTaps="handled"
       contentContainerStyle={{
         padding: space.lg,
         // 내비게이션 바가 마지막 카드를 가리지 않게 안전영역만큼 띄운다.
@@ -780,6 +787,82 @@ export default function ShiftDetail() {
             </Small>
           )}
           {sendNote ? <Small muted={false}>{sendNote}</Small> : null}
+        </Card>
+      ) : null}
+
+      {/* ── 보고서 붙여넣기 — 서버 없이 쓰는 길(B) ──
+          서버를 세운 사람은 보고서가 저절로 들어온다. 세우지 않은 사람은
+          전사본을 내보내 클로드·GPT 에 붙여넣고, 받은 글을 여기로 되돌린다.
+          카드도 여기서 같이 만들어진다(applyShiftReport). */}
+      {!preview ? (
+        <Card>
+          <Heading>보고서 붙여넣기</Heading>
+          <Small>AI 가 써 준 보고서를 그대로 붙여넣어요.</Small>
+          <Small>서버를 이어 뒀으면 저절로 들어와요.</Small>
+          <TextInput
+            value={pasteMd}
+            onChangeText={setPasteMd}
+            placeholder={"# 2026-09-06 데이 근무\n\n## 타임라인\n..."}
+            placeholderTextColor={t.textMuted}
+            multiline
+            textAlignVertical="top"
+            autoCapitalize="none"
+            autoCorrect={false}
+            style={{
+              minHeight: 120,
+              borderRadius: radius.md,
+              backgroundColor: t.surfaceAlt,
+              padding: space.md,
+              color: t.text,
+              fontSize: 15,
+              lineHeight: 23,
+            }}
+          />
+          <Button
+            label={pasteBusy ? "넣는 중" : "보고서 넣기"}
+            tone="primary"
+            busy={pasteBusy}
+            onPress={async () => {
+              const md = pasteMd.trim();
+              if (!md) {
+                setError("붙여넣은 글이 없어요. 보고서를 넣어 주세요.");
+                return;
+              }
+              // 이미 보고서가 있으면 묻는다. 덮어쓰면 되돌릴 자리가 없다 —
+              // 이 화면의 지우기가 전부 한 번 묻는 것과 같은 이유다.
+              if (reportMd) {
+                const ok = await new Promise<boolean>((resolve) => {
+                  Alert.alert(
+                    "보고서를 바꿀까요?",
+                    "이미 있는 보고서를 덮어써요. 되돌릴 수 없어요.",
+                    [
+                      { text: "그만두기", style: "cancel", onPress: () => resolve(false) },
+                      { text: "바꾸기", onPress: () => resolve(true) },
+                    ],
+                  );
+                });
+                if (!ok) return;
+              }
+              setPasteBusy(true);
+              setError(null);
+              try {
+                const { applyShiftReport } = await import("../../src/db");
+                const out = await applyShiftReport(shiftId, md, "paste");
+                setPasteMd("");
+                setPasteNote(
+                  out.cards > 0
+                    ? `넣었어요. 카드 ${out.cards}장이 학습에 들어갔어요.`
+                    : "넣었어요. 카드는 못 찾았어요 — '## 카드' 절을 확인해 주세요.",
+                );
+                await load();
+              } catch (e) {
+                setError(e instanceof Error ? e.message : "넣지 못했어요. 다시 눌러 주세요.");
+              } finally {
+                setPasteBusy(false);
+              }
+            }}
+          />
+          {pasteNote ? <Small muted={false}>{pasteNote}</Small> : null}
         </Card>
       ) : null}
 

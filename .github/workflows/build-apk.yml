@@ -16,9 +16,14 @@
 #
 # 서명
 # ----
-# 디버그 서명이다. 안드로이드가 만들어 주는 열쇠로 서명하므로 곧바로 설치된다.
-# (서명 없는 release APK 는 설치 자체가 안 된다.)
-# 스토어에 올릴 것이 아니라 본인과 동료가 받아 쓰는 물건이라 이걸로 충분하다.
+# 저장소 비밀(NSR_KEYSTORE_BASE64 등)에 배포용 열쇠가 있으면 그것으로 서명한다.
+# 없으면 디버그 서명으로 넘어간다 — 남의 포크에서도 빌드는 돌아야 하니까.
+#
+# 디버그 열쇠는 **모두의 컴퓨터에 똑같이 들어 있다.** 그 서명으로 나눠 주면
+# 누구나 "NSR" 인 척하는 APK 를 만들 수 있고 폰은 그걸 새 판으로 받는다.
+# 그리고 나중에 열쇠를 바꾸면 받은 사람은 전부 지우고 다시 깔아야 한다
+# (그때 앱 안의 녹음과 전사본이 같이 사라진다).
+# 열쇠 만드는 법은 docs/10-공개-배포.md 에 있다.
 #
 # API 키는 APK 에 안 들어간다 — 앱을 처음 켤 때 사람이 넣고, 기기 보안 저장소에만 있다.
 
@@ -193,6 +198,13 @@ jobs:
           echo "지운 뒤:"; df -h / | tail -1
 
       - name: 안드로이드 빌드 준비
+        # 배포용 열쇠는 저장소에 없다. 비밀에 없으면 스크립트가 디버그 서명으로
+        # 넘어간다 — 남의 포크에서도 빌드는 돌아야 한다.
+        env:
+          NSR_KEYSTORE_BASE64: ${{ secrets.NSR_KEYSTORE_BASE64 }}
+          NSR_KEYSTORE_PASSWORD: ${{ secrets.NSR_KEYSTORE_PASSWORD }}
+          NSR_KEY_ALIAS: ${{ secrets.NSR_KEY_ALIAS }}
+          NSR_KEY_PASSWORD: ${{ secrets.NSR_KEY_PASSWORD }}
         run: tools/prepare-android-build.sh apps/mobile/android
 
       - name: APK 빌드
