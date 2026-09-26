@@ -15,7 +15,7 @@
  * 오래된 녹음을 안 지우는 것이 가장 큰 위험이다.
  */
 
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
@@ -50,6 +50,10 @@ CREATE TABLE IF NOT EXISTS recordings (
   -- 1 이면 같은 근무의 다른 기록과 합치지 않고 따로 본다(전사 결과·학습 목록).
   -- 기존 설치에는 getDb 가 ALTER TABLE 로 붙인다.
   separate      INTEGER NOT NULL DEFAULT 0,
+  -- 이 기록을 켠 주체. tick: 듀티표 / geofence: 근무지 / user: 사람이 누름 /
+  -- import: 티로에서 가져옴. 녹음 기록 화면이 '저절로 켜진 것'을 이 열로 가른다.
+  -- 이 열이 생기기 전 기록은 NULL 이고 화면에는 '모름' 으로 적는다.
+  owner         TEXT,
   created_at    INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_recordings_shift ON recordings(shift_id);

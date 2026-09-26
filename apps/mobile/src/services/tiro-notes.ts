@@ -221,6 +221,7 @@ async function importOne(input: {
     startedAt,
     label: input.note.title,
     separate: input.separate,
+    owner: "import",
   });
   try {
   await finishImportedTranscript({

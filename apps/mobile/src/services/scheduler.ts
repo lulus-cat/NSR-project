@@ -261,6 +261,9 @@ async function startFor(
         shiftId: window.shiftId,
         seq: index,
         startedAt,
+        // 누가 켰는지 여기서만 알 수 있다. 녹음 기록 화면이 이걸 읽어
+        // '저절로 켜진 기록'을 따로 보여 준다.
+        owner,
       });
     },
     async onChunk(chunk) {

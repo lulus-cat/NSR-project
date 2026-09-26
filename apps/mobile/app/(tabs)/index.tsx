@@ -611,6 +611,13 @@ export default function Home() {
             <Small>외 {pendingCount - 3}건은 근무 기록 화면에서 봐요.</Small>
           ) : null}
           <DashedDivider />
+          <BriefRow
+            icon="mic-outline"
+            label="녹음 기록"
+            value="언제 켜졌나 보기"
+            onPress={() => router.push("/recordings")}
+          />
+          <DashedDivider />
           {needsTiroKey ? (
             <BriefRow
               icon="cloud-download-outline"

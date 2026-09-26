@@ -45,6 +45,9 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
           "ALTER TABLE recordings ADD COLUMN separate INTEGER NOT NULL DEFAULT 0",
         );
       }
+      if (!have.has("owner")) {
+        await db.execAsync("ALTER TABLE recordings ADD COLUMN owner TEXT");
+      }
       // 전사 도중 앱이 죽으면(프로세스 종료·강제 종료) 'transcribing' 이 영영
       // 남는다. 그러면 그 기록은 '전사할 기록'에서 사라져 다시 전사할 길이
       // 없다 — 실사용에서 콜랩 끊김 뒤 그대로 재현된 사고다. 러너는 프로세스
@@ -190,8 +193,18 @@ export interface RecordingRow {
   label: string | null;
   /** 1 이면 같은 근무의 다른 기록과 합치지 않고 따로 본다. */
   separate: number;
+  /** 이 기록을 켠 주체. 이 열이 생기기 전 기록은 null. */
+  owner: RecordingStarter | null;
   created_at: number;
 }
+
+/**
+ * 기록을 켠 주체.
+ *
+ * tick·geofence·user 는 @nsr/core 의 `RecordingOwner` 와 같은 말이고,
+ * import 는 녹음이 아니라 티로에서 글자만 가져온 것이다.
+ */
+export type RecordingStarter = "tick" | "geofence" | "user" | "import";
 
 export async function createRecording(input: {
   id: string;
@@ -202,11 +215,13 @@ export async function createRecording(input: {
   label?: string;
   /** 참이면 같은 근무의 다른 기록과 합치지 않는다. */
   separate?: boolean;
+  /** 누가 켰는지. 녹음 기록 화면이 이걸로 '저절로 켜진 것'을 가른다. */
+  owner?: RecordingStarter;
 }): Promise<void> {
   const db = await getDb();
   await db.runAsync(
-    `INSERT INTO recordings (id, shift_id, seq, started_at, label, separate, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT INTO recordings (id, shift_id, seq, started_at, label, separate, owner, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.id,
       input.shiftId,
@@ -214,6 +229,7 @@ export async function createRecording(input: {
       input.startedAt,
       input.label ?? null,
       input.separate ? 1 : 0,
+      input.owner ?? null,
       Date.now(),
     ],
   );
@@ -286,6 +302,26 @@ export async function listRecordings(shiftId?: string): Promise<RecordingRow[]> 
     : db.getAllAsync<RecordingRow>(
         "SELECT * FROM recordings ORDER BY started_at DESC LIMIT 200",
       );
+}
+
+/** 녹음 기록 화면 한 줄 — 기록 하나와 거기서 나온 문장 수. */
+export interface RecordingLogRow extends RecordingRow {
+  sentences: number;
+}
+
+/**
+ * 모든 녹음을 최근 것부터. 버린 것·전사된 것까지 다 넣는다 —
+ * 이 화면의 일은 "저절로 켜졌나"를 확인시켜 주는 것이라 빠짐이 있으면 못 쓴다.
+ */
+export async function listRecordingLog(limit = 300): Promise<RecordingLogRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<RecordingLogRow>(
+    `SELECT r.*, (SELECT COUNT(*) FROM segments s WHERE s.recording_id = r.id) AS sentences
+       FROM recordings r
+      ORDER BY r.started_at DESC
+      LIMIT ?`,
+    [limit],
+  );
 }
 
 export async function pendingTranscriptions(): Promise<RecordingRow[]> {

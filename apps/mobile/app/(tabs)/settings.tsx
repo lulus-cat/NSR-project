@@ -954,6 +954,9 @@ export default function Settings() {
           })}
         </View>
         <Small>{capability.explanation}</Small>
+        {/* 자동 기록이 정말 켜졌는지는 여기서 확인한다 — 이 설정 바로 아래에
+            문을 둔다. 켜 놓고 증거를 못 찾으면 사람은 기능을 안 믿는다. */}
+        <Row label="녹음 기록" value="언제 켜졌나 보기 ›" onPress={() => router.push("/recordings")} />
         {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
         {recDiag.lastError ? (
           <>
