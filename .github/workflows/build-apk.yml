@@ -93,8 +93,14 @@ jobs:
           distribution: temurin
           java-version: "21"
 
+      # packages 를 손으로 적는 이유: 이 액션의 기본값이 'tools platform-tools' 인데
+      # 구글이 'tools' 를 저장소에서 내렸다 (0.1.119 빌드가 여기서 죽었다 —
+      # "Failed to find package 'tools'" → sdkmanager exit 1). platform-tools 만
+      # 받는다. 나머지 SDK 는 러너 이미지에 이미 있고, 모자라면 gradle 이 받는다.
       - name: 안드로이드 SDK 준비
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       # 지난 빌드에서 로그가 "535 actionable tasks: 535 executed" — 재사용이 0 이었다.
       # 의존성(~/.gradle)과 C++ 오브젝트(ccache)를 실행 사이에 남긴다.
