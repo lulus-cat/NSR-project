@@ -7,6 +7,8 @@
 import { describe, expect, it } from "vitest";
 import {
   MANUAL_MAX_MS,
+  STOP_LOCK_MS,
+  clearStopLock,
   geoDecision,
   tickDecision,
   type SessionState,
@@ -96,6 +98,22 @@ describe("위치 판정", () => {
   it("사람이 끈 뒤에는 다시 안 켠다", () => {
     // 자리를 비우려고 끈 것을 15분 뒤에 되살리면 그건 사고다.
     expect(geoDecision({ ...기본, session: null, stoppedByUserAt: 지금 })).toEqual({ do: "none" });
+  });
+
+  it("벗어나면 '직접 끔' 잠금이 풀린다", () => {
+    // 이걸 안 풀어서, 홈에서 한 번 끄면 그 뒤로 위치로는 영영 안 켜졌다.
+    expect(clearStopLock(true, 지금, 지금)).toBe(true);
+    // 아직 병동 안이면 풀지 않는다. 끈 그 자리에서 되살아나면 안 된다.
+    expect(clearStopLock(false, 지금, 지금)).toBe(false);
+    // 끈 적이 없으면 풀 것도 없다.
+    expect(clearStopLock(true, 0, 지금)).toBe(false);
+  });
+
+  it("이탈 신호를 못 받아도 근무 하나가 지나면 풀린다", () => {
+    const 끈시각 = 지금 - STOP_LOCK_MS - 1000;
+    expect(clearStopLock(false, 끈시각, 지금)).toBe(true);
+    // 끈 직후에는 안 풀린다 — 그게 잠금의 본래 일이다.
+    expect(clearStopLock(false, 지금 - 60_000, 지금)).toBe(false);
   });
 
   it("홈 버튼으로 켠 기록은 병원 밖에서도 안 끈다", () => {

@@ -44,6 +44,7 @@ import {
 } from "../../src/services/nsr-server";
 import {
   clearWorkplace,
+  geoStatus,
   geofenceEnabled,
   getWorkplace,
   searchWorkplace,
@@ -51,7 +52,6 @@ import {
   setRadius,
   setWorkplaceHere,
   setWorkplacePlace,
-  whereAmI,
   type PlaceHit,
   type Workplace,
 } from "../../src/services/geofence";
@@ -551,11 +551,9 @@ export default function Settings() {
     useCallback(() => {
       let alive = true;
       void (async () => {
-        const here = await whereAmI();
-        if (!alive) return;
-        if (!here) setGeoNow("근무지 없음");
-        else if (here.distance === null) setGeoNow("위치를 못 읽었어요");
-        else setGeoNow(here.inside ? `근무지 안 · ${here.distance}m` : `밖 · ${here.distance}m`);
+        // 거리만 보여 주면 "근무지 안 · 30m" 인데 기록이 없는 날 이유를 알 수 없다.
+        const text = await geoStatus();
+        if (alive) setGeoNow(text);
       })();
       return () => {
         alive = false;
@@ -957,6 +955,28 @@ export default function Settings() {
         {/* 자동 기록이 정말 켜졌는지는 여기서 확인한다 — 이 설정 바로 아래에
             문을 둔다. 켜 놓고 증거를 못 찾으면 사람은 기능을 안 믿는다. */}
         <Row label="녹음 기록" value="언제 켜졌나 보기 ›" onPress={() => router.push("/recordings")} />
+        {/* 자동 기록이 안 도는 가장 흔한 까닭 — 폰이 앱을 재운다. 삼성·샤오미는
+            getStatusAsync 가 '쓸 수 있음' 이라고 해도 실제로는 깨우지 않는다.
+            그래서 경고가 없어도 길을 열어 둔다. 목록에서 NSR 을 '제한 없음' 으로. */}
+        {Platform.OS === "android" ? (
+          <>
+            <Row
+              label="배터리 제한"
+              value="풀러 가기 ›"
+              onPress={async () => {
+                try {
+                  const IntentLauncher = await import("expo-intent-launcher");
+                  await IntentLauncher.startActivityAsync(
+                    "android.settings.IGNORE_BATTERY_OPTIMIZATION_SETTINGS",
+                  );
+                } catch {
+                  setGeoMsg("그 설정 화면을 열 수 없어요. 폰 설정에서 배터리를 찾아 주세요.");
+                }
+              }}
+            />
+            <Small>목록에서 NSR 을 찾아 '제한 없음' 으로 바꿔요.</Small>
+          </>
+        ) : null}
         {geoMsg ? <Small muted={false}>{geoMsg}</Small> : null}
         {recDiag.lastError ? (
           <>
@@ -1276,10 +1296,16 @@ export default function Settings() {
                     label={h.name}
                     value="이곳으로"
                     onPress={async () => {
-                      const wp = await setWorkplacePlace(h);
-                      setWorkplace(wp);
+                      const saved = await setWorkplacePlace(h);
+                      setWorkplace(saved.workplace);
                       setHospitalHits([]);
                       setHospitalQuery("");
+                      // 켜진 채로 병원을 바꾸면 새 좌표로 다시 걸린다. 그게 막혔으면 말한다.
+                      if (saved.message) {
+                        setGeoOn(false);
+                        setGeoMsg(saved.message);
+                        return;
+                      }
                       // 근무지 방식을 고르다 여기 온 것이면 지정 즉시 켠다.
                       if (geoSetup) {
                         const r = await setGeofence(true);
@@ -1300,12 +1326,17 @@ export default function Settings() {
                 <Button
                   label="지금 있는 곳을 근무지로"
                   onPress={async () => {
-                    const wp = await setWorkplaceHere();
-                    if (!wp) {
+                    const saved = await setWorkplaceHere();
+                    if (!saved) {
                       setGeoMsg("위치 사용이 꺼져 있어요. 폰 설정에서 켜 주세요.");
                       return;
                     }
-                    setWorkplace(wp);
+                    setWorkplace(saved.workplace);
+                    if (saved.message) {
+                      setGeoOn(false);
+                      setGeoMsg(saved.message);
+                      return;
+                    }
                     if (geoSetup) {
                       const r = await setGeofence(true);
                       if (r.ok) {

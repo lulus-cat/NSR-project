@@ -77,6 +77,28 @@ export function tickDecision(input: {
  *   - **사람이 끈 것은 다시 안 켠다.** 자리를 비우고 싶어 끈 것을 15분 뒤에
  *     되살리면 그건 고장이 아니라 사고다. 한 번 밖으로 나갔다 와야 풀린다.
  */
+/**
+ * '직접 끔' 잠금이 삭는 시간. 근무 하나 길이를 넘겼으면 다음 출근으로 본다.
+ *
+ * 벗어났다는 신호를 못 받는 날이 있다 — 안드로이드는 이탈 신호를 심심찮게
+ * 빠뜨리고, 그날 앱을 한 번도 안 열면 아무도 잠금을 풀어 주지 않는다.
+ * 그 경우의 안전장치다. 병동에 계속 있으면서 끈 지 8시간이 지나면 다시 켜진다 —
+ * 그건 받아들인다. 영영 안 켜지는 쪽이 훨씬 나쁘다.
+ */
+export const STOP_LOCK_MS = 8 * 3600_000;
+
+/**
+ * 사람이 직접 끈 잠금을 풀 때.
+ *
+ * 잠금은 "자리를 비우려고 끈 것을 15분 뒤에 되살리지 않는다" 를 위한 것이다.
+ * 그래서 **근무지를 벗어나면 그 역할은 끝난다** — 다음 출근에는 다시 켜져야 한다.
+ * 안 풀어 주면 홈에서 한 번 끈 뒤로 위치로는 영영 안 켜진다 (실제로 그랬다).
+ */
+export function clearStopLock(left: boolean, stoppedByUserAt: number, now: number): boolean {
+  if (stoppedByUserAt === 0) return false;
+  return left || now - stoppedByUserAt > STOP_LOCK_MS;
+}
+
 export function geoDecision(input: {
   session: SessionState | null;
   /** 반경 안인가 (켤 때 쓰는 좁은 기준). */

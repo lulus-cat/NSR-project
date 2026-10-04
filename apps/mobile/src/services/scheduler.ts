@@ -26,6 +26,8 @@
  */
 
 import { Platform } from "react-native";
+import * as BackgroundTask from "expo-background-task";
+import * as TaskManager from "expo-task-manager";
 import {
   DEFAULT_RECORDING_POLICY,
   DEFAULT_TEMPLATES,
@@ -59,8 +61,31 @@ import {
 } from "../db";
 import { RecordingSession, createExpoAudioBackend } from "./recorder";
 import { deleteFile, fileSize, orphanRecordings } from "./files";
+import { notifyStartBlocked } from "./progress-notify";
 
 export const BACKGROUND_TASK_NAME = "nsr-duty-recording-tick";
+
+/**
+ * **이 정의는 모듈이 열리는 순간 돌아야 한다.**
+ *
+ * OS 는 앱이 꺼져 있어도 이 태스크를 깨우고, 그때는 화면 코드가 하나도 안 돈다.
+ * 예전에는 registerBackgroundTask() 안에서, 즉 화면이 뜬 뒤에야 정의했다. 그래서
+ * 앱을 닫아 둔 사이에 깨어난 태스크를 expo-task-manager 가 "정의 안 된 태스크" 로
+ * 보고 **등록을 지웠다** (TaskManager.ts 의 unregisterTaskAsync). 한 번 지워지면
+ * 앱을 다시 열어 registerBackgroundTask 가 돌기 전까지 15분 점검이 영영 안 왔다.
+ * 지오펜스도 같은 길로 꺼졌다 — 그래서 "앱을 켜야 위치 인식이 되는" 것이었다.
+ *
+ * 화면보다 먼저 도는 자리는 앱 진입점(index.js)이다. 거기서 이 모듈을 들인다.
+ */
+TaskManager.defineTask(BACKGROUND_TASK_NAME, async () => {
+  try {
+    await tick(Date.now());
+    return BackgroundTask.BackgroundTaskResult.Success;
+  } catch (error) {
+    console.error("[NSR] 백그라운드 확인 실패", error);
+    return BackgroundTask.BackgroundTaskResult.Failed;
+  }
+});
 
 export const SETTINGS_KEYS = {
   policy: "recording.policy",
@@ -303,8 +328,14 @@ async function startFor(
     activeStartedAt = now;
     // 켜졌으면 지난 실패는 지난 일이다. 안 지우면 홈이 하루 내내 "문제가 있었어요" 다.
     await setSetting("recording.lastError", null);
+    await notifyStartBlocked(false);
+  } else if (owner !== "user") {
+    // 저절로 켜려다 막혔다 — 사람은 화면을 보고 있지 않다. 안드로이드 12+ 는
+    // 앱이 뒤에 있을 때 마이크 서비스를 못 열게 하므로, 출근해서 병동에 들어가도
+    // 아무 일이 안 난 것처럼 보였다. 알림 하나를 띄워 한 번 눌러 열게 한다.
+    await notifyStartBlocked(true);
   }
-  // 실패하면 아무것도 안 남긴다. 예전에는 '수동으로 켰음' 표시만 남아서,
+  // 실패하면 그 밖에는 아무것도 안 남긴다. 예전에는 '수동으로 켰음' 표시만 남아서,
   // 그 뒤로 듀티 자동 기록이 영영 안 켜졌다 (세션은 없는데 표시는 있었다).
 }
 
@@ -404,21 +435,7 @@ async function housekeeping(policy: RecordingPolicy, now: number): Promise<void>
  * 틱이 늦어도 인계 시작 전에는 한 번 돌 가능성이 높아진다.
  */
 export async function registerBackgroundTask(): Promise<void> {
-  const TaskManager = await import("expo-task-manager");
-  const BackgroundTask = await import("expo-background-task");
-
-  if (!TaskManager.isTaskDefined(BACKGROUND_TASK_NAME)) {
-    TaskManager.defineTask(BACKGROUND_TASK_NAME, async () => {
-      try {
-        await tick(Date.now());
-        return BackgroundTask.BackgroundTaskResult.Success;
-      } catch (error) {
-        console.error("[NSR] 백그라운드 확인 실패", error);
-        return BackgroundTask.BackgroundTaskResult.Failed;
-      }
-    });
-  }
-
+  // 정의는 위에서 끝났다 (모듈이 열릴 때). 여기서는 등록만 한다.
   const status = await BackgroundTask.getStatusAsync();
   if (status === BackgroundTask.BackgroundTaskStatus.Restricted) {
     await setSetting("recording.backgroundRestricted", true);

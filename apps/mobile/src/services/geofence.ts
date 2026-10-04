@@ -26,7 +26,14 @@
  */
 import * as Location from "expo-location";
 import * as TaskManager from "expo-task-manager";
-import { distanceMeters, geoDecision, reallyLeft, resolveAll, toDateString } from "@nsr/core";
+import {
+  clearStopLock,
+  distanceMeters,
+  geoDecision,
+  reallyLeft,
+  resolveAll,
+  toDateString,
+} from "@nsr/core";
 import { getSetting, listDutyEntries, setSetting } from "../db";
 import { searchHospitalsHira, searchPlacesKakao } from "./publicdata";
 import { buildSchedule, sessionOwner, startManual, stopManual } from "./scheduler";
@@ -72,11 +79,17 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
   if (error || !data) return;
   const { eventType } = data as { eventType: Location.GeofencingEventType };
   try {
-    // 진입이든 이탈이든 판단은 한 곳에서 한다 (syncByLocation → core 의 규칙).
-    // 신호를 그대로 믿지 않고 지금 위치를 다시 본다 — 안드로이드는 실내에서
-    // 위치가 수백 미터씩 튀고, 그 한 번에 근무 기록이 끊기면 그날은 통째로 없다.
-    void eventType;
-    await syncByLocation();
+    // **진입 신호는 그대로 믿는다.** 예전에는 신호를 버리고 위치를 새로 읽었는데,
+    // 병원 안에서는 GPS 가 안 잡혀 그 한 번이 "밖" 으로 나오기 일쑤였다 — 그러면
+    // 들어왔는데 기록이 안 켜진다. OS 의 지오펜스는 기지국·와이파이까지 보고
+    // 판단하니 한 번 읽은 좌표보다 낫다.
+    //
+    // 이탈은 반대다. 튀는 값 하나로 근무 기록을 끊을 수 없어 syncByLocation 이
+    // 위치를 다시 확인한다.
+    await syncByLocation(
+      Date.now(),
+      eventType === Location.GeofencingEventType.Enter ? "enter" : undefined,
+    );
   } catch (e) {
     console.error("[앗] 위치 감지기 뻗음", e);
   }
@@ -88,7 +101,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
  * 이탈 신호를 되짚어 볼 때, 5분마다 도는 감시, 설정 화면의 '지금' 줄이 모두
  * 이 함수를 쓴다. 켜는 기준(inside)과 끄는 기준(left)을 따로 준다.
  */
-export async function whereAmI(): Promise<{
+export async function whereAmI(fresh = false): Promise<{
   /** 반경 안 — **켤 때** 쓰는 좁은 기준. */
   inside: boolean;
   /** 확실히 벗어남 — **끌 때** 쓰는 넉넉한 기준. */
@@ -99,7 +112,16 @@ export async function whereAmI(): Promise<{
   const wp = await getWorkplace();
   if (!wp) return null;
   try {
-    const pos = await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced });
+    // 실내에서는 GPS 가 안 잡혀 getCurrentPositionAsync 가 한참 붙잡힌다. OS 가
+    // 깨운 태스크는 오래 살지 못해서, 한 번 읽겠다고 기다리다 꺼지면 아무 판단도
+    // 못 한다. 다른 앱이 이미 받아 둔 1분 안쪽의 값이 있으면 그걸 쓴다.
+    // 1분으로 조인 이유: 걸어 들어오는 중이면 묵은 값이 아직 '밖' 이라서,
+    // 길면 그 판정만큼 기록이 늦는다.
+    // 기록을 **끊기 전** 확인(fresh)만 새로 읽는다 — 묵은 값으로 끊으면 안 된다.
+    const cached = fresh ? null : await Location.getLastKnownPositionAsync({ maxAge: 60_000 });
+    const pos =
+      cached ??
+      (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
     const distance = Math.round(distanceMeters(pos.coords, wp));
     // 켜는 기준과 끄는 기준이 달라야 한다. 같은 값을 쓰면 여유(±100m 이상)만큼
     // 밖에서도 기록이 켜진다 — 근무일에 병원 앞을 지나가기만 해도 켜진다.
@@ -129,33 +151,76 @@ export async function markStoppedByUser(at = Date.now()): Promise<void> {
  *
  * 무엇을 켜고 끌지는 `@nsr/core` 의 geoDecision 이 정한다. 거기 시험이 있다.
  */
-export async function syncByLocation(now = Date.now()): Promise<void> {
+export async function syncByLocation(
+  now = Date.now(),
+  /** OS 가 "들어왔다" 고 알려 준 경우. 위치를 다시 읽지 않고 그대로 믿는다. */
+  hint?: "enter",
+): Promise<void> {
   if (!(await geofenceEnabled())) return;
-  const here = await whereAmI();
-  if (!here || here.distance === null) return; // 위치를 못 읽으면 건드리지 않는다
+  const here = hint === "enter" ? null : await whereAmI();
+  if (!hint && (!here || here.distance === null)) return; // 위치를 못 읽으면 건드리지 않는다
+  const inside = hint === "enter" || here?.inside === true;
+  const left = hint !== "enter" && here?.left === true;
+
+  // 밖으로 나왔으면 '사람이 직접 끔' 잠금을 푼다. 이걸 안 풀어서, 홈에서 기록을
+  // 한 번 끄면 그 뒤로는 출근해도 위치로 안 켜졌다 (잠금을 푸는 곳이 없었다).
+  let stoppedAt = await getSetting<number>(STOPPED_KEY, 0);
+  if (clearStopLock(left, stoppedAt, now)) {
+    await setSetting(STOPPED_KEY, 0);
+    stoppedAt = 0;
+  }
 
   const day = await isWorkingDay(now);
   const act = geoDecision({
     session: sessionOwner(),
-    inside: here.inside,
-    left: here.left,
+    inside,
+    left,
     working: day.working,
-    stoppedByUserAt: await getSetting<number>(STOPPED_KEY, 0),
+    stoppedByUserAt: stoppedAt,
     shiftId: day.shiftId,
   });
 
   if (act.do === "start") {
-    await startManual(act.shiftId, now, "geofence");
-    await setSetting("geofence.lastEnterAt", now);
-    watchExit();
+    // 켜졌는지 확인하고 적는다. 예전에는 실패해도 '들어온 시각' 을 적고 감시
+    // 타이머까지 걸어서, 화면만 보면 다 된 것 같았다.
+    // 못 켠 경우(안드로이드가 뒤에서 마이크를 막는다)는 scheduler 가 알림을 띄운다.
+    if (await startManual(act.shiftId, now, "geofence")) {
+      await setSetting("geofence.lastEnterAt", now);
+      watchExit();
+    }
   } else if (act.do === "stop") {
-    // 끊기 전에 한 번 더 본다. 튀는 값 하나에 근무 기록이 끝나면 안 된다.
-    const again = await whereAmI();
+    // 끊기 전에 한 번 더, 이번엔 새로 읽어서 본다. 튀는 값 하나에 근무 기록이
+    // 끝나면 안 된다.
+    const again = await whereAmI(true);
     if (!again?.left) return;
     await stopManual();
     await setSetting("geofence.lastExitAt", now);
     clearExitWatch();
   }
+}
+
+/**
+ * 설정 화면의 '지금' 줄 — 어디인지와, **안 켜지는 이유**.
+ *
+ * 거리만 보여 주던 시절에는 "근무지 안 · 30m" 인데 기록이 없는 날 이유를 알 수
+ * 없었다. 안 켜지는 까닭은 셋이다: 근무일이 아니다 / 직접 끈 뒤다 / 밖이다.
+ */
+export async function geoStatus(now = Date.now()): Promise<string> {
+  // 안드로이드는 오래 안 쓴 권한을 저절로 거둔다. '항상 허용' 이 빠지면 지오펜스
+  // 신호가 조용히 끊기는데, 설정 화면은 그동안 '켜짐' 이라고 적고 있었다.
+  if (await geofenceEnabled()) {
+    const bg = await Location.getBackgroundPermissionsAsync();
+    if (!bg.granted) return "위치 '항상 허용' 이 꺼졌어요";
+  }
+  const here = await whereAmI();
+  if (!here) return "근무지 없음";
+  if (here.distance === null) return "위치를 못 읽었어요";
+  const where = here.inside ? `근무지 안 · ${here.distance}m` : `밖 · ${here.distance}m`;
+  if (sessionOwner()) return `${where} · 기록 중`;
+  if (!here.inside) return where;
+  if (!(await isWorkingDay(now)).working) return `${where} · 오늘 근무가 없어요`;
+  if ((await getSetting<number>(STOPPED_KEY, 0)) !== 0) return `${where} · 직접 끈 뒤예요`;
+  return `${where} · 곧 켜져요`;
 }
 
 /**
@@ -194,25 +259,56 @@ export async function geofenceEnabled(): Promise<boolean> {
   return getSetting<boolean>(GEO_KEYS.enabled, false);
 }
 
+/** 근무지를 저장한 결과. message 가 있으면 다시 거는 데 실패한 것이다. */
+export interface SavedWorkplace {
+  workplace: Workplace;
+  message?: string;
+}
+
+/**
+ * 근무지를 저장하고, 켜져 있으면 **새 좌표로 다시 건다.**
+ *
+ * 다시 거는 것을 잊으면 OS 는 예전 좌표를 계속 본다 — 병원을 바꿔 놓고 출근해도
+ * 기록이 안 켜지는 길이었다(반경을 바꿀 때만 다시 걸고 있었다). 좌표·반경·현재
+ * 위치 세 갈래가 모두 이 함수를 지난다.
+ *
+ * 다시 걸다 막히면(그사이 권한이 빠졌다든지, 위치 서비스가 꺼졌다든지) 삼키지
+ * 않고 돌려준다. 삼키면 화면은 켜진 것처럼 보이고 출근해도 아무 일이 안 난다.
+ */
+async function saveWorkplace(wp: Workplace): Promise<SavedWorkplace> {
+  await setSetting(GEO_KEYS.workplace, wp);
+  if (!(await geofenceEnabled())) return { workplace: wp };
+  await setGeofence(false);
+  try {
+    const r = await setGeofence(true);
+    if (!r.ok) return { workplace: wp, message: r.message };
+  } catch (e) {
+    return {
+      workplace: wp,
+      message:
+        e instanceof Error ? e.message : "근무지 감지를 다시 켜지 못했어요. 위치를 켜 주세요.",
+    };
+  }
+  return { workplace: wp };
+}
+
 /**
  * 지금 서 있는 곳을 근무지로 지정한다.
  * 주소 검색을 넣지 않은 이유: 병동에서 이 버튼을 한 번 누르는 것이
  * 지도에서 병원을 찾아 찍는 것보다 정확하고 빠르다.
  */
-export async function setWorkplaceHere(radius = DEFAULT_RADIUS): Promise<Workplace | null> {
+export async function setWorkplaceHere(radius = DEFAULT_RADIUS): Promise<SavedWorkplace | null> {
   const fg = await Location.requestForegroundPermissionsAsync();
   if (!fg.granted) return null;
   const pos = await Location.getCurrentPositionAsync({
     accuracy: Location.Accuracy.Balanced,
   });
-  const wp: Workplace = {
+  return saveWorkplace({
     latitude: pos.coords.latitude,
     longitude: pos.coords.longitude,
     radius,
     label: "내 병원 (근무지)",
-  };
-  await setSetting(GEO_KEYS.workplace, wp);
-  return wp;
+  });
 }
 
 /** 병원 이름으로 좌표 찾기. */
@@ -258,44 +354,26 @@ export async function searchWorkplace(
 }
 
 /** 검색 결과를 근무지로 저장한다. 반경은 설정 화면에서 고른 값이다. */
-export async function setWorkplacePlace(hit: PlaceHit, radius = DEFAULT_RADIUS): Promise<Workplace> {
-  const wp: Workplace = {
+export async function setWorkplacePlace(
+  hit: PlaceHit,
+  radius = DEFAULT_RADIUS,
+): Promise<SavedWorkplace> {
+  return saveWorkplace({
     latitude: hit.latitude,
     longitude: hit.longitude,
     radius,
     label: hit.name,
-  };
-  await setSetting(GEO_KEYS.workplace, wp);
-  return wp;
+  });
 }
 
 /**
  * 반경만 바꾼다. 병원 규모가 제각각이라(작은 의원부터 대학병원 부지까지)
  * 사람이 고르는 값이다. 켜져 있으면 새 반경으로 다시 건다.
  */
-export async function setRadius(
-  radius: number,
-): Promise<{ workplace: Workplace; message?: string } | null> {
+export async function setRadius(radius: number): Promise<SavedWorkplace | null> {
   const wp = await getWorkplace();
   if (!wp) return null;
-  const next = { ...wp, radius };
-  await setSetting(GEO_KEYS.workplace, next);
-  if (await geofenceEnabled()) {
-    await setGeofence(false);
-    // 다시 켜다 막히면(그사이 권한이 빠졌다든지, 위치 서비스가 꺼졌다든지)
-    // 감지가 꺼진 채 남는다. 그걸 삼키면 화면은 켜진 것처럼 보이고 출근해도
-    // 아무 일이 안 난다. 던지는 것도 돌려주는 것으로 바꾼다.
-    try {
-      const r = await setGeofence(true);
-      if (!r.ok) return { workplace: next, message: r.message };
-    } catch (e) {
-      return {
-        workplace: next,
-        message: e instanceof Error ? e.message : "근무지 감지를 다시 켜지 못했어요. 위치를 켜 주세요.",
-      };
-    }
-  }
-  return { workplace: next };
+  return saveWorkplace({ ...wp, radius });
 }
 
 export async function clearWorkplace(): Promise<void> {

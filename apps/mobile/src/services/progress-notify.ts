@@ -132,6 +132,38 @@ export async function notifyProgress(
   }
 }
 
+/** 저절로 켜려다 막힌 것을 알리는 알림. 눌러서 앱을 열면 tick 이 이어받는다. */
+const BLOCKED_ID = "recording-blocked";
+
+/**
+ * 기록을 못 켰다고 알린다 (show=false 면 내린다).
+ *
+ * 안드로이드 12+ 는 앱이 뒤에 있을 때 마이크 포그라운드 서비스를 못 열게 한다.
+ * 출근해서 병동에 들어가도 아무 일이 안 난 것처럼 보이는 유일한 길이 이것이라,
+ * 조용히 넘기지 않고 눌러서 열 수 있는 알림을 남긴다.
+ */
+export async function notifyStartBlocked(show: boolean): Promise<void> {
+  try {
+    const Notifications = await import("expo-notifications");
+    if (!show) {
+      await Notifications.dismissNotificationAsync(BLOCKED_ID);
+      return;
+    }
+    if (!(await Notifications.getPermissionsAsync()).granted) return;
+    await Notifications.scheduleNotificationAsync({
+      identifier: BLOCKED_ID,
+      content: {
+        title: "기록을 못 켰어요",
+        body: "눌러서 앱을 열면 이어서 기록해요",
+        sound: false,
+      },
+      trigger: null,
+    });
+  } catch {
+    // 알림은 편의다.
+  }
+}
+
 /** endWork(id, title, body) 의 별칭 — 기존 호출부와의 이음새. */
 export async function notifyDone(id: string, title: string, body: string): Promise<void> {
   await endWork(id, title, body);
