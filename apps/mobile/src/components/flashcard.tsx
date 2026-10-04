@@ -19,7 +19,7 @@
  * 흐려지는 것으로 바뀐다 — 없애는 것이 아니라 순하게 한다.
  */
 import { useEffect, useState } from "react";
-import { AccessibilityInfo, Dimensions, Text } from "react-native";
+import { AccessibilityInfo, Dimensions, Text, View } from "react-native";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   Easing,
@@ -212,70 +212,97 @@ export function Flashcard({
   };
 
   return (
-    <GestureDetector gesture={Gesture.Race(pan, tap)}>
-      <Animated.View
-        accessibilityRole="button"
-        accessibilityLabel={flipped ? `뒷면. ${back}` : `앞면. ${front}`}
-        accessibilityHint="누르면 뒤집혀요. 오른쪽으로 밀면 외웠어요, 왼쪽으로 밀면 더 볼래요."
-        accessibilityActions={[
-          { name: "뒤집기", label: "뒤집기" },
-          { name: "외웠어요", label: "외웠어요" },
-          { name: "더 볼래요", label: "더 볼래요" },
-        ]}
-        onAccessibilityAction={(e) => {
-          const what = e.nativeEvent.actionName;
-          if (what === "외웠어요") onAnswer(true);
-          else if (what === "더 볼래요") onAnswer(false);
-          else flip();
-        }}
-        style={[{ flex: 1 }, card]}
-      >
-        <Animated.View style={[faceBox, { backgroundColor: t.surface, borderColor: t.border }, frontFace]}>
-          <Text
+    <View style={{ flex: 1 }}>
+      <GestureDetector gesture={Gesture.Race(pan, tap)}>
+        <Animated.View
+          accessibilityRole="button"
+          accessibilityLabel={flipped ? `뒷면. ${back}` : `앞면. ${front}`}
+          accessibilityHint="누르면 뒤집혀요. 오른쪽으로 밀면 외웠어요, 왼쪽으로 밀면 더 볼래요."
+          accessibilityActions={[
+            { name: "뒤집기", label: "뒤집기" },
+            { name: "외웠어요", label: "외웠어요" },
+            { name: "더 볼래요", label: "더 볼래요" },
+          ]}
+          onAccessibilityAction={(e) => {
+            const what = e.nativeEvent.actionName;
+            if (what === "외웠어요") onAnswer(true);
+            else if (what === "더 볼래요") onAnswer(false);
+            else flip();
+          }}
+          style={[{ flex: 1 }, card]}
+        >
+          <Animated.View style={[faceBox, { backgroundColor: t.surface, borderColor: t.border }, frontFace]}>
+            <Text
+              style={[
+                type.body,
+                { color: t.text, fontSize: 26, lineHeight: 38, textAlign: "center", fontWeight: "700" },
+              ]}
+            >
+              {front}
+            </Text>
+          </Animated.View>
+
+          <Animated.View
             style={[
-              type.body,
-              { color: t.text, fontSize: 26, lineHeight: 38, textAlign: "center", fontWeight: "700" },
+              faceBox,
+              { backgroundColor: t.accentSoft, borderColor: t.border },
+              { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
+              backFace,
             ]}
           >
-            {front}
-          </Text>
+            <Text style={[type.body, { color: t.text, fontSize: 22, lineHeight: 34, textAlign: "center" }]}>
+              {back}
+            </Text>
+            {hint ? (
+              <Text style={[type.small, { color: t.textMuted, textAlign: "center" }]}>“{hint}”</Text>
+            ) : null}
+          </Animated.View>
         </Animated.View>
+      </GestureDetector>
 
-        <Animated.View
-          style={[
-            faceBox,
-            { backgroundColor: t.accentSoft, borderColor: t.border },
-            { position: "absolute", left: 0, right: 0, top: 0, bottom: 0 },
-            backFace,
-          ]}
-        >
-          <Text style={[type.body, { color: t.text, fontSize: 22, lineHeight: 34, textAlign: "center" }]}>
-            {back}
-          </Text>
-          {hint ? (
-            <Text style={[type.small, { color: t.textMuted, textAlign: "center" }]}>“{hint}”</Text>
-          ) : null}
-        </Animated.View>
+      {/* 손을 떼기 전에 무슨 일이 날지 보이게 하는 도장. 미는 값에 그대로 매인다.
+          **카드에 붙이지 않는다.** 예전에는 카드 양 끝에 붙어 있어서, 미는 방향으로
+          카드와 같이 화면 밖으로 밀려 나갔고 카드 글자와 겹쳐 둘 다 안 읽혔다.
+          화면 가운데에 가만히 두고, 제 바탕을 깔아 밑의 글자가 비치지 않게 한다. */}
+      <Stamp label="외웠어요" color={t.ok} style={yes} />
+      <Stamp label="더 볼래요" color={t.warn} style={no} />
+    </View>
+  );
+}
 
-        {/* 손을 떼기 전에 무슨 일이 날지 보이게 하는 도장. 미는 값에 그대로 매인다.
-            세로 가운데에 둔다 — 미는 손이 가리지 않고, 눈이 카드 글에서 멀리 안 간다. */}
-        <Animated.View
-          style={[
-            { position: "absolute", top: 0, bottom: 0, right: space.lg, justifyContent: "center" },
-            yes,
-          ]}
-        >
-          <Text style={{ fontSize: 26, fontWeight: "800", color: t.ok }}>외웠어요</Text>
-        </Animated.View>
-        <Animated.View
-          style={[
-            { position: "absolute", top: 0, bottom: 0, left: space.lg, justifyContent: "center" },
-            no,
-          ]}
-        >
-          <Text style={{ fontSize: 26, fontWeight: "800", color: t.warn }}>더 볼래요</Text>
-        </Animated.View>
-      </Animated.View>
-    </GestureDetector>
+function Stamp({
+  label,
+  color,
+  style,
+}: {
+  label: string;
+  color: string;
+  style: ReturnType<typeof useAnimatedStyle>;
+}) {
+  const t = useTheme();
+  return (
+    <Animated.View
+      pointerEvents="none"
+      // 화면 읽기는 카드의 접근성 동작(외웠어요·더 볼래요)이 맡는다. 도장은 장식이다.
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+      style={[
+        { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, alignItems: "center", justifyContent: "center" },
+        style,
+      ]}
+    >
+      <View
+        style={{
+          backgroundColor: t.surfaceRaised,
+          borderColor: color,
+          borderWidth: 2,
+          borderRadius: radius.lg,
+          paddingHorizontal: space.xl,
+          paddingVertical: space.md,
+        }}
+      >
+        <Text style={{ fontSize: 26, lineHeight: 34, fontWeight: "800", color }}>{label}</Text>
+      </View>
+    </Animated.View>
   );
 }

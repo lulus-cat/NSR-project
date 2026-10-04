@@ -3,6 +3,8 @@ import {
   startDrill,
   answerDrill,
   drillProgress,
+  drillUnseen,
+  resumeDrill,
   cardsFromReport,
   generateCards,
   countByKind,
@@ -316,4 +318,58 @@ describe("암기 반복", () => {
     expect(answerDrill(d, true)).toBe(d);
     expect(drillProgress(d)).toBe(1);
   });
+
+  it("이번 회차에 처음 보는 카드가 몇 장 남았는지 센다", () => {
+    // 외운 장수만 세면 '더 볼래' 를 누를수록 막대가 안 움직여서 어디쯤인지 모른다.
+    let d = startDrill(["a", "b", "c"]);
+    expect(drillUnseen(d)).toBe(3);
+    d = answerDrill(d, false); // a 더 볼래 — 그래도 본 것이다
+    expect(drillUnseen(d)).toBe(2);
+    d = answerDrill(d, false); // b 더 볼래
+    d = answerDrill(d, true); // c
+    expect(drillUnseen(d)).toBe(0);
+    d = answerDrill(d, false); // a 를 다시 본다 — 처음 보는 것은 여전히 0
+    expect(d.round).toBe(1);
+    expect(drillUnseen(d)).toBe(0);
+  });
+
+  it("회차가 바뀌면 처음 보는 카드도 다시 센다", () => {
+    let d = startDrill(["a", "b"]);
+    d = answerDrill(d, true);
+    d = answerDrill(d, true);
+    expect(d.round).toBe(2);
+    expect(drillUnseen(d)).toBe(2);
+  });
+});
+
+describe("암기 이어 하기", () => {
+  it("저장해 둔 자리에서 그대로 이어 간다", () => {
+    let d = startDrill(["a", "b", "c"]);
+    d = answerDrill(d, true);
+    d = answerDrill(d, false);
+    const back = resumeDrill(JSON.parse(JSON.stringify(d)), ["a", "b", "c"]);
+    expect(back).toEqual(d);
+  });
+
+  it("저장한 것이 없으면 처음부터", () => {
+    expect(resumeDrill(null, ["a", "b"])).toEqual(startDrill(["a", "b"]));
+  });
+
+  it("그사이 지워진 카드는 빼고, 새로 생긴 카드는 이번 회차에 넣는다", () => {
+    let d = startDrill(["a", "b", "c"]);
+    d = answerDrill(d, true); // a 외웠다
+    const back = resumeDrill(d, ["a", "c", "d"]); // b 지워짐, d 새로 생김
+    expect(back.all).toEqual(["a", "c", "d"]);
+    expect(back.queue).toEqual(["c", "d"]);
+    expect(drillUnseen(back)).toBe(2);
+  });
+
+  it("남은 카드가 다 지워졌으면 다음 회차로 넘어간다", () => {
+    let d = startDrill(["a", "b"]);
+    d = answerDrill(d, true); // a 외웠다, 남은 것은 b
+    const back = resumeDrill(d, ["a"]); // b 가 지워졌다
+    expect(back.queue).toEqual(["a"]);
+    expect(back.round).toBe(2);
+  });
+
 });
