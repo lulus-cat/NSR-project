@@ -86,6 +86,7 @@ TaskManager.defineTask(GEOFENCE_TASK, async ({ data, error }) => {
     //
     // 이탈은 반대다. 튀는 값 하나로 근무 기록을 끊을 수 없어 syncByLocation 이
     // 위치를 다시 확인한다.
+    if (eventType === Location.GeofencingEventType.Exit) await setSetting(PENDING_ENTER_KEY, 0);
     await syncByLocation(
       Date.now(),
       eventType === Location.GeofencingEventType.Enter ? "enter" : undefined,
@@ -125,7 +126,11 @@ export async function whereAmI(fresh = false): Promise<{
     const distance = Math.round(distanceMeters(pos.coords, wp));
     // 켜는 기준과 끄는 기준이 달라야 한다. 같은 값을 쓰면 여유(±100m 이상)만큼
     // 밖에서도 기록이 켜진다 — 근무일에 병원 앞을 지나가기만 해도 켜진다.
-    return { inside: distance <= wp.radius, left: reallyLeft(distance, wp.radius), distance, radius: wp.radius };
+    // 끄는 기준은 그 좌표의 오차까지 빼고 본다. 병원 안에서 기지국으로 잡힌 좌표는
+    // 수백 미터씩 틀리고 오차도 그만큼 크게 온다 — 그 한 번에 끊으면 짧은 녹음만
+    // 남는다. 오차 원이 통째로 밖일 때만 나갔다고 본다.
+    const sure = Math.max(0, distance - (pos.coords.accuracy ?? 0));
+    return { inside: distance <= wp.radius, left: reallyLeft(sure, wp.radius), distance, radius: wp.radius };
   } catch {
     // 못 읽었으면 '안에 있고 안 나갔다'로 본다. 못 읽었다는 이유로 끊는 것이
     // 잘못 끊는 것보다 나쁘다 (녹음은 다시 만들 수 없다).
@@ -135,6 +140,16 @@ export async function whereAmI(fresh = false): Promise<{
 
 /** 사람이 직접 끈 시각. 그 뒤에는 위치로 다시 켜지 않는다. */
 const STOPPED_KEY = "geofence.stoppedByUserAt";
+
+/**
+ * 들어왔는데 기록을 못 켠 시각.
+ *
+ * 앱이 꺼져 있었거나(scheduler 의 uiAlive) 폰이 마이크를 막았을 때 남는다. 알림을
+ * 눌러 앱이 열리면 위치를 못 읽어도 이걸로 켠다 — 병원 안은 위치가 안 잡히는 일이
+ * 흔해서, 다시 읽어 확인하려 들면 눌렀는데도 안 켜진다. 나가면 지운다.
+ */
+const PENDING_ENTER_KEY = "geofence.pendingEnterAt";
+const PENDING_ENTER_MS = 30 * 60_000;
 
 /** 홈 화면에서 사람이 끄면 이걸 부른다. 위치 판정이 되살리지 못하게 막는다. */
 export async function markStoppedByUser(at = Date.now()): Promise<void> {
@@ -158,9 +173,17 @@ export async function syncByLocation(
 ): Promise<void> {
   if (!(await geofenceEnabled())) return;
   const here = hint === "enter" ? null : await whereAmI();
-  if (!hint && (!here || here.distance === null)) return; // 위치를 못 읽으면 건드리지 않는다
-  const inside = hint === "enter" || here?.inside === true;
-  const left = hint !== "enter" && here?.left === true;
+  const clearlyLeft = here?.left === true;
+  // 방금 들어와 못 켠 표시가 남아 있으면, 확실히 나간 게 아닌 한 안이라고 본다.
+  // OS 의 진입 판단을 병원 안에서 한 번 읽은 좌표보다 믿는다 (위 defineTask 와 같은 이유).
+  const pendingAt = await getSetting<number>(PENDING_ENTER_KEY, 0);
+  const entered =
+    hint === "enter" ||
+    (!clearlyLeft && pendingAt > 0 && now - pendingAt < PENDING_ENTER_MS);
+  if (!entered && (!here || here.distance === null)) return; // 위치를 못 읽으면 건드리지 않는다
+  const inside = entered || here?.inside === true;
+  const left = !entered && clearlyLeft;
+  if (left && pendingAt > 0) await setSetting(PENDING_ENTER_KEY, 0);
 
   // 밖으로 나왔으면 '사람이 직접 끔' 잠금을 푼다. 이걸 안 풀어서, 홈에서 기록을
   // 한 번 끄면 그 뒤로는 출근해도 위치로 안 켜졌다 (잠금을 푸는 곳이 없었다).
@@ -185,8 +208,13 @@ export async function syncByLocation(
     // 타이머까지 걸어서, 화면만 보면 다 된 것 같았다.
     // 못 켠 경우(안드로이드가 뒤에서 마이크를 막는다)는 scheduler 가 알림을 띄운다.
     if (await startManual(act.shiftId, now, "geofence")) {
+      await setSetting(PENDING_ENTER_KEY, 0);
       await setSetting("geofence.lastEnterAt", now);
       watchExit();
+    } else if (hint === "enter") {
+      // 못 켰다 — 들어온 것만 적어 둔다. 알림을 눌러 앱이 열리면 이걸로 켠다.
+      // 진입 신호일 때만 적는다. 이 표시로 다시 시도한 것까지 적으면 영영 안 삭는다.
+      await setSetting(PENDING_ENTER_KEY, now);
     }
   } else if (act.do === "stop") {
     // 끊기 전에 한 번 더, 이번엔 새로 읽어서 본다. 튀는 값 하나에 근무 기록이

@@ -159,6 +159,29 @@ export async function upcomingWindows(now = Date.now()): Promise<RecordingWindow
   });
 }
 
+/**
+ * 이 자바스크립트가 화면과 함께 떠 있는가.
+ *
+ * 앱이 꺼져 있을 때 OS 가 위치 신호나 15분 점검으로 앱을 깨우면, Expo 는 화면 없는
+ * 임시 실행판을 띄워 태스크만 돌리고 **끝나고 2초 뒤에 통째로 부순다**
+ * (expo-task-manager TaskService.notifyTaskFinished → invalidateAppRecord →
+ * RNHeadlessAppLoader.invalidateApp → reactHost.destroy). 거기서 켠 녹음기도 그때 같이
+ * 죽는다 — 근무지 녹음이 0~1분 만에 끊기고 '앱이 갑자기 꺼져서 저장되지 않았어요' 로
+ * 남던 것이 이것이었다. 태스크 약속을 녹음 내내 붙잡아 두는 길도 없다 — 위치 신호는
+ * JobScheduler 작업이라 10분이면 OS 가 끊는다.
+ *
+ * 그래서 화면이 한 번도 안 뜬 실행판에서는 녹음을 켜지 않고 알림으로 넘긴다. 눌러서
+ * 앱이 뜨면 같은 실행판이 화면을 얻어 부서지지 않고, AppProvider 가 markUiAlive 를
+ * 부른 뒤 tick 이 켠다. 화면을 한 번 띄운 실행판은 뒤로 가도 부서지지 않는다
+ * (invalidateApp 은 헤드리스로 띄운 것만 부순다) — 그때는 바로 켠다.
+ */
+let uiAlive = false;
+
+/** 화면이 떴다. AppProvider 가 맨 먼저 부른다. */
+export function markUiAlive(): void {
+  uiAlive = true;
+}
+
 // 앱 프로세스 안에서 유일한 세션. 두 개가 동시에 마이크를 잡으면 둘 다 실패한다.
 let activeSession: RecordingSession | null = null;
 let activeShiftId: string | null = null;
@@ -272,6 +295,11 @@ async function startFor(
   now: number,
   owner: RecordingOwner,
 ): Promise<void> {
+  // 화면 없는 실행판은 2초 뒤에 부서진다 — 켜 봐야 녹음기가 같이 죽는다 (uiAlive).
+  if (!uiAlive) {
+    await notifyStartBlocked(true);
+    return;
+  }
   // 이 근무에 이미 있는 조각 다음 번호부터. 0 에서 다시 세면 앞 파일을 덮는다.
   const existing = await listRecordings(window.shiftId);
   const startIndex = existing.reduce((max, r) => Math.max(max, r.seq), -1) + 1;

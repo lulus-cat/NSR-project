@@ -11,6 +11,7 @@
  * 서비스가 없는 환경(iOS 등)에서는 예전처럼 일반 알림으로만 보여준다.
  */
 
+import { getSetting, setSetting } from "../db";
 import {
   workAlive,
   workNeedsMic,
@@ -134,6 +135,9 @@ export async function notifyProgress(
 
 /** 저절로 켜려다 막힌 것을 알리는 알림. 눌러서 앱을 열면 tick 이 이어받는다. */
 const BLOCKED_ID = "recording-blocked";
+/** 같은 알림을 다시 띄우는 간격. 병원에 있는 동안 15분 점검마다 울리면 안 된다. */
+const BLOCKED_AGAIN_MS = 60 * 60_000;
+const BLOCKED_AT_KEY = "recording.blockedNotifiedAt";
 
 /**
  * 기록을 못 켰다고 알린다 (show=false 면 내린다).
@@ -147,18 +151,21 @@ export async function notifyStartBlocked(show: boolean): Promise<void> {
     const Notifications = await import("expo-notifications");
     if (!show) {
       await Notifications.dismissNotificationAsync(BLOCKED_ID);
+      await setSetting(BLOCKED_AT_KEY, 0);
       return;
     }
+    if (Date.now() - (await getSetting<number>(BLOCKED_AT_KEY, 0)) < BLOCKED_AGAIN_MS) return;
     if (!(await Notifications.getPermissionsAsync()).granted) return;
     await Notifications.scheduleNotificationAsync({
       identifier: BLOCKED_ID,
       content: {
-        title: "기록을 못 켰어요",
-        body: "눌러서 앱을 열면 이어서 기록해요",
+        title: "앱이 뒤에 있어 기록을 못 켰어요",
+        body: "눌러서 열면 바로 기록해요",
         sound: false,
       },
       trigger: null,
     });
+    await setSetting(BLOCKED_AT_KEY, Date.now());
   } catch {
     // 알림은 편의다.
   }

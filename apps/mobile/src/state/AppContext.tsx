@@ -18,6 +18,7 @@ import { getSetting, setSetting } from "../db";
 import {
   SETTINGS_KEYS,
   loadPolicy,
+  markUiAlive,
   registerBackgroundTask,
   savePolicy,
   tick,
@@ -133,6 +134,9 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    // 화면이 있는 실행판이다 — 여기서 켠 녹음은 앱이 뒤로 가도 살아 있다.
+    // 아래 첫 tick 보다 먼저 알려야 지금 켤 녹음이 알림으로 새지 않는다.
+    markUiAlive();
     let cancelled = false;
     void (async () => {
       // 하나가 터져도 앱은 떠야 한다. 예전에는 첫 DB 열기·백그라운드 작업 등록·
