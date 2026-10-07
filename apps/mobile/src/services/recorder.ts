@@ -401,6 +401,15 @@ export function createExpoAudioBackend(): AudioBackend {
       await setAudioModeAsync({
         // iOS에서 마이크를 쓰려면 세션이 기록을 허용해야 한다.
         allowsRecording: true,
+        // **이게 없으면 화면을 끄는 순간 녹음이 멈춘다.** expo-audio 는 앱이 뒤로 가면
+        // 녹음기를 일시정지하고(AudioModule.kt 의 OnActivityEntersBackground), 앞으로
+        // 돌아와야 다시 켠다. 그래서 켜 놓고 화면을 끈 녹음은 화면이 켜져 있던 몇 초만
+        // 담겼다 — "중간에 정지하면 7초만 저장된다" 가 이것이었다. 우리 포그라운드
+        // 서비스가 있어도 소용없었다: 멈추는 것은 OS 가 아니라 expo-audio 다.
+        // 켜면 expo-audio 가 제 녹음 서비스를 하나 더 띄운다(app.json 의
+        // enableBackgroundRecording 이 매니페스트에 넣는다). 우리 서비스가 먼저 떠 있어서
+        // 앱이 뒤에 있어도 그 서비스를 띄울 수 있다 — 그래서 둘 다 둔다.
+        allowsBackgroundRecording: true,
         // 화면을 꺼도 세션이 살아 있어야 기록이 이어진다.
         shouldPlayInBackground: true,
         // 다른 앱 소리를 끊지 않는다. 통화나 알람이 죽으면 바로 들킨다.
