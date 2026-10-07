@@ -26,6 +26,7 @@ import type { RecordingPolicy } from "@nsr/core";
 import { fileSize, moveIntoRecordings, recordingFileUri } from "./files";
 import { Platform } from "react-native";
 import { beginWork, endWork, serviceAlive } from "./progress-notify";
+import { withTimeout } from "./debug";
 
 /** 진행 알림의 이름. 참조를 세는 쪽(progress-notify)이 이 이름으로 짝을 맞춘다. */
 const RECORDING_WORK_ID = "recording";
@@ -428,7 +429,25 @@ export function createExpoAudioBackend(): AudioBackend {
         ...RecordingPresets.HIGH_QUALITY,
         isMeteringEnabled: true,
       });
-      await recorder.prepareToRecordAsync();
+      // 백그라운드 녹음을 켜면 준비가 expo-audio 녹음 서비스 연결을 기다리는데, 그
+      // 기다림에 시한이 없다(라이브러리가 만들어 둔 시한을 걸지 않는다). 연결이 안 오면
+      // tick 이 통째로 멈추고, 앱을 열 때 그 tick 을 기다리던 시작 화면도 같이 멈췄다.
+      try {
+        await withTimeout(
+          recorder.prepareToRecordAsync(),
+          10_000,
+          "녹음기가 응답하지 않았어요. 앱을 닫았다가 다시 열어 주세요.",
+        );
+      } catch (e) {
+        const stuck = recorder;
+        recorder = null;
+        try {
+          stuck.release();
+        } catch {
+          // 이미 놓였으면 그만이다.
+        }
+        throw e;
+      }
       recorder.record();
       recording = true;
       startedAtMs = Date.now();

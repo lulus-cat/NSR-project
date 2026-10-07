@@ -40,6 +40,28 @@ export async function logDebug(message: string, kind: DebugEntry["kind"] = "log"
   await setSetting(LOG_KEY, entries.slice(-MAX_ENTRIES));
 }
 
+/**
+ * 너무 오래 걸리는 기다림을 끊는다. 끊었으면 디버그 로그에 남긴다.
+ *
+ * 네이티브 쪽 약속이 영영 안 돌아오는 길이 실제로 있다 — expo-audio 는 녹음
+ * 서비스 연결에 5초 시한을 만들어 놓고 걸지 않는다(startBindingTimeout 을 부르는
+ * 곳이 없다), 위치 읽기는 위치를 켜 달라는 창을 띄우고 답을 기다린다. 그런 것
+ * 하나가 tick 을 붙잡으면 그 뒤의 녹음 판단이 전부 멈춘다.
+ *
+ * 끊는다고 원래 일이 멈추지는 않는다 — 기다리기만 그만둔다. `message` 는 그대로
+ * 오류 글이 되어 화면(최근 기록 문제)에 갈 수 있으니 사람 말로 쓴다.
+ */
+export function withTimeout<T>(work: Promise<T>, ms: number, message: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => {
+      void logDebug(`[${Math.round(ms / 1000)}초 넘김] ${message}`);
+      reject(new Error(message));
+    }, ms);
+  });
+  return Promise.race([work, late]).finally(() => clearTimeout(timer));
+}
+
 let installed = false;
 
 /** 앱 시작 시 한 번. JS 전역 오류를 기록하되 기존 처리(빨간 화면 등)는 그대로 둔다. */

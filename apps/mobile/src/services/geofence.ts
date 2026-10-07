@@ -35,6 +35,7 @@ import {
   toDateString,
 } from "@nsr/core";
 import { getSetting, listDutyEntries, setSetting } from "../db";
+import { withTimeout } from "./debug";
 import { searchHospitalsHira, searchPlacesKakao } from "./publicdata";
 import { buildSchedule, sessionOwner, startManual, stopManual } from "./scheduler";
 
@@ -120,9 +121,19 @@ export async function whereAmI(fresh = false): Promise<{
     // 길면 그 판정만큼 기록이 늦는다.
     // 기록을 **끊기 전** 확인(fresh)만 새로 읽는다 — 묵은 값으로 끊으면 안 된다.
     const cached = fresh ? null : await Location.getLastKnownPositionAsync({ maxAge: 60_000 });
+    // 저절로 읽는 위치는 '위치를 켜 주세요' 창을 띄우지 않는다. 띄우면 답이 올 때까지
+    // 기다리는데, 앱이 뜨는 중이거나 뒤에 있을 때는 그 답이 안 온다. 시한도 둔다 —
+    // 실내에서 위치가 안 잡히면 한참 걸린다.
     const pos =
       cached ??
-      (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
+      (await withTimeout(
+        Location.getCurrentPositionAsync({
+          accuracy: Location.Accuracy.Balanced,
+          mayShowUserSettingsDialog: false,
+        }),
+        15_000,
+        "위치를 15초 안에 못 읽었어요.",
+      ));
     const distance = Math.round(distanceMeters(pos.coords, wp));
     // 켜는 기준과 끄는 기준이 달라야 한다. 같은 값을 쓰면 여유(±100m 이상)만큼
     // 밖에서도 기록이 켜진다 — 근무일에 병원 앞을 지나가기만 해도 켜진다.

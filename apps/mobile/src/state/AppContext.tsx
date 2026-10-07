@@ -25,6 +25,7 @@ import {
   upcomingWindows,
 } from "../services/scheduler";
 import { restoreGeofence } from "../services/geofence";
+import { withTimeout } from "../services/debug";
 
 export interface AppStateValue {
   ready: boolean;
@@ -139,26 +140,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
     markUiAlive();
     let cancelled = false;
     void (async () => {
-      // 하나가 터져도 앱은 떠야 한다. 예전에는 첫 DB 열기·백그라운드 작업 등록·
-      // 첫 tick 가운데 하나만 던져도 ready 가 영영 안 서서 시작 화면에 갇혔다.
-      // 잠금은 못 읽으면 **잠근 쪽**으로 — 열어 두는 실수보다 낫다.
-      const readLock = async () => {
-        let lock = true;
+      // 화면을 띄우는 데 필요한 것은 둘뿐이다 — 잠금 여부와 첫 고지를 마쳤는지.
+      // 둘 다 DB 한 줄이라 금방이다. 잠금은 못 읽으면 **잠근 쪽**으로 — 열어 두는
+      // 실수보다 낫다.
+      let lock = true;
+      try {
+        const [lockOn, done] = await Promise.all([
+          getSetting<boolean>(SETTINGS_KEYS.appLock, false),
+          getSetting<boolean>(SETTINGS_KEYS.onboarded, false),
+        ]);
+        lock = lockOn;
+        setOnboarded(done);
+      } catch (e) {
+        console.error("[NSR] 시작 단계 실패", e);
+      } finally {
+        appLockEnabled.current = lock;
+        if (lock) setLocked(true);
+      }
+      if (cancelled) return;
+      setReady(true);
+
+      // 나머지는 화면을 띄운 **뒤에** 한다. 예전에는 이것까지 다 기다렸다가 화면을
+      // 띄웠는데, 첫 tick 이 위치(GPS·'위치를 켜 주세요' 창)나 녹음기(서비스 연결)를
+      // 기다리다 영영 안 끝나면 시작 화면에서 못 빠져나왔다 — 한 번 쓰고 녹음한
+      // 다음 실행부터 무한 로딩이던 것. try 는 던지는 것만 잡고 멈춘 것은 못 잡는다.
+      // 하나가 막혀도 다음 것은 돈다 (시한은 기다림만 끊고 일은 그대로 둔다).
+      for (const [name, step] of [
+        ["백그라운드 작업 등록", registerBackgroundTask],
+        ["근무지 감지 다시 걸기", restoreGeofence],
+        ["첫 확인", refresh],
+      ] as const) {
         try {
-          lock = await getSetting<boolean>(SETTINGS_KEYS.appLock, false);
-        } finally {
-          appLockEnabled.current = lock;
-          if (lock) setLocked(true);
-        }
-      };
-      for (const step of [readLock, registerBackgroundTask, restoreGeofence, refresh]) {
-        try {
-          await step();
+          await withTimeout(step(), 30_000, `앱을 열 때 '${name}'이 끝나지 않았어요.`);
         } catch (e) {
           console.error("[NSR] 시작 단계 실패", e);
         }
       }
-      if (!cancelled) setReady(true);
     })();
     return () => {
       cancelled = true;
