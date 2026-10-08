@@ -39,16 +39,9 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
-      # 에뮬레이터 마이크가 받을 소리 장치. 러너에는 소리 장치가 없어서
-      # "Could not init `pa' audio driver" 가 나고, 그러면 녹음이 앱과 무관한 이유로
-      # 실패할 수 있다. 빈 소리를 내는 가짜 장치를 하나 띄운다.
-      - name: 가짜 소리 장치
-        run: |
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq pulseaudio >/dev/null
-          pulseaudio -D --exit-idle-time=-1
-          pactl load-module module-null-sink sink_name=fake
-          pactl set-default-source fake.monitor
+      # 소리 장치는 따로 띄우지 않는다. 띄워도 에뮬레이터가 붙지 못했고("Could not init
+      # `pa' audio driver"), 없어도 에뮬레이터 마이크는 0 을 보내 녹음은 돈다. 녹음된
+      # 길이는 파일 크기가 아니라 녹음기 기록(media.metrics)으로 잰다.
 
       - name: 시험할 APK 받기
         env:
@@ -69,7 +62,7 @@ jobs:
           target: google_apis
           arch: x86_64
           profile: pixel_6
-          # -noaudio 를 빼야 한다. 그게 있으면 마이크가 없어 녹음이 다른 이유로 실패한다.
+          # -noaudio 는 넣지 않는다. 마이크 장치가 없어지면 녹음이 앱과 무관한 이유로 실패한다.
           emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
           disable-animations: true
           script: python3 tools/android-smoke.py "$(ls apk/*.apk | head -1)" smoke-out

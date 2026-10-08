@@ -16,7 +16,8 @@
 
 녹음 중인지는 화면으로 못 본다 — 마이크 버튼이 계속 고동쳐서 uiautomator 가 화면을
 못 읽는다("could not get idle state"). 그건 안드로이드의 마이크 사용 기록(appops,
-상단 초록 점과 같은 근거)으로 본다 (mic_on).
+상단 초록 점과 같은 근거)으로 본다 (mic_on). 녹음된 길이는 녹음기 자신이 센 기록
+(media.metrics)으로 본다 (recorder_metrics).
 """
 import os
 import re
@@ -173,7 +174,8 @@ def texts(root) -> list[str]:
 def mic_on() -> bool:
     """앱이 지금 마이크로 소리를 받고 있나 (appops 의 RECORD_AUDIO 가 running).
 
-    expo-audio 가 뒤에서 녹음기를 일시정지하면(7초 버그) 여기서 running 이 사라진다.
+    켜졌다·꺼졌다만 믿는다. 녹음기가 일시정지돼도 안드로이드는 마이크를 계속 읽고
+    버리기만 해서 running 이 남는다 — 일시정지는 recorder_metrics 로 본다.
     """
     return "running" in adb("shell", "appops", "get", PKG, "RECORD_AUDIO").lower()
 
@@ -185,6 +187,27 @@ def wait_mic(on: bool, timeout: int = 15) -> bool:
             return True
         time.sleep(1)
     return False
+
+
+def recorder_metrics() -> list[tuple[int, int]]:
+    """안드로이드가 녹음기(MediaRecorder)를 닫을 때마다 남기는 기록 — (녹음된 ms, 일시정지 횟수).
+
+    파일 크기로는 길이를 못 잰다: 에뮬레이터 마이크는 0 만 보내서 AAC 가 거의 0 바이트로
+    줄인다(55초가 0.1MB). 녹음기 자신이 센 '녹음된 시간' 과 '일시정지 횟수' 는 7초 버그
+    (expo-audio 가 뒤에서 녹음기를 일시정지)를 그대로 보여 준다.
+    """
+    raw = adb("shell", "dumpsys", "media.metrics")
+    with open(f"{OUT}/media-metrics.txt", "w") as f:
+        f.write(raw)
+    items = re.findall(r"\{[^{}]*mediarecorder\.durationMs=\d+[^{}]*\}", raw) or [
+        l for l in raw.splitlines() if "mediarecorder.durationMs=" in l]
+    items = [i for i in items if PKG in i] or items
+    out = []
+    for i in items:
+        pauses = re.search(r"mediarecorder\.NPauses=(\d+)", i)
+        out.append((int(re.search(r"mediarecorder\.durationMs=(\d+)", i).group(1)),
+                    int(pauses.group(1)) if pauses else 0))
+    return out
 
 
 def deny_notif_prompt() -> None:
@@ -315,11 +338,12 @@ def main() -> None:
     ghosts = sum(1 for t in texts(root) if t == "녹음 중")
     check(ghosts == 0, f"'녹음 중' 으로 남은 줄이 없다 (지금 {ghosts}개)")
     check(len(rows) == 3, f"세 번 녹음해서 세 줄이 남는다 (지금 {len(rows)}줄)")
-    # 길이는 크기로도 본다. 화면은 분 단위라 1분이 안 되는 것도 '1분' 으로 적는다.
-    # 128kbps AAC 는 초당 16KB 쯤이니 55초면 0.8MB 다.
-    mbs = [float(x) for t in texts(root) for x in re.findall(r"([0-9]+\.[0-9])MB", t)]
-    say(f"     파일 크기: {mbs}")
-    check(max(mbs, default=0.0) >= 0.5, "뒤로 가 있던 동안까지 담긴다 (가장 큰 파일 0.5MB 이상)")
+    recs = recorder_metrics()
+    say(f"     녹음기 기록 (녹음된 초, 일시정지): {[(round(ms / 1000), p) for ms, p in recs]}")
+    check(len(recs) >= 3, f"녹음기 셋이 닫히며 기록을 남겼다 ({len(recs)}개)")
+    check(max((ms for ms, _ in recs), default=0) >= 45_000,
+          "뒤로 가 있던 동안까지 녹음됐다 (가장 긴 것 45초 이상)")
+    check(all(p == 0 for _, p in recs), "녹음기가 한 번도 일시정지되지 않았다 (7초 버그)")
 
     # ── 앱을 완전히 닫았다 다시 열면 뜨나 (무한 로딩) ──
     adb("shell", "am", "force-stop", PKG)
@@ -359,6 +383,10 @@ def main() -> None:
     root, _ = recordings("recordings-no-notif")
     ghosts = sum(1 for t in texts(root) if t == "녹음 중")
     check(ghosts == 0, f"알림 권한이 없어도 '녹음 중' 유령 줄이 안 생긴다 (지금 {ghosts}개)")
+    new = [r for r in recorder_metrics() if r not in recs]
+    say(f"     새 녹음기 기록 (녹음된 초, 일시정지): {[(round(ms / 1000), p) for ms, p in new]}")
+    check(any(ms >= 20_000 and p == 0 for ms, p in new),
+          "알림 권한이 없어도 뒤에 있던 20초까지 일시정지 없이 녹음됐다")
 
 
 try:

@@ -48,6 +48,8 @@ node tools/sync-skill-rules.mjs                  # 확정 규칙을 스킬 안�
 안드로이드 14 에뮬레이터에 깔고 `tools/android-smoke.py` 의 녹음 흐름(켜기 → 뒤로 45초 →
 멈추기 → 두 번 더 → 녹음 기록 → 닫았다 다시 열기 → 알림 권한 없이)을 돌린다. 녹음 중인지는
 화면이 아니라 마이크 사용 기록(appops)으로 본다 — 녹음 중에는 버튼이 고동쳐서 화면을 못 읽는다.
+녹음된 길이와 일시정지는 녹음기 기록(`dumpsys media.metrics`)으로 본다 — 에뮬레이터 마이크는 0 만
+보내서 파일 크기로는 길이를 못 잰다.
 결과(`summary.txt`·단계별 화면·logcat)는 그 실행의 산출물 `android-smoke` 에 있다.
 
 ```bash
