@@ -13,6 +13,10 @@
 화면은 uiautomator 로 읽는다 — 글자(text)와 접근성 이름(content-desc)으로 찾아서
 그 한가운데를 누른다. 출시용 APK 라 앱 안의 DB 는 못 열어 본다(run-as 불가).
 그래서 판정은 사람이 보는 화면(녹음 기록)과 logcat 으로 한다.
+
+녹음 중인지는 화면으로 못 본다 — 마이크 버튼이 계속 고동쳐서 uiautomator 가 화면을
+못 읽는다("could not get idle state"). 그건 안드로이드의 마이크 사용 기록(appops,
+상단 초록 점과 같은 근거)으로 본다 (mic_on).
 """
 import os
 import re
@@ -52,6 +56,9 @@ W, H = 1080, 2400
 
 def dump():
     for _ in range(3):
+        # 지난 파일을 먼저 지운다. 안 지우면 dump 가 실패했을 때(녹음 중) 예전 화면을
+        # 읽고 판정한다 — 0.1.125 시험이 그렇게 틀렸다.
+        adb("shell", "rm", "-f", "/sdcard/ui.xml")
         adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
         xml = adb("shell", "cat", "/sdcard/ui.xml")
         start = xml.find("<?xml")
@@ -118,6 +125,7 @@ def shot(name: str) -> None:
     base = f"{OUT}/{shots:02d}-{name}"
     adb("shell", "screencap", "-p", "/sdcard/s.png")
     adb("pull", "/sdcard/s.png", base + ".png")
+    adb("shell", "rm", "-f", "/sdcard/ui.xml")
     adb("shell", "uiautomator", "dump", "/sdcard/ui.xml")
     adb("pull", "/sdcard/ui.xml", base + ".xml")
 
@@ -136,6 +144,31 @@ def texts(root) -> list[str]:
     return [v for n in root.iter("node") for v in (n.get("text", ""),) if v]
 
 
+def mic_on() -> bool:
+    """앱이 지금 마이크로 소리를 받고 있나 (appops 의 RECORD_AUDIO 가 running).
+
+    expo-audio 가 뒤에서 녹음기를 일시정지하면(7초 버그) 여기서 running 이 사라진다.
+    """
+    return "running" in adb("shell", "appops", "get", PKG, "RECORD_AUDIO").lower()
+
+
+def wait_mic(on: bool, timeout: int = 15) -> bool:
+    end = time.time() + timeout
+    while time.time() < end:
+        if mic_on() == on:
+            return True
+        time.sleep(1)
+    return False
+
+
+def deny_notif_prompt() -> None:
+    """알림 권한 창이 뜨면 '허용 안 함'. 영어판 글자는 굽은 따옴표(Don’t)라 앞을 뗀다."""
+    for label in ("t allow", "허용 안"):
+        if tap(label, 4):
+            say(f"     알림 권한 창에서 '{label}' 거절")
+            return
+
+
 def dismiss_dialogs() -> list[str]:
     """앱이 띄운 대화상자를 내용을 남기고 닫는다.
 
@@ -145,7 +178,7 @@ def dismiss_dialogs() -> list[str]:
     seen = []
     for _ in range(3):
         root = dump()
-        title = next((t for t in ("기록을 켜지 못했어요", "화면을 끄면 녹음이 멈춰요") if find(root, t)), None)
+        title = "기록을 켜지 못했어요" if find(root, "기록을 켜지 못했어요") else None
         if title is None:
             break
         say(f"     대화상자 '{title}': " + " / ".join(texts(root)[:6]))
@@ -200,49 +233,58 @@ def main() -> None:
         return
     mic_xy = center(mic)
 
-    tap_xy(*mic_xy)
-    time.sleep(8)
-    shot("after-start")
-    dismiss_dialogs()
-    check(find(dump(), "기록 멈추기") is not None, "마이크를 누르면 기록이 켜진다")
+    def press(on: bool, what: str) -> bool:
+        """마이크 버튼을 누르고, 정말 켜졌는지(꺼졌는지) 마이크 사용 기록으로 본다."""
+        tap_xy(*mic_xy)
+        ok = wait_mic(on, 15)
+        if not ok:
+            dismiss_dialogs()  # 실패 안내가 떠 있으면 내용을 남기고 닫는다
+        check(ok, what)
+        return ok
 
-    # ── 화면을 꺼도(앱이 뒤로 가도) 이어지나 ──
+    def recordings(name: str):
+        dismiss_dialogs()
+        open_link("nsr://recordings")
+        time.sleep(6)
+        shot(name)
+        root = dump()
+        rows = [t for t in texts(root) if re.match(r"\d\d:\d\d 시작", t)]
+        say("     녹음 기록: " + (" | ".join(rows) if rows else "(줄 없음)"))
+        return root, rows
+
+    on = press(True, "마이크를 누르면 녹음이 시작된다")
+    say("     마이크 사용 기록: " + " / ".join(adb("shell", "appops", "get", PKG, "RECORD_AUDIO").split("\n")).strip())
+    shot("after-start")
+
+    # ── 앱이 뒤로 가도(화면을 꺼도) 이어지나 — '7초만 저장' 버그 ──
     with open(f"{OUT}/services-recording.txt", "w") as f:
         f.write(adb("shell", "dumpsys", "activity", "services", PKG))
     adb("shell", "input", "keyevent", "KEYCODE_HOME")
-    time.sleep(45)
+    time.sleep(40)
+    check(mic_on(), "앱이 뒤에 40초 있어도 녹음이 이어진다")
+    time.sleep(5)
     launch()
-    time.sleep(6)
+    time.sleep(5)
     shot("back-after-45s")
-    stop = wait_for("기록 멈추기", 20)
-    check(stop is not None, "뒤에 45초 있다 돌아와도 기록 중이다")
-    if stop is not None:
-        tap_xy(*center(stop))
-        time.sleep(6)
-    shot("after-stop")
+    if on:
+        press(False, "다시 누르면 녹음이 멈춘다")
 
-    # ── 짧게 켰다 끄기를 두 번 — 줄이 여러 개 남던 길 ──
-    for i in range(2):
-        tap_xy(*mic_xy)
-        time.sleep(5)
-        tap_xy(*mic_xy)
-        time.sleep(4)
-    shot("after-bursts")
+    # ── 짧게 켰다 끄기를 두 번 — 두 번째 녹음부터 준비가 안 끝나 '녹음 중' 줄이 쌓이던 길 ──
+    for i in (2, 3):
+        if press(True, f"{i}번째 녹음도 켜진다"):
+            time.sleep(4)
+            press(False, f"{i}번째 녹음도 멈춘다")
+        time.sleep(2)
 
-    # ── 녹음 기록 화면에서 확인 ──
-    open_link("nsr://recordings")
-    time.sleep(6)
-    shot("recordings")
-    root = dump()
-    rows = [t for t in texts(root) if "시작" in t]
-    say("     녹음 기록: " + (" | ".join(rows) if rows else "(줄 없음)"))
+    root, rows = recordings("recordings")
     ghosts = sum(1 for t in texts(root) if t == "녹음 중")
     check(ghosts == 0, f"'녹음 중' 으로 남은 줄이 없다 (지금 {ghosts}개)")
-    # 길이는 크기로 본다. 화면은 분 단위라 1분이 안 되는 것도 '1분' 으로 적는다 — 7초만
-    # 남던 버그를 그걸로는 못 잡는다. 128kbps AAC 는 초당 16KB 쯤이니 50초면 0.8MB 다.
+    check(len(rows) == 3, f"세 번 녹음해서 세 줄이 남는다 (지금 {len(rows)}줄)")
+    # 길이는 크기로도 본다. 화면은 분 단위라 1분이 안 되는 것도 '1분' 으로 적는다.
+    # 128kbps AAC 는 초당 16KB 쯤이니 55초면 0.8MB 다.
     mbs = [float(x) for t in texts(root) for x in re.findall(r"([0-9]+\.[0-9])MB", t)]
     say(f"     파일 크기: {mbs}")
-    check(max(mbs, default=0.0) >= 0.5, "뒤로 가 있던 45초까지 담긴다 (가장 큰 파일 0.5MB 이상)")
+    check(max(mbs, default=0.0) >= 0.5, "뒤로 가 있던 동안까지 담긴다 (가장 큰 파일 0.5MB 이상)")
 
     # ── 앱을 완전히 닫았다 다시 열면 뜨나 (무한 로딩) ──
     adb("shell", "am", "force-stop", PKG)
@@ -253,11 +295,8 @@ def main() -> None:
     check(home is not None, "닫았다 다시 열면 90초 안에 홈이 뜬다 (무한 로딩이 아니다)")
     say(f"     다시 열기까지 {time.time() - t0:.0f}초")
     shot("relaunch")
-    open_link("nsr://recordings")
-    time.sleep(6)
-    shot("recordings-after-relaunch")
 
-    # ── 알림 권한이 없을 때 — 안드로이드 13+ 에서 사람이 '허용 안 함' 을 누른 경우 ──
+    # ── 알림 권한이 없을 때 — 안드로이드 13+ 에서 '허용 안 함' 을 누른 폰 ──
     # 권한을 거두면 안드로이드가 앱을 죽인다. 다시 열어 마이크를 누른다.
     adb("shell", "pm", "revoke", PKG, "android.permission.POST_NOTIFICATIONS")
     time.sleep(2)
@@ -266,31 +305,23 @@ def main() -> None:
     if mic is None:
         check(False, "알림 권한을 거둔 뒤 다시 열면 홈이 뜬다")
         return
-    tap_xy(*center(mic))
-    time.sleep(3)
-    for label in ("Don't allow", "허용 안함", "허용 안 함"):  # 앱이 묻는 알림 권한 창
-        if tap(label, 3, exact=True):
-            say(f"     알림 권한 창에서 '{label}'")
-            break
-    time.sleep(12)
+    mic_xy = center(mic)
+    tap_xy(*mic_xy)
+    time.sleep(2)
+    deny_notif_prompt()
+    on = wait_mic(True, 15)
     shot("no-notif-after-start")
-    told = dismiss_dialogs()
-    started = find(dump(), "기록 멈추기") is not None
-    check(started, "알림 권한이 없어도 녹음이 켜진다")
-    check("화면을 끄면 녹음이 멈춰요" in told, "알림이 꺼져 있으면 화면을 끄면 멈춘다고 바로 알려 준다")
-    if started:
+    if not on:
+        dismiss_dialogs()
+    check(on, "알림 권한이 없어도 녹음이 켜진다")
+    if on:
         adb("shell", "input", "keyevent", "KEYCODE_HOME")
         time.sleep(20)
+        check(mic_on(), "알림 권한이 없어도 앱이 뒤에 있는 동안 녹음이 이어진다")
         launch()
-        stop = wait_for("기록 멈추기", 20)
-        if stop is not None:
-            tap_xy(*center(stop))
-            time.sleep(5)
-    open_link("nsr://recordings")
-    time.sleep(6)
-    shot("recordings-no-notif")
-    root = dump()
-    say("     녹음 기록: " + " | ".join(t for t in texts(root) if "시작" in t))
+        time.sleep(5)
+        press(False, "알림 권한이 없어도 다시 누르면 멈춘다")
+    root, _ = recordings("recordings-no-notif")
     ghosts = sum(1 for t in texts(root) if t == "녹음 중")
     check(ghosts == 0, f"알림 권한이 없어도 '녹음 중' 유령 줄이 안 생긴다 (지금 {ghosts}개)")
 

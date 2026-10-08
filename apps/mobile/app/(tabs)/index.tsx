@@ -3,7 +3,6 @@ import {
   Alert,
   Animated,
   Easing,
-  Linking,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -684,15 +683,6 @@ export default function Home() {
                 );
               } else {
                 await geo.markStoppedByUser(0); // 다시 켰으니 잠금을 푼다
-                // 켜지긴 했지만 알림이 꺼져 있으면 화면을 끄는 순간 멈춘다. 사람이 지금
-                // 화면을 보고 있으니 바로 말한다 — 주머니에 넣은 뒤에는 늦다.
-                const rec = await import("../../src/services/recorder");
-                if (!(await rec.canRecordInBackground())) {
-                  Alert.alert("화면을 끄면 녹음이 멈춰요", rec.BACKGROUND_BLOCKED_MESSAGE, [
-                    { text: "그만두기", style: "cancel" },
-                    { text: "설정 열기", onPress: () => void Linking.openSettings() },
-                  ]);
-                }
               }
               await app.refresh();
               } finally {

@@ -24,26 +24,9 @@ import {
 } from "expo-audio";
 import type { RecordingPolicy } from "@nsr/core";
 import { fileSize, moveIntoRecordings, recordingFileUri } from "./files";
-import { PermissionsAndroid, Platform } from "react-native";
+import { Platform } from "react-native";
 import { beginWork, endWork, serviceAlive } from "./progress-notify";
 import { withTimeout } from "./debug";
-
-/**
- * 화면을 꺼도 녹음이 이어질 수 있는가.
- *
- * expo-audio 의 백그라운드 녹음은 안드로이드 13+ 에서 **알림 권한이 없으면 녹음기
- * 준비 자체를 거부한다** (AudioRecorder.prepareRecording → NotificationPermissionsException).
- * 알림을 '허용 안 함' 한 폰에서는 그래서 0.1.122 부터 녹음이 아예 안 켜졌고, 켤 때마다
- * '녹음 중' 줄이 하나씩 남았다. 라이브러리와 같은 잣대(13 미만은 늘 됨)로 미리 보고,
- * 안 되면 화면이 켜져 있는 동안만이라도 녹음한다 — 안 켜지는 것보다 낫다.
- */
-export const BACKGROUND_BLOCKED_MESSAGE =
-  "알림이 꺼져 있어 화면을 끄면 녹음이 멈춰요. 설정에서 NSR 알림을 켜 주세요.";
-
-export async function canRecordInBackground(): Promise<boolean> {
-  if (Platform.OS !== "android" || (Platform.Version as number) < 33) return true;
-  return PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS);
-}
 
 /** 진행 알림의 이름. 참조를 세는 쪽(progress-notify)이 이 이름으로 짝을 맞춘다. */
 const RECORDING_WORK_ID = "recording";
@@ -401,6 +384,41 @@ export class RecordingSession {
 // ────────────────────────────────────────────────────────────
 
 /**
+ * expo-audio 오디오 모드. `background` 는 '앱이 뒤로 가도 녹음을 멈추지 말라' 다.
+ *
+ * **왜 녹음기를 만들 때는 끄고, 녹음이 시작된 뒤에야 켜나**
+ *
+ * expo-audio 는 이 깃발이 꺼져 있으면 앱이 뒤로 가는 순간 녹음기를 일시정지한다
+ * (AudioModule.kt 의 OnActivityEntersBackground). 그래서 켜 놓고 화면을 끈 녹음에는
+ * 화면이 켜져 있던 몇 초만 담겼다 — "중간에 정지하면 7초만 저장된다" 가 이것이었다.
+ *
+ * 그렇다고 녹음기를 만들 때부터 켜 두면 expo-audio 가 그 녹음기를 **제 녹음 서비스에
+ * 묶으려 하는데**, 거기 경쟁 버그가 있다 (expo-audio 57.0.4,
+ * AudioRecordingServiceConnection.bindWithService). bindService 를 먼저 부르고 나서야
+ * '기다리는 중' 표시와 이어받을 곳을 적는데, 서비스가 이미 떠 있으면(두 번째 녹음부터)
+ * 연결 소식이 그보다 먼저 와서 버려지고 준비가 **영영** 끝나지 않는다. 5초 시한도
+ * 만들어만 두고 걸지 않는다. 에뮬레이터 시험(android-test.yml)에서 첫 녹음은 되고
+ * 두 번째부터 '녹음기가 응답하지 않았어요' 로 재현됐다 — 근무 기록에 '녹음 중' 이
+ * 여러 줄 쌓이고, 0.1.122 에서 앱이 무한 로딩에 걸린 것도 이 기다림이었다.
+ * 그 서비스는 알림 권한이 없으면 준비부터 거부하기도 한다.
+ *
+ * 깃발은 '뒤로 가는 순간' 에만 읽히므로, 녹음기는 꺼진 채로 만들어(서비스에 안 묶임)
+ * 녹음을 시작한 뒤에 켜면 된다. 화면이 꺼진 뒤 마이크를 붙잡아 두는 일은 우리 포그라운드
+ * 서비스(NsrWorkService, 마이크 유형)가 이미 한다. 알림 권한이 없어도 그 서비스는 돈다.
+ */
+function audioMode(background: boolean) {
+  return {
+    // iOS에서 마이크를 쓰려면 세션이 기록을 허용해야 한다.
+    allowsRecording: true,
+    allowsBackgroundRecording: background,
+    // 화면을 꺼도 세션이 살아 있어야 기록이 이어진다.
+    shouldPlayInBackground: true,
+    // 다른 앱 소리를 끊지 않는다. 통화나 알람이 죽으면 바로 들킨다.
+    interruptionMode: "mixWithOthers" as const,
+  };
+}
+
+/**
  * expo-audio 기반 백엔드.
  *
  * 파일 경로에 대해: expo-audio는 자기 캐시 경로에 쓰고 `uri`로 알려줄 뿐,
@@ -420,24 +438,7 @@ export function createExpoAudioBackend(): AudioBackend {
     },
 
     async prepareSession({ silent }) {
-      await setAudioModeAsync({
-        // iOS에서 마이크를 쓰려면 세션이 기록을 허용해야 한다.
-        allowsRecording: true,
-        // **이게 없으면 화면을 끄는 순간 녹음이 멈춘다.** expo-audio 는 앱이 뒤로 가면
-        // 녹음기를 일시정지하고(AudioModule.kt 의 OnActivityEntersBackground), 앞으로
-        // 돌아와야 다시 켠다. 그래서 켜 놓고 화면을 끈 녹음은 화면이 켜져 있던 몇 초만
-        // 담겼다 — "중간에 정지하면 7초만 저장된다" 가 이것이었다. 우리 포그라운드
-        // 서비스가 있어도 소용없었다: 멈추는 것은 OS 가 아니라 expo-audio 다.
-        // 켜면 expo-audio 가 제 녹음 서비스를 하나 더 띄운다(app.json 의
-        // enableBackgroundRecording 이 매니페스트에 넣는다). 우리 서비스가 먼저 떠 있어서
-        // 앱이 뒤에 있어도 그 서비스를 띄울 수 있다 — 그래서 둘 다 둔다.
-        // 알림 권한이 없으면 끈다 — 켜 두면 녹음이 아예 시작되지 않는다 (canRecordInBackground).
-        allowsBackgroundRecording: await canRecordInBackground(),
-        // 화면을 꺼도 세션이 살아 있어야 기록이 이어진다.
-        shouldPlayInBackground: true,
-        // 다른 앱 소리를 끊지 않는다. 통화나 알람이 죽으면 바로 들킨다.
-        interruptionMode: "mixWithOthers",
-      });
+      await setAudioModeAsync(audioMode(false));
       // 시작음·종료음은 애초에 재생하지 않는다.
       // 이 플래그는 정책을 코드에 남겨두기 위한 것이고, 여기서 할 일은 없다.
       void silent;
@@ -445,15 +446,16 @@ export function createExpoAudioBackend(): AudioBackend {
 
     async start(fileName) {
       currentName = fileName;
+      // ① 녹음기는 '뒤로 가도 녹음' 을 **끈 채로** 만든다 (audioMode 의 주석).
+      await setAudioModeAsync(audioMode(false));
       // 세기 재기를 켠다 — 마이크가 죽었는지는 이것으로만 안다(안드로이드의
       // currentTime 은 벽시계라 마이크가 죽어도 는다).
       recorder = new AudioModule.AudioRecorder({
         ...RecordingPresets.HIGH_QUALITY,
         isMeteringEnabled: true,
       });
-      // 백그라운드 녹음을 켜면 준비가 expo-audio 녹음 서비스 연결을 기다리는데, 그
-      // 기다림에 시한이 없다(라이브러리가 만들어 둔 시한을 걸지 않는다). 연결이 안 오면
-      // tick 이 통째로 멈추고, 앱을 열 때 그 tick 을 기다리던 시작 화면도 같이 멈췄다.
+      // 준비가 안 끝나는 길을 한 번 겪었다(audioMode 의 주석). 지금 순서로는 생기지
+      // 않지만, 생기면 tick 이 통째로 멈추고 앱을 열 때 시작 화면까지 멈춘다 — 시한을 둔다.
       try {
         await withTimeout(
           recorder.prepareToRecordAsync(),
@@ -471,6 +473,11 @@ export function createExpoAudioBackend(): AudioBackend {
         throw e;
       }
       recorder.record();
+      // ② 녹음이 시작된 **뒤에** '뒤로 가도 멈추지 말라' 를 건다.
+      // ponytail: ①과 ② 사이(수 ms)에 앱이 뒤로 가면 녹음기가 일시정지된 채 남는다.
+      // 앱을 다시 열면 감시(startWatchdog)가 3분 안에 멈춘 것으로 보고 새로 연다.
+      // 실제로 겪으면 앞으로 돌아올 때 일시정지된 녹음기를 깨우는 길을 더한다.
+      await setAudioModeAsync(audioMode(true));
       recording = true;
       startedAtMs = Date.now();
       return recordingFileUri(fileName);

@@ -54,8 +54,7 @@
       [
         "expo-audio",
         {
-          "microphonePermission": "근무 중 들은 인계와 교육 내용을 나중에 복기하기 위해 마이크를 사용합니다.",
-          "enableBackgroundRecording": true
+          "microphonePermission": "근무 중 들은 인계와 교육 내용을 나중에 복기하기 위해 마이크를 사용합니다."
         }
       ],
       [
