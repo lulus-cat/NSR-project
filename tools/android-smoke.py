@@ -258,6 +258,10 @@ def main() -> None:
 
     # -g: 앱이 쓰는 권한(마이크·알림·위치)을 미리 준다. 권한 창은 이 시험의 대상이 아니다.
     say("설치: " + adb("install", "-r", "-g", APK, timeout=600).strip().splitlines()[-1])
+    # '… isn't responding' 창을 띄우지 않는다. 느린 에뮬레이터에서는 런처가 계속 멈칫해서
+    # 그 창이 앱을 덮고, 그 위를 누른 것은 앱에 안 간다(0.1.127 시험의 첫 녹음이 그랬다).
+    # 창 대신 멈춘 앱이 닫힌다 — 우리 앱이 멈추면 녹음이 끊겨 판정에서 드러난다.
+    adb("shell", "settings", "put", "global", "hide_error_dialogs", "1")
     adb("logcat", "-c")
 
     # ── 첫 실행: 안내 화면을 넘긴다 ──
@@ -295,6 +299,8 @@ def main() -> None:
 
     def press(on: bool, what: str) -> bool:
         """마이크 버튼을 누르고, 정말 켜졌는지(꺼졌는지) 마이크 사용 기록으로 본다."""
+        if on:
+            dump()  # 시스템 창이 앱을 덮고 있으면 닫는다 (녹음 중엔 화면을 못 읽어 켤 때만)
         tap_xy(*mic_xy)
         ok = wait_mic(on, 15)
         if not ok:
