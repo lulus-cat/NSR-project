@@ -134,10 +134,6 @@ def launch() -> None:
     adb("shell", "monkey", "-p", PKG, "-c", "android.intent.category.LAUNCHER", "1")
 
 
-def open_link(url: str) -> None:
-    adb("shell", "am", "start", "-W", "-a", "android.intent.action.VIEW", "-d", url, PKG)
-
-
 def texts(root) -> list[str]:
     if root is None:
         return []
@@ -243,13 +239,22 @@ def main() -> None:
         return ok
 
     def recordings(name: str):
+        """사람이 가는 길로 녹음 기록을 연다 — 홈 서류철의 '기록' 칸 → '녹음 기록'.
+
+        nsr://recordings 링크는 앱이 이미 떠 있으면 화면이 안 바뀐다(0.1.126 시험).
+        앱 안에 링크를 쓰는 기능이 없어서 링크 대신 화면을 누른다.
+        """
         dismiss_dialogs()
-        open_link("nsr://recordings")
-        time.sleep(6)
+        if find(dump(), "녹음 기록", exact=True) is None:
+            tap("기록", 10, exact=True)
+        tap("녹음 기록", 20, exact=True, scroll=True)
+        time.sleep(4)
         shot(name)
         root = dump()
         rows = [t for t in texts(root) if re.match(r"\d\d:\d\d 시작", t)]
         say("     녹음 기록: " + (" | ".join(rows) if rows else "(줄 없음)"))
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")  # 홈으로
+        time.sleep(2)
         return root, rows
 
     on = press(True, "마이크를 누르면 녹음이 시작된다")
