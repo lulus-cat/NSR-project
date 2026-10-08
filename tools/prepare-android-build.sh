@@ -62,6 +62,22 @@ else
   echo "CPU 종류: $ABI 로 지정"
 fi
 
+# 네이티브 라이브러리를 설치할 때 풀어 놓게 한다 (expo.useLegacyPackaging).
+#
+# 풀지 않으면(기본값) .so 가 APK 안에 그대로 있고 폰이 거기서 바로 읽는다. 실물
+# arm64 폰은 그걸로 된다. 그런데 에뮬레이터 시험(android-test.yml)의 x86_64
+# 안드로이드는 ARM 코드를 번역해서 돌리는데, 그때 SoLoader 가 APK 안의 lib/x86_64
+# 만 뒤지다가 "couldn't find DSO to load: libreactnative.so" 로 앱이 켜지자마자
+# 죽었다. 풀어 두면 lib/arm64 에서 찾는다. 폰 쪽 대가는 APK 가 오히려 작아지고
+# (라이브러리를 압축해 담는다) 설치 뒤 용량이 그만큼 는다는 것뿐이다.
+if grep -q '^expo\.useLegacyPackaging=' "$PROPS"; then
+  sed -i.bak 's/^expo\.useLegacyPackaging=.*/expo.useLegacyPackaging=true/' "$PROPS"
+  rm -f "$PROPS.bak"
+else
+  echo "expo.useLegacyPackaging=true" >> "$PROPS"
+fi
+echo "네이티브 라이브러리: 설치할 때 풀어 놓음"
+
 # ── 3. 메모리 ────────────────────────────────────────────────────────
 #
 # 한때 6GB 로 잡았다. 과했다 — 링크가 죽은 건 메모리가 아니라 디스크 문제였고,

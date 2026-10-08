@@ -288,6 +288,11 @@ finally:
     keep = re.compile(r"ReactNativeJS|NSR|AndroidRuntime|FATAL|expo|Audio|MediaRecorder|ForegroundService|NsrWork|startForeground", re.I)
     with open(f"{OUT}/logcat-app.txt", "w") as f:
         f.write("\n".join(l for l in log.splitlines() if keep.search(l)))
+    # 앱이 죽었으면 그 자리를 요약에 바로 붙인다 — logcat 6만 줄을 뒤질 필요가 없게.
+    crash = log.find("FATAL EXCEPTION")
+    if crash >= 0:
+        lines.append("앱이 죽었다:")
+        lines.extend("     " + l for l in log[crash:].splitlines()[:12])
     with open(f"{OUT}/summary.txt", "w") as f:
         f.write("\n".join(lines) + "\n")
     sys.exit(1 if failed else 0)
