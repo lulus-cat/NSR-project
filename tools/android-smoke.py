@@ -191,6 +191,8 @@ def main() -> None:
         tap("확인", 5, exact=True) or adb("shell", "input", "keyevent", "KEYCODE_BACK")
 
     # ── 화면을 꺼도(앱이 뒤로 가도) 이어지나 ──
+    with open(f"{OUT}/services-recording.txt", "w") as f:
+        f.write(adb("shell", "dumpsys", "activity", "services", PKG))
     adb("shell", "input", "keyevent", "KEYCODE_HOME")
     time.sleep(45)
     launch()
@@ -234,6 +236,45 @@ def main() -> None:
     open_link("nsr://recordings")
     time.sleep(6)
     shot("recordings-after-relaunch")
+
+    # ── 알림 권한이 없을 때 — 안드로이드 13+ 에서 사람이 '허용 안 함' 을 누른 경우 ──
+    # 권한을 거두면 안드로이드가 앱을 죽인다. 다시 열어 마이크를 누른다.
+    adb("shell", "pm", "revoke", PKG, "android.permission.POST_NOTIFICATIONS")
+    time.sleep(2)
+    launch()
+    mic = wait_for("기록 시작하기", 40)
+    if mic is None:
+        check(False, "알림 권한을 거둔 뒤 다시 열면 홈이 뜬다")
+        return
+    tap_xy(*center(mic))
+    time.sleep(3)
+    for label in ("Don't allow", "허용 안함", "허용 안 함"):  # 앱이 묻는 알림 권한 창
+        if tap(label, 3, exact=True):
+            say(f"     알림 권한 창에서 '{label}'")
+            break
+    time.sleep(12)
+    shot("no-notif-after-start")
+    root = dump()
+    started = find(root, "기록 멈추기") is not None
+    check(started, "알림 권한이 없어도 녹음이 켜진다")
+    if find(root, "기록을 켜지 못했어요") is not None:
+        say("     경고창: " + " / ".join(texts(root)[:8]))
+        tap("OK", 5, exact=True) or tap("확인", 5, exact=True)
+    if started:
+        adb("shell", "input", "keyevent", "KEYCODE_HOME")
+        time.sleep(20)
+        launch()
+        stop = wait_for("기록 멈추기", 20)
+        if stop is not None:
+            tap_xy(*center(stop))
+            time.sleep(5)
+    open_link("nsr://recordings")
+    time.sleep(6)
+    shot("recordings-no-notif")
+    root = dump()
+    say("     녹음 기록: " + " | ".join(t for t in texts(root) if "시작" in t))
+    ghosts = sum(1 for t in texts(root) if t == "녹음 중")
+    check(ghosts == 0, f"알림 권한이 없어도 '녹음 중' 유령 줄이 안 생긴다 (지금 {ghosts}개)")
 
 
 try:
