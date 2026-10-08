@@ -222,7 +222,11 @@ def main() -> None:
     say("     녹음 기록: " + (" | ".join(rows) if rows else "(줄 없음)"))
     ghosts = sum(1 for t in texts(root) if t == "녹음 중")
     check(ghosts == 0, f"'녹음 중' 으로 남은 줄이 없다 (지금 {ghosts}개)")
-    check(any(re.search(r"시작 · [1-9]", t) for t in rows), "45초 넘게 녹음한 줄이 1분 이상으로 남는다")
+    # 길이는 크기로 본다. 화면은 분 단위라 1분이 안 되는 것도 '1분' 으로 적는다 — 7초만
+    # 남던 버그를 그걸로는 못 잡는다. 128kbps AAC 는 초당 16KB 쯤이니 50초면 0.8MB 다.
+    mbs = [float(x) for t in texts(root) for x in re.findall(r"([0-9]+\.[0-9])MB", t)]
+    say(f"     파일 크기: {mbs}")
+    check(max(mbs, default=0.0) >= 0.5, "뒤로 가 있던 45초까지 담긴다 (가장 큰 파일 0.5MB 이상)")
 
     # ── 앱을 완전히 닫았다 다시 열면 뜨나 (무한 로딩) ──
     adb("shell", "am", "force-stop", PKG)
