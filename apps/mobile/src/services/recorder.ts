@@ -448,17 +448,26 @@ export function createExpoAudioBackend(): AudioBackend {
       currentName = fileName;
       // ① 녹음기는 '뒤로 가도 녹음' 을 **끈 채로** 만든다 (audioMode 의 주석).
       await setAudioModeAsync(audioMode(false));
+      // 녹음 형식은 **준비할 때 넘겨야 적용된다.** expo-audio 는 프리셋의 플랫폼별 칸
+      // (android: 출력 형식·코덱)을 prepareToRecordAsync(옵션) 에서만 펼친다. 생성자에만
+      // 주면 안드로이드는 기본값인 3GP·AMR(8kHz, 전화 음질)로 녹음한다 — 0.1.126 까지의
+      // 녹음이 전부 그랬다(에뮬레이터 시험의 녹음기 기록 media.metrics 로 찾았다).
+      // 전사용 말소리라 모노 48kbps AAC 로 둔다. 폰 마이크는 사실상 모노라 스테레오는
+      // 크기만 두 배다. 한 시간에 22MB 쯤 — 저장 상한(4GB)·보관 30일에 맞춘다.
       // 세기 재기를 켠다 — 마이크가 죽었는지는 이것으로만 안다(안드로이드의
       // currentTime 은 벽시계라 마이크가 죽어도 는다).
-      recorder = new AudioModule.AudioRecorder({
+      const options = {
         ...RecordingPresets.HIGH_QUALITY,
+        numberOfChannels: 1,
+        bitRate: 48_000,
         isMeteringEnabled: true,
-      });
+      };
+      recorder = new AudioModule.AudioRecorder(options);
       // 준비가 안 끝나는 길을 한 번 겪었다(audioMode 의 주석). 지금 순서로는 생기지
       // 않지만, 생기면 tick 이 통째로 멈추고 앱을 열 때 시작 화면까지 멈춘다 — 시한을 둔다.
       try {
         await withTimeout(
-          recorder.prepareToRecordAsync(),
+          recorder.prepareToRecordAsync(options),
           10_000,
           "녹음기가 응답하지 않았어요. 앱을 닫았다가 다시 열어 주세요.",
         );

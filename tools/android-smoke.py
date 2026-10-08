@@ -189,8 +189,11 @@ def wait_mic(on: bool, timeout: int = 15) -> bool:
     return False
 
 
-def recorder_metrics() -> list[tuple[int, int]]:
-    """안드로이드가 녹음기(MediaRecorder)를 닫을 때마다 남기는 기록 — (녹음된 ms, 일시정지 횟수).
+def recorder_metrics() -> list[tuple[int, int, str, int]]:
+    """안드로이드가 녹음기(MediaRecorder)를 닫을 때마다 남기는 기록.
+
+    (녹음된 ms, 일시정지 횟수, 코덱, 표본율). 코덱으로 전화 음질(AMR 8kHz) 녹음을 잡는다 —
+    0.1.126 까지 앱이 옵션을 잘못 넘겨 모든 녹음이 그랬다.
 
     파일 크기로는 길이를 못 잰다: 에뮬레이터 마이크는 0 만 보내서 AAC 가 거의 0 바이트로
     줄인다(55초가 0.1MB). 녹음기 자신이 센 '녹음된 시간' 과 '일시정지 횟수' 는 7초 버그
@@ -205,9 +208,17 @@ def recorder_metrics() -> list[tuple[int, int]]:
     out = []
     for i in items:
         pauses = re.search(r"mediarecorder\.NPauses=(\d+)", i)
+        mime = re.search(r"mediarecorder\.audio\.mime=([^,)\s]+)", i)
+        rate = re.search(r"mediarecorder\.audio-samplerate=(\d+)", i)
         out.append((int(re.search(r"mediarecorder\.durationMs=(\d+)", i).group(1)),
-                    int(pauses.group(1)) if pauses else 0))
+                    int(pauses.group(1)) if pauses else 0,
+                    mime.group(1) if mime else "?",
+                    int(rate.group(1)) if rate else 0))
     return out
+
+
+def brief(recs) -> str:
+    return str([(round(ms / 1000), p, m.split("/")[-1], r) for ms, p, m, r in recs])
 
 
 def deny_notif_prompt() -> None:
@@ -339,11 +350,13 @@ def main() -> None:
     check(ghosts == 0, f"'녹음 중' 으로 남은 줄이 없다 (지금 {ghosts}개)")
     check(len(rows) == 3, f"세 번 녹음해서 세 줄이 남는다 (지금 {len(rows)}줄)")
     recs = recorder_metrics()
-    say(f"     녹음기 기록 (녹음된 초, 일시정지): {[(round(ms / 1000), p) for ms, p in recs]}")
+    say(f"     녹음기 기록 (녹음된 초, 일시정지, 코덱, 표본율): {brief(recs)}")
     check(len(recs) >= 3, f"녹음기 셋이 닫히며 기록을 남겼다 ({len(recs)}개)")
-    check(max((ms for ms, _ in recs), default=0) >= 45_000,
+    check(max((r[0] for r in recs), default=0) >= 45_000,
           "뒤로 가 있던 동안까지 녹음됐다 (가장 긴 것 45초 이상)")
-    check(all(p == 0 for _, p in recs), "녹음기가 한 번도 일시정지되지 않았다 (7초 버그)")
+    check(all(r[1] == 0 for r in recs), "녹음기가 한 번도 일시정지되지 않았다 (7초 버그)")
+    check(bool(recs) and all(r[2] == "audio/mp4a-latm" and r[3] >= 16_000 for r in recs),
+          "AAC 로 녹음된다 (전화 음질 AMR 8kHz 가 아니다)")
 
     # ── 앱을 완전히 닫았다 다시 열면 뜨나 (무한 로딩) ──
     adb("shell", "am", "force-stop", PKG)
@@ -384,8 +397,8 @@ def main() -> None:
     ghosts = sum(1 for t in texts(root) if t == "녹음 중")
     check(ghosts == 0, f"알림 권한이 없어도 '녹음 중' 유령 줄이 안 생긴다 (지금 {ghosts}개)")
     new = [r for r in recorder_metrics() if r not in recs]
-    say(f"     새 녹음기 기록 (녹음된 초, 일시정지): {[(round(ms / 1000), p) for ms, p in new]}")
-    check(any(ms >= 20_000 and p == 0 for ms, p in new),
+    say(f"     새 녹음기 기록 (녹음된 초, 일시정지, 코덱, 표본율): {brief(new)}")
+    check(any(r[0] >= 20_000 and r[1] == 0 for r in new),
           "알림 권한이 없어도 뒤에 있던 20초까지 일시정지 없이 녹음됐다")
 
 
