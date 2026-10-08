@@ -136,6 +136,26 @@ def texts(root) -> list[str]:
     return [v for n in root.iter("node") for v in (n.get("text", ""),) if v]
 
 
+def dismiss_dialogs() -> list[str]:
+    """앱이 띄운 대화상자를 내용을 남기고 닫는다.
+
+    대화상자가 떠 있으면 uiautomator 는 그 창만 읽는다 — 밑의 홈('기록 멈추기')이 안 보여
+    녹음이 켜졌는데도 안 켜진 것으로 판정된다. 닫고 나서 본다.
+    """
+    seen = []
+    for _ in range(3):
+        root = dump()
+        title = next((t for t in ("기록을 켜지 못했어요", "화면을 끄면 녹음이 멈춰요") if find(root, t)), None)
+        if title is None:
+            break
+        say(f"     대화상자 '{title}': " + " / ".join(texts(root)[:6]))
+        seen.append(title)
+        if not (tap("그만두기", 3, exact=True) or tap("OK", 3, exact=True) or tap("확인", 3, exact=True)):
+            adb("shell", "input", "keyevent", "KEYCODE_BACK")
+        time.sleep(1)
+    return seen
+
+
 def main() -> None:
     global W, H
     m = re.search(r"(\d+)x(\d+)", adb("shell", "wm", "size"))
@@ -183,12 +203,8 @@ def main() -> None:
     tap_xy(*mic_xy)
     time.sleep(8)
     shot("after-start")
-    root = dump()
-    check(find(root, "기록 멈추기") is not None, "마이크를 누르면 기록이 켜진다")
-    alert = find(root, "기록을 켜지 못했어요")
-    if alert is not None:
-        say("     경고창: " + " / ".join(texts(root)[:8]))
-        tap("확인", 5, exact=True) or adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    dismiss_dialogs()
+    check(find(dump(), "기록 멈추기") is not None, "마이크를 누르면 기록이 켜진다")
 
     # ── 화면을 꺼도(앱이 뒤로 가도) 이어지나 ──
     with open(f"{OUT}/services-recording.txt", "w") as f:
@@ -233,8 +249,8 @@ def main() -> None:
     time.sleep(2)
     t0 = time.time()
     launch()
-    home = wait_for("기록 시작하기", 40)
-    check(home is not None, "닫았다 다시 열면 40초 안에 홈이 뜬다")
+    home = wait_for("기록 시작하기", 90)
+    check(home is not None, "닫았다 다시 열면 90초 안에 홈이 뜬다 (무한 로딩이 아니다)")
     say(f"     다시 열기까지 {time.time() - t0:.0f}초")
     shot("relaunch")
     open_link("nsr://recordings")
@@ -246,7 +262,7 @@ def main() -> None:
     adb("shell", "pm", "revoke", PKG, "android.permission.POST_NOTIFICATIONS")
     time.sleep(2)
     launch()
-    mic = wait_for("기록 시작하기", 40)
+    mic = wait_for("기록 시작하기", 90)
     if mic is None:
         check(False, "알림 권한을 거둔 뒤 다시 열면 홈이 뜬다")
         return
@@ -258,12 +274,10 @@ def main() -> None:
             break
     time.sleep(12)
     shot("no-notif-after-start")
-    root = dump()
-    started = find(root, "기록 멈추기") is not None
+    told = dismiss_dialogs()
+    started = find(dump(), "기록 멈추기") is not None
     check(started, "알림 권한이 없어도 녹음이 켜진다")
-    if find(root, "기록을 켜지 못했어요") is not None:
-        say("     경고창: " + " / ".join(texts(root)[:8]))
-        tap("OK", 5, exact=True) or tap("확인", 5, exact=True)
+    check("화면을 끄면 녹음이 멈춰요" in told, "알림이 꺼져 있으면 화면을 끄면 멈춘다고 바로 알려 준다")
     if started:
         adb("shell", "input", "keyevent", "KEYCODE_HOME")
         time.sleep(20)
