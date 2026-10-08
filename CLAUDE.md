@@ -43,7 +43,21 @@ node tools/review-transcript.mjs data/transcripts/<파일>   # 전사본 1차 �
 node tools/sync-skill-rules.mjs                  # 확정 규칙을 스킬 안으로 (confirmed.jsonl 을 고쳤으면 반드시)
 ```
 
-앱 실행 검증은 CI 가 만든 APK 를 폰에 설치해서 한다. 이 환경에서는 안드로이드 빌드가 안 돈다.
+앱 실행 검증 — **폰에 깔라고 하기 전에 에뮬레이터 시험을 통과시킨다.** 이 환경(클라우드
+세션)에서는 안드로이드가 안 돌지만, `android-test.yml` 이 APK 빌드가 끝날 때마다 새 판을
+안드로이드 14 에뮬레이터에 깔고 `tools/android-smoke.py` 의 녹음 흐름(켜기 → 뒤로 45초 →
+멈추기 → 두 번 더 → 녹음 기록 → 닫았다 다시 열기 → 알림 권한 없이)을 돌린다. 녹음 중인지는
+화면이 아니라 마이크 사용 기록(appops)으로 본다 — 녹음 중에는 버튼이 고동쳐서 화면을 못 읽는다.
+결과(`summary.txt`·단계별 화면·logcat)는 그 실행의 산출물 `android-smoke` 에 있다.
+
+```bash
+# 이미 나온 판을 다시 시험 (도구만 고친 푸시는 새 판을 안 만든다 — build-apk.yml 의 paths-ignore)
+gh api -X POST repos/lulus-cat/NSR-project/actions/workflows/android-test.yml/dispatches \
+  -f ref=<브랜치> -f 'inputs[tag]=v0.1.xxx'
+# 산출물: GitHub MCP actions_get(method download_workflow_run_artifact) 가 주는 주소를 curl -sSL -o 로 받는다
+```
+
+에뮬레이터가 못 보는 것 — 삼성 배터리 관리, 실제 GPS·지오펜스, 실제 마이크·통화 끼어들기. 이건 폰에서 본다.
 
 ## 스킬 — 언제 무엇을 읽나
 

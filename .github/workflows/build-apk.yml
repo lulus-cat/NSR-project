@@ -27,11 +27,12 @@ name: APK 빌드
 on:
   push:
     branches: [main, "claude/**"]
-    # 에뮬레이터 시험 도구만 바뀐 푸시는 앱이 그대로라 새 판을 만들지 않는다.
+    # 에뮬레이터 시험 도구나 작업 지침만 바뀐 푸시는 앱이 그대로라 새 판을 만들지 않는다.
     # 만들면 내용이 같은 판이 Release 에 쌓여 어느 것을 깔지 헷갈린다.
     paths-ignore:
       - "tools/android-smoke.py"
       - ".github/workflows/android-test.yml"
+      - "CLAUDE.md"
   workflow_dispatch:
 
 permissions:
