@@ -1,0 +1,72 @@
+# 안드로이드 시험 — 만든 APK 를 에뮬레이터에 깔고 녹음 흐름을 실제로 돌린다.
+#
+# 폰에 깔아 보고 나서야 버그를 알던 시행착오를 줄이려고 만들었다. 시나리오는
+# tools/android-smoke.py 에 있다 (켜기 → 뒤로 갔다 오기 → 멈추기 → 짧게 켜고 끄기 →
+# 녹음 기록 확인 → 닫았다 다시 열기). 결과(화면·logcat·요약)는 산출물로 남는다.
+#
+# GitHub 의 리눅스 러너는 KVM 을 쓸 수 있어서 x86_64 에뮬레이터가 제 속도로 돈다.
+# APK 는 arm64 만 담지만, 안드로이드 11+ x86_64 이미지는 ARM 코드를 번역해 돌린다.
+name: 안드로이드 시험
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "시험할 판 (예: v0.1.123). 비우면 가장 최근 판"
+        required: false
+  # APK 빌드가 끝나 새 판이 Release 에 붙으면 바로 시험한다.
+  workflow_run:
+    workflows: ["APK 빌드"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-test
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: KVM 켜기
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: 시험할 APK 받기
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ -z "$TAG" ]; then
+            TAG=$(gh release list --repo "$GITHUB_REPOSITORY" --limit 1 --json tagName -q '.[0].tagName')
+          fi
+          echo "시험할 판: $TAG"
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" --pattern '*.apk' --dir apk
+          ls -l apk
+
+      - name: 에뮬레이터에서 녹음 흐름 돌리기
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 34
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          # -noaudio 를 빼야 한다. 그게 있으면 마이크가 없어 녹음이 다른 이유로 실패한다.
+          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -no-boot-anim -camera-back none
+          disable-animations: true
+          script: python3 tools/android-smoke.py "$(ls apk/*.apk | head -1)" smoke-out
+
+      - name: 결과 올리기
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-smoke
+          path: smoke-out
