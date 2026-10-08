@@ -59,7 +59,12 @@ import {
   setSetting,
   totalStorageBytes,
 } from "../db";
-import { RecordingSession, createExpoAudioBackend } from "./recorder";
+import {
+  BACKGROUND_BLOCKED_MESSAGE,
+  RecordingSession,
+  canRecordInBackground,
+  createExpoAudioBackend,
+} from "./recorder";
 import { deleteFile, fileSize, orphanRecordings } from "./files";
 import { notifyStartBlocked } from "./progress-notify";
 
@@ -355,7 +360,11 @@ async function startFor(
     activeOwner = owner;
     activeStartedAt = now;
     // 켜졌으면 지난 실패는 지난 일이다. 안 지우면 홈이 하루 내내 "문제가 있었어요" 다.
-    await setSetting("recording.lastError", null);
+    // 다만 알림이 꺼져 있으면 화면을 끄는 순간 멈춘다 — 그건 지금 알려야 한다.
+    await setSetting(
+      "recording.lastError",
+      (await canRecordInBackground()) ? null : { at: Date.now(), message: BACKGROUND_BLOCKED_MESSAGE },
+    );
     await notifyStartBlocked(false);
   } else if (owner !== "user") {
     // 저절로 켜려다 막혔다 — 사람은 화면을 보고 있지 않다. 안드로이드 12+ 는

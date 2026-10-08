@@ -56,10 +56,16 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
       // 녹음 도중에 앱이 죽으면 파일 없는 'recording' 줄이 남는다. 그대로 두면
       // 근무 기록 화면에 '녹음 중'이 영영 떠 있고, 사용자는 지금 녹음되고 있는
       // 줄 안다. 앱을 새로 여는 이 시점에 도는 세션은 없으니 전부 유령이다.
+      // 소리도 글자도 없어 남길 것이 없으므로 **지운다.** 예전에는 '버린 파일' 로
+      // 바꿔 두었는데 근무 기록에 빈 줄만 쌓였다 — 그렇게 남은 것도 같이 지운다.
+      // (티로에서 가져온 줄도 파일이 없지만 'recording' 을 곧바로 벗어나고,
+      // 그 사유 글은 여기서만 쓰므로 걸리지 않는다.)
       await db.runAsync(
-        `UPDATE recordings SET state = 'discarded',
-                discard_reason = '앱이 갑자기 꺼져서 저장되지 않았어요'
-          WHERE state = 'recording' AND file_uri IS NULL`,
+        `DELETE FROM recordings
+          WHERE file_uri IS NULL
+            AND (state = 'recording'
+                 OR (state = 'discarded'
+                     AND discard_reason = '앱이 갑자기 꺼져서 저장되지 않았어요'))`,
       );
       return db;
     })().catch((e) => {
