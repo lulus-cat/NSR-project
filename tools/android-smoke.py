@@ -64,11 +64,41 @@ def dump():
         start = xml.find("<?xml")
         if start >= 0:
             try:
-                return ET.fromstring(xml[start:])
+                root = ET.fromstring(xml[start:])
+                if not close_anr(root):
+                    return root
+                continue  # 창을 닫았으니 다시 읽는다
             except ET.ParseError:
                 pass
         time.sleep(1)
     return None
+
+
+def close_anr(root) -> bool:
+    """'… isn't responding' 창이 떠 있으면 '기다리기' 를 누르고 True.
+
+    느린 에뮬레이터에서는 런처 같은 시스템 앱이 멈칫해서 이 창이 앱 화면을 가린다
+    (0.1.126 두 번째 시험이 첫 화면부터 그렇게 실패했다). 우리 앱(NSR)의 것이면
+    진짜 문제라 틀림으로 적는다.
+    """
+    title = next((t for t in (n.get("text", "") for n in root.iter("node"))
+                  if "isn't responding" in t or "응답하지 않" in t), None)
+    if title is None:
+        return False
+    if "NSR" in title:
+        check(False, f"앱이 응답하지 않았다 (ANR): {title}")
+    else:
+        say(f"     시스템 창 '{title}' 을 기다리기로 닫았다")
+    # 찾은 노드는 `or` 로 잇지 않는다 — ElementTree 는 자식 없는 노드를 거짓으로 친다.
+    wait = find(root, "Wait", exact=True)
+    if wait is None:
+        wait = find(root, "대기", exact=True)
+    if wait is not None:
+        tap_xy(*center(wait))
+    else:
+        adb("shell", "input", "keyevent", "KEYCODE_BACK")
+    time.sleep(2)
+    return True
 
 
 def find(root, needle: str, exact: bool = False):
@@ -174,7 +204,7 @@ def dismiss_dialogs() -> list[str]:
     seen = []
     for _ in range(3):
         root = dump()
-        title = "기록을 켜지 못했어요" if find(root, "기록을 켜지 못했어요") else None
+        title = "기록을 켜지 못했어요" if find(root, "기록을 켜지 못했어요") is not None else None
         if title is None:
             break
         say(f"     대화상자 '{title}': " + " / ".join(texts(root)[:6]))
