@@ -48,9 +48,10 @@ import {
   saveUserTerm,
   setSetting,
 } from "../db";
-import { redactForNetwork } from "./export";
+import { loadPrivacySettings, redactForNetwork } from "./export";
 import { cardsFromReport, deidentify, josa, taeumFromReading } from "@nsr/core";
 import { logDebug } from "./debug";
+import { breathe, clearSyncProblem, longWork, setSyncProblem } from "./progress-notify";
 
 const URL_KEY = "nsr.server.url";
 const TOKEN_KEY = "nsr.server.deviceToken";
@@ -363,7 +364,7 @@ export function autoSendPending(): Promise<number> {
 
 async function sendPendingOnce(): Promise<number> {
   if (!(await getAutoSend()) || !(await serverReady())) return 0;
-  let sent = 0;
+  const due: string[] = [];
   for (const shiftId of await shiftsWithSegments()) {
     const mark = await getSetting<SentMark | number | null>(sentKey(shiftId), null);
     const had = typeof mark === "object" && mark ? mark.sentences : -1;
@@ -377,19 +378,38 @@ async function sendPendingOnce(): Promise<number> {
     // (put_shift 가 sentences 를 지우고 다시 넣는다) 다시 보내도 겹치지 않는다.
     if (had >= 0 && had === (await countSegments(shiftId)) && !stale) continue;
     const err = await getSetting<SendError | string | null>(sendErrorKey(shiftId), null);
-    if (typeof err === "object" && err && Date.now() - err.at < SEND_RETRY_MS) continue;
-    try {
-      await sendShift(shiftId);
-      await setSetting(sendErrorKey(shiftId), null);
-      sent += 1;
-    } catch (e) {
-      // 하나가 막혀도 나머지는 보낸다. 다음 기회에 다시 시도한다.
-      const message = e instanceof Error ? e.message : "보내지 못했어요. 잠시 뒤 다시 열어 주세요.";
-      await setSetting(sendErrorKey(shiftId), { at: Date.now(), message } satisfies SendError);
-      void logDebug(`저절로 보내기 실패 ${shiftId}: ${message}`);
+    if (typeof err === "object" && err && Date.now() - err.at < SEND_RETRY_MS) {
+      // 쉬는 동안에도 홈에는 까닭이 보여야 한다.
+      await setSyncProblem(shiftId, "send", err.message);
+      continue;
     }
+    due.push(shiftId);
   }
-  return sent;
+  if (due.length === 0) return 0;
+
+  // 문장 수천 개를 가려서 올리는 일이다. 다른 앱으로 넘어가도 끝까지 가게 서비스 아래서.
+  return longWork("server-send", "분석 서버로 보내는 중", async (progress) => {
+    let sent = 0;
+    for (const [i, shiftId] of due.entries()) {
+      const [, m, d] = shiftId.split(":")[0].split("-").map(Number);
+      const day = `${m}월 ${d}일`;
+      try {
+        await sendShift(shiftId, (pct, note) =>
+          progress(((i + pct / 100) / due.length) * 100, `${day} · ${note ?? ""}`),
+        );
+        await setSetting(sendErrorKey(shiftId), null);
+        await clearSyncProblem(shiftId);
+        sent += 1;
+      } catch (e) {
+        // 하나가 막혀도 나머지는 보낸다. 다음 기회에 다시 시도한다.
+        const message = e instanceof Error ? e.message : "보내지 못했어요. 잠시 뒤 다시 열어 주세요.";
+        await setSetting(sendErrorKey(shiftId), { at: Date.now(), message } satisfies SendError);
+        await setSyncProblem(shiftId, "send", message);
+        void logDebug(`저절로 보내기 실패 ${shiftId}: ${message}`);
+      }
+    }
+    return sent;
+  });
 }
 
 /**
@@ -485,6 +505,10 @@ async function serverError(res: Response, doing: string): Promise<string> {
     return `${kinds}${josa(kinds, "이")} 남아 못 보냈어요. 전사본에서 지워 주세요.`;
   }
   if (res.status === 404) return await notFound();
+  // nginx 의 기본 상한은 1MB 다. 10시간 근무는 그걸 넘는다 — 기다려도 안 풀린다.
+  if (res.status === 413) {
+    return "근무가 커서 서버가 못 받았어요(413). 서버의 올리기 한도를 늘려 주세요.";
+  }
   return `서버가 ${doing}에 실패했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`;
 }
 
@@ -532,13 +556,14 @@ export async function sendShift(
   const out: { t: number; speaker?: string; text: string }[] = [];
   let redacted = 0;
   const CHUNK = 40;
+  const privacy = await loadPrivacySettings(); // 문장마다 읽지 않는다 (redactForNetwork 주석)
   for (let i = 0; i < segments.length; i++) {
     if (i % CHUNK === 0) {
       onProgress?.(5 + Math.round((i / segments.length) * 55), `가리는 중 — ${i}/${segments.length} 문장`);
-      await new Promise((r) => setTimeout(r, 0));
+      await breathe(); // 뒤로 가도 멈추지 않는다 (progress-notify 의 breathe)
     }
     const seg = segments[i];
-    const red = await redactForNetwork(seg.text);
+    const red = await redactForNetwork(seg.text, privacy);
     redacted += red.result.redactions.length;
     if (red.text.trim()) {
       out.push({

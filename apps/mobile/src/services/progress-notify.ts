@@ -11,6 +11,7 @@
  * 서비스가 없는 환경(iOS 등)에서는 예전처럼 일반 알림으로만 보여준다.
  */
 
+import { AppState } from "react-native";
 import { getSetting, setSetting } from "../db";
 import {
   workAlive,
@@ -41,8 +42,14 @@ export async function ensureNotifPermission(): Promise<void> {
  * 작업 시작 — 포그라운드 서비스를 잡는다(가능한 환경에서).
  * 사용자가 버튼을 누른 직후(앱이 포그라운드일 때) 불러야 한다.
  */
-export async function beginWork(title: string, body: string, mic = false): Promise<WorkStart> {
-  await ensureNotifPermission();
+export async function beginWork(
+  title: string,
+  body: string,
+  mic = false,
+  /** 거짓이면 알림 권한을 묻지 않는다 — 사람이 누르지 않은, 뒤에서 도는 일. */
+  ask = true,
+): Promise<WorkStart> {
+  if (ask) await ensureNotifPermission();
   workRefs += 1;
   if (workRefs === 1) {
     lastStart = workStart(title, body, mic);
@@ -174,4 +181,102 @@ export async function notifyStartBlocked(show: boolean): Promise<void> {
 /** endWork(id, title, body) 의 별칭 — 기존 호출부와의 이음새. */
 export async function notifyDone(id: string, title: string, body: string): Promise<void> {
   await endWork(id, title, body);
+}
+
+/**
+ * 무거운 반복 중에 화면이 숨 쉴 틈 — 앱이 앞에 있을 때만 준다.
+ *
+ * RN 은 앱이 뒤로 가면 JS 타이머를 세운다(JavaTimerManager 가 화면 틱마다 타이머를
+ * 부르는데, 뒤에서는 그 틱이 안 돈다 — 0초 타이머도 마찬가지다). 그래서
+ * `setTimeout(0)` 으로 쉬어 가던 가져오기·보내기가 사람이 다른 앱(클로드)으로 넘어가는
+ * 순간 통째로 멈췄다. 10월 12일(590분)이 서버에 영영 안 간 까닭이다. 뒤에서는 그릴
+ * 화면도 없으니 쉬지 않고 이어 간다. 쉬는 도중에 뒤로 가도 그 자리에서 풀린다.
+ */
+export function breathe(): Promise<void> {
+  if (AppState.currentState !== "active") return Promise.resolve();
+  return new Promise((resolve) => {
+    let done = false;
+    const finish = () => {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      sub.remove();
+      resolve();
+    };
+    const timer = setTimeout(finish, 0);
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") finish();
+    });
+  });
+}
+
+/** 지금 뒤에서 도는 일 한 줄. 홈이 보여 준다 — 앱이 왜 바쁜지 사람이 알아야 한다. */
+let live: string | null = null;
+const liveListeners = new Set<(status: string | null) => void>();
+
+export function setLiveStatus(status: string | null): void {
+  live = status;
+  for (const l of liveListeners) l(status);
+}
+
+export function onLiveStatus(listener: (status: string | null) => void): () => void {
+  liveListeners.add(listener);
+  listener(live);
+  return () => {
+    liveListeners.delete(listener);
+  };
+}
+
+/**
+ * 오래 걸리는 일을 포그라운드 서비스 아래에서 돌린다.
+ *
+ * 서비스가 없으면 다른 앱으로 넘어가는 순간 안드로이드가 앱을 얼린다(맨 위 주석).
+ * 10시간 근무의 가져오기·보내기는 1분 안팎이 걸리는데, 사람은 그동안 클로드로 가서
+ * "들어왔나" 를 묻는다. 진행은 알림과 홈 한 줄에 같이 보인다.
+ *
+ * 녹음이 이미 서비스를 잡고 있으면 그 알림을 덮어쓰지 않는다 — 녹음 서비스가 이미
+ * 앱을 살려 두고 있다. 홈 한 줄만 바꾼다.
+ */
+export async function longWork<T>(
+  id: string,
+  title: string,
+  run: (progress: (pct: number, body: string) => void) => Promise<T>,
+): Promise<T> {
+  const mine = workRefs === 0;
+  if (mine) await beginWork(title, "", false, false);
+  const progress = (pct: number, body: string) => {
+    setLiveStatus(`${title} · ${Math.round(pct)}%`);
+    if (mine) void notifyProgress(id, pct, title, body);
+  };
+  try {
+    return await run(progress);
+  } finally {
+    setLiveStatus(null);
+    if (mine) await endWork(id);
+  }
+}
+
+/**
+ * 마지막으로 막힌 근무 — 티로에서 못 가져왔거나 서버로 못 보냈다. 홈이 까닭과 함께
+ * 보여 준다. 예전엔 근무 기록 맨 아래 칸에만 적혀서, 사람이 그 화면을 찾아가야 알았다.
+ */
+export interface SyncProblem {
+  shiftId: string;
+  kind: "import" | "send";
+  message: string;
+  at: number;
+}
+const PROBLEM_KEY = "sync.problem";
+
+export async function getSyncProblem(): Promise<SyncProblem | null> {
+  return getSetting<SyncProblem | null>(PROBLEM_KEY, null);
+}
+
+export async function setSyncProblem(shiftId: string, kind: SyncProblem["kind"], message: string): Promise<void> {
+  await setSetting(PROBLEM_KEY, { shiftId, kind, message, at: Date.now() } satisfies SyncProblem);
+}
+
+/** 그 근무가 풀렸으면 지운다. 다른 근무의 문제는 그대로 둔다. */
+export async function clearSyncProblem(shiftId: string): Promise<void> {
+  if ((await getSyncProblem())?.shiftId === shiftId) await setSetting(PROBLEM_KEY, null);
 }

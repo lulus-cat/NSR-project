@@ -51,6 +51,7 @@ import {
 } from "../db";
 import { getSetting, setSetting } from "../db";
 import { logDebug } from "./debug";
+import { breathe } from "./progress-notify";
 
 /** 티로에서 가져온 문장 한 토막. 앱이 만드는 것이 아니라 받아 오는 것이다. */
 export interface ImportedSegment {
@@ -135,7 +136,7 @@ export async function saveImportedSegments(input: {
   for (let i = 0; i < sentences.length; i++) {
     if (i % CHUNK === 0) {
       input.onProgress?.(100, `뱉어낸 글자 예쁘게 빚는 중 — ${i}/${sentences.length} 문장`);
-      await new Promise((resolve) => setTimeout(resolve, 0));
+      await breathe(); // 뒤로 가도 멈추지 않는다 (progress-notify 의 breathe)
     }
     const sentence = sentences[i];
     // asrEngine: "other" — 휘스퍼 오인식 목록은 티로 전사본에 안 맞는다.

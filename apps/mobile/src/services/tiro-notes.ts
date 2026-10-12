@@ -35,6 +35,7 @@ import {
   setRecordingState,
   setSetting,
 } from "../db";
+import { clearSyncProblem, longWork, setSyncProblem } from "./progress-notify";
 import {
   TIRO_API,
   autoPushTiroWords,
@@ -146,6 +147,17 @@ async function fetchParagraphs(noteGuid: string): Promise<TiroParagraph[]> {
   return out;
 }
 
+/** "10월 12일 수동 기록", "10월 12일 데이" — 사람이 읽는 근무 이름. */
+function shiftName(shiftId: string): string {
+  const [date, code] = shiftId.split(":");
+  const [, m, d] = date.split("-").map(Number);
+  const duty =
+    code === "MANUAL" || code === "GEO"
+      ? "수동 기록"
+      : (DEFAULT_TEMPLATES[code as ShiftCode]?.label ?? code);
+  return `${m}월 ${d}일 ${duty}`;
+}
+
 /** 근무 시작 시각(epoch ms) — 듀티 템플릿의 시작 시간. 시간이 없는 듀티는 09:00. */
 function shiftStartMs(date: string, code: ShiftCode): number {
   const start = DEFAULT_TEMPLATES[code]?.startTime || "09:00";
@@ -178,9 +190,10 @@ async function importOne(input: {
     // 사용자는 다른 날 전사본이 조용히 비는 것을 나중에야 안다.
     // shift_id 가 비어 있는 줄은 어느 근무에도 안 붙은 찌꺼기다. 그건 지워도 된다.
     if (already.shift_id && already.shift_id !== `${input.date}:${input.code}`) {
-      throw new Error(
-        `이 노트는 ${already.shift_id.split(":")[0]} 근무에 이미 있어요. 거기서 지우고 다시 해 주세요.`,
-      );
+      // 어느 근무인지 말한다. 날짜만 말했더니, 같은 날 다른 듀티를 고른 사람에게
+      // "10월 12일 근무에 이미 있어요" 가 엉뚱하게 들렸다(저절로 가져오기가 수동 기록에
+      // 넣어 둔 노트였다). 지우라고도 하지 않는다 — 이미 잘 들어와 있는 것이다.
+      throw new Error(`이 노트는 이미 ${shiftName(already.shift_id)}에 들어와 있어요.`);
     }
 
     // 글자가 실제로 들어와 있을 때만 막는다.
@@ -449,6 +462,9 @@ async function autoImportOnce(): Promise<number> {
     // 쉬는 동안 그 근무의 까닭은 지우지 않는다 — 지우면 화면이 다시 '저절로 가져와요' 다.
     if (Date.now() - (await getSetting<number>(failedKey(p.noteGuid), 0)) < RETRY_AFTER_MS) {
       resting.add(p.shiftId);
+      // 쉬는 동안에도 홈에는 까닭이 보여야 한다.
+      const why = await getSetting<string | null>(tiroAutoErrorKey(p.shiftId), null);
+      if (why) await setSyncProblem(p.shiftId, "import", why);
       continue;
     }
     byShift.set(p.shiftId, [...(byShift.get(p.shiftId) ?? []), p]);
@@ -474,40 +490,51 @@ async function autoImportOnce(): Promise<number> {
     );
   }
 
-  let done = 0;
-  for (const [shiftId, group] of byShift) {
-    const [date, code] = shiftId.split(":");
-    try {
-      const out = await importTiroNotes({
-        notes: group.map((p) => fresh.find((n) => n.guid === p.noteGuid)!),
-        date,
-        code: code as ShiftCode,
-        separate: false,
-        startAt: Object.fromEntries(group.map((p) => [p.noteGuid, startOf.get(p.recordingId)!])),
-      });
-      // 들어온 노트의 녹음만 짝지은 것으로 적는다 — 막힌 노트는 나중에 다시 본다.
-      const got = new Set(out.recordingIds.map((id) => id.replace(/^tiro-/, "")));
-      for (const p of group) {
-        if (!got.has(p.noteGuid)) {
-          await setSetting(failedKey(p.noteGuid), Date.now());
-          continue;
+  if (byShift.size === 0) return 0;
+  // 10시간 근무면 문장이 수천 개다 — 교정하고 저장하고 서버로 보내는 데 1분 안팎.
+  // 사람이 다른 앱으로 가도 끝까지 가게 서비스 아래서 돌리고, 진행은 홈과 알림에 보인다.
+  return longWork("tiro-auto", "티로에서 글자를 가져오는 중", async (progress) => {
+    let done = 0;
+    for (const [shiftId, group] of byShift) {
+      const [date, code] = shiftId.split(":");
+      try {
+        const out = await importTiroNotes({
+          notes: group.map((p) => fresh.find((n) => n.guid === p.noteGuid)!),
+          date,
+          code: code as ShiftCode,
+          separate: false,
+          startAt: Object.fromEntries(group.map((p) => [p.noteGuid, startOf.get(p.recordingId)!])),
+          onProgress: (pct) => progress(pct, shiftName(shiftId)),
+        });
+        // 들어온 노트의 녹음만 짝지은 것으로 적는다 — 막힌 노트는 나중에 다시 본다.
+        const got = new Set(out.recordingIds.map((id) => id.replace(/^tiro-/, "")));
+        for (const p of group) {
+          if (!got.has(p.noteGuid)) {
+            await setSetting(failedKey(p.noteGuid), Date.now());
+            continue;
+          }
+          await setSetting(matchedKey(p.recordingId), p.noteGuid);
+          // '안 보냄' 으로 남아 있던 녹음이면 이제 보낸 것이다 — 홈의 '안 보낸 녹음' 에서 뺀다.
+          if (rows.find((r) => r.id === p.recordingId)?.state === "recorded") {
+            await setRecordingState(p.recordingId, "sent");
+          }
         }
-        await setSetting(matchedKey(p.recordingId), p.noteGuid);
-        // '안 보냄' 으로 남아 있던 녹음이면 이제 보낸 것이다 — 홈의 '안 보낸 녹음' 에서 뺀다.
-        if (rows.find((r) => r.id === p.recordingId)?.state === "recorded") {
-          await setRecordingState(p.recordingId, "sent");
-        }
+        await setSetting(tiroAutoErrorKey(shiftId), out.failed[0]?.reason ?? null);
+        await clearSyncProblem(shiftId);
+        done += 1;
+      } catch (e) {
+        for (const p of group) await setSetting(failedKey(p.noteGuid), Date.now());
+        // 화면이 말해야 한다 — 안 그러면 '저절로 가져와요' 만 영원히 보인다.
+        const message = e instanceof Error ? e.message : "티로에서 가져오지 못했어요. 다시 열어 주세요.";
+        await setSetting(tiroAutoErrorKey(shiftId), message);
+        await setSyncProblem(shiftId, "import", message);
       }
-      await setSetting(tiroAutoErrorKey(shiftId), out.failed[0]?.reason ?? null);
-      done += 1;
-    } catch (e) {
-      for (const p of group) await setSetting(failedKey(p.noteGuid), Date.now());
-      // 화면이 말해야 한다 — 안 그러면 '저절로 가져와요' 만 영원히 보인다.
-      await setSetting(
-        tiroAutoErrorKey(shiftId),
-        e instanceof Error ? e.message : "티로에서 가져오지 못했어요. 다시 열어 주세요.",
-      );
     }
-  }
-  return done;
+    // 서버로 보내기까지 이 서비스 안에서 기다린다. importTiroNotes 가 이미 불러 두었고
+    // (한 번에 하나만 돈다), 여기서 안 기다리면 서비스가 먼저 내려가 보내기가 얼어붙는다.
+    progress(100, "분석 서버로 보내는 중");
+    const { autoSendPending } = await import("./nsr-server");
+    await autoSendPending().catch(() => 0);
+    return done;
+  });
 }

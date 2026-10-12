@@ -48,6 +48,11 @@ import {
   stopManual,
 } from "../../src/services/scheduler";
 import { syncWithServer } from "../../src/services/nsr-server";
+import {
+  getSyncProblem,
+  onLiveStatus,
+  type SyncProblem,
+} from "../../src/services/progress-notify";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
 
 function formatClock(epochMs: number): string {
@@ -146,6 +151,12 @@ function RecordPulse({ color }: { color: string }) {
 }
 
 /** 브리핑 한 줄 — 아이콘·라벨·값·화살표. */
+/** "2026-10-12:MANUAL" → "10월 12일" */
+function dayOf(shiftId: string): string {
+  const [, m, d] = shiftId.split(":")[0].split("-").map(Number);
+  return `${m}월 ${d}일`;
+}
+
 function BriefRow({
   icon,
   label,
@@ -329,6 +340,10 @@ export default function Home() {
   /** 기록 버튼이 도는 중. 두 번 눌러 방금 켠 것을 끄는 일을 막는다. */
   const [micBusy, setMicBusy] = useState(false);
   const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
+  /** 뒤에서 도는 가져오기·보내기 한 줄, 마지막으로 막힌 근무. 앱이 왜 바쁜지·어디서
+      막혔는지 홈에서 바로 보인다 — 예전엔 근무 기록 맨 아래까지 찾아가야 알았다. */
+  const [live, setLive] = useState<string | null>(null);
+  const [problem, setProblem] = useState<SyncProblem | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   /** 하루 안에 기록이 실패한 적이 있다. 설정에 자세히 적혀 있다. */
   const [recProblem, setRecProblem] = useState<string | null>(null);
@@ -394,7 +409,20 @@ export default function Home() {
         ? { shiftId: last.shiftId, sentences: last.sentences ?? 0 }
         : null,
     );
+    setProblem(await getSyncProblem());
   }, []);
+
+  // 뒤에서 도는 일이 끝나면 다시 읽는다 — 새 전사본이나 막힘이 생겼을 수 있다.
+  const wasLive = useRef(false);
+  useEffect(
+    () =>
+      onLiveStatus((status) => {
+        setLive(status);
+        if (wasLive.current && !status) void load();
+        wasLive.current = !!status;
+      }),
+    [load],
+  );
 
   useEffect(() => {
     void checkForUpdate().then(setUpdate);
@@ -553,9 +581,31 @@ export default function Home() {
     {
       key: "records",
       label: "기록",
-      alert: pendingCount > 0 || needsTiroKey || newResult !== null,
+      alert: pendingCount > 0 || needsTiroKey || newResult !== null || problem !== null,
       body: (
         <>
+          {live ? (
+            <>
+              <BriefRow icon="sync-outline" label={live} value="" />
+              <Small>다른 앱으로 가도 계속돼요.</Small>
+              <DashedDivider />
+            </>
+          ) : null}
+          {problem ? (
+            <>
+              <BriefRow
+                icon="alert-circle-outline"
+                label={`${dayOf(problem.shiftId)} ${
+                  problem.kind === "send" ? "서버로 못 갔어요" : "티로에서 못 왔어요"
+                }`}
+                value="보기"
+                valueColor={t.warn}
+                onPress={() => router.push(`/shift/${encodeURIComponent(problem.shiftId)}`)}
+              />
+              <Small>{problem.message}</Small>
+              <DashedDivider />
+            </>
+          ) : null}
           {newResult ? (
             <>
               <BriefRow

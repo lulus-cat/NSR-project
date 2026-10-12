@@ -135,8 +135,16 @@ export async function redactForExport(
  *
  * 사용자가 추가로 등록한 말은 반영한다 — 그건 가리기를 **더 하는** 방향이다.
  */
-export async function redactForNetwork(text: string): Promise<RedactedText> {
-  const settings = await loadPrivacySettings();
+export async function redactForNetwork(
+  text: string,
+  /**
+   * 문장 수천 개를 잇달아 가릴 때 한 번 읽어 넘긴다. 문장마다 설정을 세 번씩 DB 에서
+   * 읽어서, 10시간 근무 하나를 보내는 데 읽기만 2만 번이었다. 가리는 규칙은 여기
+   * 하나다 — 넘겨받은 설정에서도 아래처럼 아무것도 끄지 않는다.
+   */
+  preloaded?: PrivacySettings,
+): Promise<RedactedText> {
+  const settings = preloaded ?? (await loadPrivacySettings());
   const result = deidentify(text, {
     // **설정을 안 본다.** 여기 `settings.disabled` 를 넘기던 것이 이 저장소에서
     // 가장 위험한 한 줄이었다: 설정 화면의 '이름' 스위치를 끄면 환자·동료

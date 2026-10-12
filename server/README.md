@@ -140,6 +140,9 @@ server {
         proxy_buffering off;
         proxy_read_timeout 3600s;
         proxy_send_timeout 3600s;
+        # 10시간 근무 하나가 1MB 를 넘는다. nginx 기본값(1MB)이면 폰이 보낸 근무가
+        # 413 으로 막힌다 — 앱은 "근무가 커서 서버가 못 받았어요(413)" 라고 띄운다.
+        client_max_body_size 20m;
     }
 
     # 주소에 토큰이 들어 있다. 기록하지 않는다.
