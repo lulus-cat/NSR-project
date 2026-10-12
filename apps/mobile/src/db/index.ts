@@ -299,18 +299,34 @@ export async function getRecording(id: string): Promise<RecordingRow | null> {
 }
 
 /**
- * 티로로 보내고 글자를 기다리는 녹음 — 녹음기가 만든 것만(가져온 tiro-* 줄은 빼고).
+ * 글자를 기다리는 녹음 — 녹음기가 만든 것만(가져온 tiro-* 줄은 빼고).
  * 저절로 가져오기(autoImportFromTiro)가 티로 노트와 짝지을 대상이다.
+ *
+ * 'recorded'(안 보냄)도 준다. 공유 창이 '보냈다' 를 못 남겨도 티로 노트 제목에 그
+ * 파일 이름이 있으면 간 것이다 — 그런 줄은 제목으로만 짝짓는다(titleOnly).
  */
-export async function listSentRecordings(since: number): Promise<RecordingRow[]> {
+export async function listRecordingsAwaitingText(since: number): Promise<RecordingRow[]> {
   const db = await getDb();
   return db.getAllAsync<RecordingRow>(
     `SELECT * FROM recordings
-      WHERE state = 'sent' AND id NOT LIKE 'tiro-%' AND shift_id IS NOT NULL
+      WHERE state IN ('sent', 'recorded') AND id NOT LIKE 'tiro-%' AND shift_id IS NOT NULL
         AND duration_sec > 0 AND started_at >= ?
       ORDER BY started_at`,
     [since],
   );
+}
+
+/**
+ * 글자까지 들어온 티로 노트 줄의 id(tiro-guid). 한 번에 센다 — 노트마다 근무 전체를
+ * 세던 것(최대 50번)이 화면을 열 때마다 돌아 앱이 느려졌다(0.1.128).
+ */
+export async function importedTiroNoteIds(): Promise<Set<string>> {
+  const db = await getDb();
+  const rows = await db.getAllAsync<{ id: string }>(
+    `SELECT r.id FROM recordings r
+      WHERE r.id LIKE 'tiro-%' AND EXISTS (SELECT 1 FROM segments s WHERE s.recording_id = r.id)`,
+  );
+  return new Set(rows.map((r) => r.id));
 }
 
 export async function listRecordings(shiftId?: string): Promise<RecordingRow[]> {

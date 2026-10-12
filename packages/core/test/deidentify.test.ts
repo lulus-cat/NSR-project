@@ -7,6 +7,21 @@ import {
 } from "../src/transcription/index.js";
 
 describe("개인정보 가리기", () => {
+  it("스스로 밝힌 이름을 가린다 — 강의·인사에서 '저는 ○○○입니다'", () => {
+    // 10월 7일 강의 녹음에서 강사 이름이 가려지지 않고 서버로 갔다. 호칭이 안 붙어서다.
+    for (const said of ["네, 저는 홍길동입니다.", "저는 홍길동이에요", "제 이름은 홍길동이라고 합니다"]) {
+      const r = deidentify(said);
+      expect(r.text, said).not.toContain("홍길동");
+      expect(r.text, said).toContain("[이름]");
+    }
+  });
+
+  it("스스로 밝혀도 직함·숫자는 이름으로 보지 않는다", () => {
+    expect(deidentify("저는 간호사입니다").text).toBe("저는 간호사입니다");
+    expect(deidentify("저는 3년차입니다").text).toBe("저는 3년차입니다");
+    expect(deidentify("저는 괜찮습니다").text).toBe("저는 괜찮습니다");
+  });
+
   it("이름·등록번호·전화번호를 가린다", () => {
     const r = deidentify("김영희님 등록번호 12345678, 연락처 010-1234-5678");
     expect(r.text).toContain("[이름]님");

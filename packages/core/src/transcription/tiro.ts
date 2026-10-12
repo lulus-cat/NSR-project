@@ -108,6 +108,11 @@ export interface SentRecording {
   durationSec: number;
   /** 파일 이름에서 확장자를 뺀 것 (2026-10-12_D__000). 티로가 제목으로 쓰면 그대로 남는다. */
   fileStem?: string;
+  /**
+   * 참이면 제목(파일 이름)으로만 짝짓는다. '보냈다' 표시가 안 된 녹음이다 — 공유 창이
+   * 표시를 못 남겼을 수 있지만, 길이만 같다고 붙이기엔 보냈는지조차 모른다.
+   */
+  titleOnly?: boolean;
 }
 
 /** 시계가 어긋나도 놓치지 않게 — 노트가 녹음 끝보다 조금 일러 보여도 받는다. */
@@ -146,6 +151,7 @@ export function matchTiroUploads(
     if (hits.length === 0) {
       hits = pool.filter(
         (r) =>
+          !r.titleOnly &&
           n.createdAt >= r.endedAt - CLOCK_SLACK_MS &&
           Math.abs(n.durationSec - r.durationSec) <= Math.max(10, r.durationSec * 0.01),
       );

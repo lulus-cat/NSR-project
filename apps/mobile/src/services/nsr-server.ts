@@ -67,7 +67,16 @@ const sentKey = (shiftId: string) => `nsr.server.sent.${shiftId}`;
 interface SentMark {
   at: number;
   sentences: number;
+  /** 어느 가리기 규칙으로 보냈나. 없으면 1. */
+  v?: number;
 }
+/**
+ * 가리기 규칙의 판. 규칙이 촘촘해지면 올린다 — 그러면 최근에 보낸 근무를 한 번 다시
+ * 보내서 서버의 옛 사본을 새 규칙으로 갈아 끼운다. 2: 스스로 밝힌 이름("저는 ○○○입니다").
+ */
+const REDACT_V = 2;
+/** 다시 보내는 것은 최근 2주 것만 — 오래된 근무까지 다시 가리면 폰이 한참 바쁘다. */
+const RESEND_WINDOW_MS = 14 * 86_400_000;
 /** 저절로 보내기를 켰나. 서버를 이었다는 것 자체가 보내겠다는 뜻이라 기본은 켬. */
 const AUTO_KEY = "nsr.server.autoSend";
 /**
@@ -75,9 +84,20 @@ const AUTO_KEY = "nsr.server.autoSend";
  * 예전엔 실패를 진단 기록에만 적어서, 화면은 영원히 '곧 보내요' 였다.
  */
 const sendErrorKey = (shiftId: string) => `nsr.server.sendError.${shiftId}`;
+interface SendError {
+  at: number;
+  message: string;
+}
+/**
+ * 막힌 근무는 30분 쉬었다 다시 보낸다. 보낼 때마다 문장 수천 개를 다시 가려서,
+ * 막힌 근무가 있으면 홈을 열 때마다 폰이 한참 바빴다.
+ */
+const SEND_RETRY_MS = 30 * 60_000;
 
 export async function shiftSendError(shiftId: string): Promise<string | null> {
-  return getSetting<string | null>(sendErrorKey(shiftId), null);
+  const err = await getSetting<SendError | string | null>(sendErrorKey(shiftId), null);
+  // 0.1.128 은 글만 남겼다.
+  return typeof err === "string" ? err : (err?.message ?? null);
 }
 
 export interface ServerSettings {
@@ -347,9 +367,17 @@ async function sendPendingOnce(): Promise<number> {
   for (const shiftId of await shiftsWithSegments()) {
     const mark = await getSetting<SentMark | number | null>(sentKey(shiftId), null);
     const had = typeof mark === "object" && mark ? mark.sentences : -1;
+    // 가리기 규칙이 촘촘해진 뒤로 아직 안 갈아 끼운 최근 근무.
+    const stale =
+      typeof mark === "object" &&
+      !!mark &&
+      (mark.v ?? 1) < REDACT_V &&
+      mark.at * 1000 > Date.now() - RESEND_WINDOW_MS;
     // 문장이 늘었으면 다시 보낸다. 서버는 같은 근무를 통째로 갈아 끼우므로
     // (put_shift 가 sentences 를 지우고 다시 넣는다) 다시 보내도 겹치지 않는다.
-    if (had >= 0 && had === (await countSegments(shiftId))) continue;
+    if (had >= 0 && had === (await countSegments(shiftId)) && !stale) continue;
+    const err = await getSetting<SendError | string | null>(sendErrorKey(shiftId), null);
+    if (typeof err === "object" && err && Date.now() - err.at < SEND_RETRY_MS) continue;
     try {
       await sendShift(shiftId);
       await setSetting(sendErrorKey(shiftId), null);
@@ -357,7 +385,7 @@ async function sendPendingOnce(): Promise<number> {
     } catch (e) {
       // 하나가 막혀도 나머지는 보낸다. 다음 기회에 다시 시도한다.
       const message = e instanceof Error ? e.message : "보내지 못했어요. 잠시 뒤 다시 열어 주세요.";
-      await setSetting(sendErrorKey(shiftId), message);
+      await setSetting(sendErrorKey(shiftId), { at: Date.now(), message } satisfies SendError);
       void logDebug(`저절로 보내기 실패 ${shiftId}: ${message}`);
     }
   }
@@ -563,6 +591,7 @@ export async function sendShift(
   await setSetting(sentKey(shiftId), {
     at: Math.floor(Date.now() / 1000),
     sentences: segments.length,
+    v: REDACT_V,
   } satisfies SentMark);
   onProgress?.(100, "보냈어요");
   return { sentences: out.length, redacted };

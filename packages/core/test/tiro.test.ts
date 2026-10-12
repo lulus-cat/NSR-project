@@ -164,6 +164,17 @@ describe("matchTiroUploads — 티로로 보낸 녹음의 노트를 찾는다", 
     expect(pairs).toEqual([{ noteGuid: "first", recordingId: "000", shiftId: "2026-10-12:D" }]);
   });
 
+  it("'보냈다' 표시가 안 된 녹음은 제목(파일 이름)으로만 붙는다", () => {
+    const unsent = { ...rec("000", "2026-10-12:D", 3 * H), titleOnly: true };
+    // 길이만 같은 노트는 안 붙는다 — 보냈는지도 모르는 녹음에 길이로 짝지으면 위험하다.
+    expect(matchTiroUploads([note("n1", 3 * H)], [unsent])).toEqual([]);
+    // 제목에 그 파일 이름이 있으면 티로에 간 것이 확실하다.
+    const named = note("n2", 3 * H, { title: "2026-10-12_D__000" });
+    expect(matchTiroUploads([named], [unsent])).toEqual([
+      { noteGuid: "n2", recordingId: "000", shiftId: "2026-10-12:D" },
+    ]);
+  });
+
   it("제목에 파일 이름이 남아 있으면 길이가 달라도 그 녹음이다", () => {
     const named = note("n1", 0, { title: "2026-10-12_D__000.m4a" });
     const pairs = matchTiroUploads([named], [rec("000", "2026-10-12:D", 3 * H)]);
