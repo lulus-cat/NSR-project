@@ -448,6 +448,12 @@ export async function shiftSentAt(shiftId: string): Promise<number | null> {
   return mark?.at ?? null;
 }
 
+/** 폰의 문장이 다 서버에 가 있는가. 보낸 뒤 문장이 늘었으면(노트를 더 가져왔으면) 아니다. */
+export async function shiftUpToDate(shiftId: string): Promise<boolean> {
+  const mark = await getSetting<SentMark | number | null>(sentKey(shiftId), null);
+  return typeof mark === "object" && !!mark && mark.sentences === (await countSegments(shiftId));
+}
+
 export async function serverReady(): Promise<boolean> {
   return !!(await getServerUrl()) && !!(await getDeviceToken());
 }
@@ -559,7 +565,7 @@ export async function sendShift(
   const privacy = await loadPrivacySettings(); // 문장마다 읽지 않는다 (redactForNetwork 주석)
   for (let i = 0; i < segments.length; i++) {
     if (i % CHUNK === 0) {
-      onProgress?.(5 + Math.round((i / segments.length) * 55), `가리는 중 — ${i}/${segments.length} 문장`);
+      onProgress?.(5 + Math.round((i / segments.length) * 55), `개인정보 가리는 중 ${i}/${segments.length}문장`);
       await breathe(); // 뒤로 가도 멈추지 않는다 (progress-notify 의 breathe)
     }
     const seg = segments[i];

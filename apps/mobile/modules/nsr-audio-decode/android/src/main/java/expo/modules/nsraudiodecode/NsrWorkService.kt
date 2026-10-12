@@ -69,14 +69,14 @@ class NsrWorkService : Service() {
    * 화면을 끄는 순간 안드로이드 14+ 가 마이크를 끊는다. 사용자에게는
    * "기록 중" 알림만 보인다.
    */
-  fun updateWork(title: String, body: String, mic: Boolean = false) {
+  fun updateWork(title: String, body: String, mic: Boolean = false, percent: Int = -1) {
     if (mic && !hasMic) {
       goForeground(title, body, true)
       return
     }
     ensureChannel()
     val manager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-    manager.notify(NOTIF_ID, build(title, body))
+    manager.notify(NOTIF_ID, build(title, body, percent))
   }
 
   /**
@@ -137,10 +137,12 @@ class NsrWorkService : Service() {
     manager.createNotificationChannel(channel)
   }
 
-  private fun build(title: String, body: String): Notification {
+  /** percent 가 0~100 이면 진행 막대를 그린다. 모르면(-1) 글자만. */
+  private fun build(title: String, body: String, percent: Int = -1): Notification {
     val builder =
       if (Build.VERSION.SDK_INT >= 26) Notification.Builder(this, CHANNEL_ID)
       else @Suppress("DEPRECATION") Notification.Builder(this)
+    if (percent >= 0) builder.setProgress(100, percent.coerceIn(0, 100), false)
     return builder
       .setContentTitle(title)
       .setContentText(body)

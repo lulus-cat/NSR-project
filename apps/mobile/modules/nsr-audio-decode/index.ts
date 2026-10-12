@@ -12,6 +12,7 @@ const Native = requireOptionalNativeModule<{
   splitAudio(srcPath: string, dstDir: string, chunkSec: number): Promise<AudioPart[]>;
   workStart(title: string, body: string, mic: boolean): void;
   workUpdate(title: string, body: string): void;
+  workProgress?(title: string, body: string, percent: number): void;
   workNeedsMic(): void;
   workStop(): void;
   workAlive(): boolean;
@@ -90,6 +91,16 @@ export function workNeedsMic(): void {
 export function workUpdate(title: string, body: string): void {
   try {
     Native?.workUpdate?.(title, body);
+  } catch {
+    // 서비스가 없으면 그만이다.
+  }
+}
+
+/** 알림에 진행 막대(0~100)까지 그린다. 옛 네이티브면 글자만 바꾼다. */
+export function workProgress(title: string, body: string, percent: number): void {
+  try {
+    if (Native?.workProgress) Native.workProgress(title, body, Math.round(percent));
+    else Native?.workUpdate?.(title, body);
   } catch {
     // 서비스가 없으면 그만이다.
   }

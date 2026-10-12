@@ -18,6 +18,7 @@ import {
   workNeedsMic,
   workStart,
   workStop,
+  workProgress,
   workUpdate,
   type WorkStart,
 } from "../../modules/nsr-audio-decode";
@@ -95,18 +96,28 @@ export async function endWork(
     workStop();
     fgsActive = false;
   }
+  if (finalTitle) {
+    await postNotice(id, finalTitle, finalBody ?? "");
+    return;
+  }
   try {
     const Notifications = await import("expo-notifications");
-    if (finalTitle) {
-      if (!(await Notifications.getPermissionsAsync()).granted) return;
-      await Notifications.scheduleNotificationAsync({
-        identifier: id,
-        content: { title: finalTitle, body: finalBody ?? "", sound: false },
-        trigger: null,
-      });
-    } else {
-      await Notifications.dismissNotificationAsync(id);
-    }
+    await Notifications.dismissNotificationAsync(id);
+  } catch {
+    // 알림은 편의다.
+  }
+}
+
+/** 결과 알림 하나 (일반 알림 — 서비스와 따로 남는다). */
+async function postNotice(id: string, title: string, body: string): Promise<void> {
+  try {
+    const Notifications = await import("expo-notifications");
+    if (!(await Notifications.getPermissionsAsync()).granted) return;
+    await Notifications.scheduleNotificationAsync({
+      identifier: id,
+      content: { title, body, sound: false },
+      trigger: null,
+    });
   } catch {
     // 알림은 편의다.
   }
@@ -124,7 +135,7 @@ export async function notifyProgress(
   lastPct.set(id, percent);
 
   if (fgsActive) {
-    workUpdate(title, body);
+    workProgress(title, body, percent);
     return;
   }
   try {
@@ -210,49 +221,95 @@ export function breathe(): Promise<void> {
   });
 }
 
-/** 지금 뒤에서 도는 일 한 줄. 홈이 보여 준다 — 앱이 왜 바쁜지 사람이 알아야 한다. */
-let live: string | null = null;
-const liveListeners = new Set<(status: string | null) => void>();
-
-export function setLiveStatus(status: string | null): void {
-  live = status;
-  for (const l of liveListeners) l(status);
+/**
+ * 지금 뒤에서 도는 일. 홈이 막대로 보여 준다 — 앱이 왜 바쁜지, 얼마나 남았는지
+ * 사람이 알아야 한다. 예전엔 "· 100%" 한 줄뿐이라, 10시간 근무를 저장하는 몇 분 동안
+ * 100% 에 멈춘 채 끝났는지 안 끝났는지 알 길이 없었다.
+ */
+export interface LiveStatus {
+  title: string;
+  /** 0~100 */
+  pct: number;
+  /** 지금 하는 일 — "10월 12일 수동 기록 · 교정하는 중 1200/7000문장" */
+  detail: string;
 }
 
-export function onLiveStatus(listener: (status: string | null) => void): () => void {
+/** 도는 일들. 겹치면(가져오기 안에서 보내기) 마지막에 시작한 것을 보여 준다. */
+const works: { id: string; status: LiveStatus }[] = [];
+const liveListeners = new Set<(status: LiveStatus | null) => void>();
+
+function showLive(): void {
+  const top = works.at(-1)?.status ?? null;
+  for (const l of liveListeners) l(top);
+}
+
+export function onLiveStatus(listener: (status: LiveStatus | null) => void): () => void {
   liveListeners.add(listener);
-  listener(live);
+  listener(works.at(-1)?.status ?? null);
   return () => {
     liveListeners.delete(listener);
   };
 }
+
+/** 알림을 longWork 가 쥐고 있다 — 그 안에서 도는 일은 같은 알림에 이어 적는다. */
+let workNotice = false;
 
 /**
  * 오래 걸리는 일을 포그라운드 서비스 아래에서 돌린다.
  *
  * 서비스가 없으면 다른 앱으로 넘어가는 순간 안드로이드가 앱을 얼린다(맨 위 주석).
  * 10시간 근무의 가져오기·보내기는 1분 안팎이 걸리는데, 사람은 그동안 클로드로 가서
- * "들어왔나" 를 묻는다. 진행은 알림과 홈 한 줄에 같이 보인다.
+ * "들어왔나" 를 묻는다. 진행은 알림과 홈에 막대로 같이 보인다.
+ *
+ * `done` 이 알림 글을 돌려주면 끝날 때 남긴다. 다른 앱에 가 있던 사람이 "다 됐나" 를
+ * 아는 길은 그 알림뿐이다.
  *
  * 녹음이 이미 서비스를 잡고 있으면 그 알림을 덮어쓰지 않는다 — 녹음 서비스가 이미
- * 앱을 살려 두고 있다. 홈 한 줄만 바꾼다.
+ * 앱을 살려 두고 있다. 홈 막대만 바꾼다.
  */
 export async function longWork<T>(
   id: string,
   title: string,
-  run: (progress: (pct: number, body: string) => void) => Promise<T>,
+  run: (progress: (pct: number, detail: string) => void) => Promise<T>,
+  done?: (result: T) => { title: string; body: string } | null,
 ): Promise<T> {
   const mine = workRefs === 0;
-  if (mine) await beginWork(title, "", false, false);
-  const progress = (pct: number, body: string) => {
-    setLiveStatus(`${title} · ${Math.round(pct)}%`);
-    if (mine) void notifyProgress(id, pct, title, body);
+  const notify = mine || workNotice;
+  if (mine) {
+    await beginWork(title, "", false, false);
+    workNotice = true;
+  }
+  const entry = { id, status: { title, pct: 0, detail: "" } };
+  works.push(entry);
+  showLive();
+  let shownAt = 0;
+  const progress = (pct: number, detail: string) => {
+    const p = Math.max(0, Math.min(100, Math.round(pct)));
+    const moved = p !== entry.status.pct;
+    entry.status = { title, pct: p, detail };
+    // 교정은 25문장마다 알려 온다. 그때마다 홈을 다시 그리면 그 자체로 느려진다 —
+    // 숫자가 바뀌었거나 0.5초가 지났을 때만 그린다.
+    if (!moved && Date.now() - shownAt < 500) return;
+    shownAt = Date.now();
+    showLive();
+    // 알림은 하나다. 겹친 일 중 위에 있는 것만 적는다 — 아래 것이 덮으면 깜빡인다.
+    if (notify && works.at(-1) === entry) void notifyProgress(id, p, title, detail);
   };
+  let final: { title: string; body: string } | null = null;
   try {
-    return await run(progress);
+    const result = await run(progress);
+    final = done?.(result) ?? null;
+    return result;
   } finally {
-    setLiveStatus(null);
-    if (mine) await endWork(id);
+    works.splice(works.indexOf(entry), 1);
+    showLive();
+    lastPct.delete(id); // 안 지우면 다음 판의 알림이 지난 판의 100% 에 걸려 안 바뀐다
+    if (mine) {
+      workNotice = false;
+      await endWork(id, final?.title, final?.body);
+    } else if (final) {
+      await postNotice(id, final.title, final.body);
+    }
   }
 }
 

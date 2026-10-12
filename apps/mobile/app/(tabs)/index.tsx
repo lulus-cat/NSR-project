@@ -28,6 +28,7 @@ import {
   Card,
   DashedDivider,
   Enter,
+  GaugeBar,
   HeaderScreen,
   Small,
 } from "../../src/components/ui";
@@ -47,10 +48,16 @@ import {
   startManual,
   stopManual,
 } from "../../src/services/scheduler";
-import { syncWithServer } from "../../src/services/nsr-server";
+import {
+  getAutoSend,
+  serverReady,
+  shiftUpToDate,
+  syncWithServer,
+} from "../../src/services/nsr-server";
 import {
   getSyncProblem,
   onLiveStatus,
+  type LiveStatus,
   type SyncProblem,
 } from "../../src/services/progress-notify";
 import { checkForUpdate, type UpdateCheck } from "../../src/services/update";
@@ -339,10 +346,15 @@ export default function Home() {
   const [needsTiroKey, setNeedsTiroKey] = useState(false);
   /** 기록 버튼이 도는 중. 두 번 눌러 방금 켠 것을 끄는 일을 막는다. */
   const [micBusy, setMicBusy] = useState(false);
-  const [newResult, setNewResult] = useState<{ shiftId: string; sentences: number } | null>(null);
+  /** 마지막으로 다 가져온 근무. onServer 는 서버까지 갔는지 — 서버를 안 쓰면 null. */
+  const [newResult, setNewResult] = useState<{
+    shiftId: string;
+    sentences: number;
+    onServer: boolean | null;
+  } | null>(null);
   /** 뒤에서 도는 가져오기·보내기 한 줄, 마지막으로 막힌 근무. 앱이 왜 바쁜지·어디서
       막혔는지 홈에서 바로 보인다 — 예전엔 근무 기록 맨 아래까지 찾아가야 알았다. */
-  const [live, setLive] = useState<string | null>(null);
+  const [live, setLive] = useState<LiveStatus | null>(null);
   const [problem, setProblem] = useState<SyncProblem | null>(null);
   const [update, setUpdate] = useState<UpdateCheck | null>(null);
   /** 하루 안에 기록이 실패한 적이 있다. 설정에 자세히 적혀 있다. */
@@ -404,9 +416,17 @@ export default function Home() {
       "transcribe.lastResult",
       {},
     );
+    // 다 됐는지는 '클로드가 볼 수 있나' 까지다 — 서버로 갔는지도 함께 읽는다.
     setNewResult(
       last.shiftId && !last.seen
-        ? { shiftId: last.shiftId, sentences: last.sentences ?? 0 }
+        ? {
+            shiftId: last.shiftId,
+            sentences: last.sentences ?? 0,
+            onServer:
+              (await serverReady()) && (await getAutoSend())
+                ? await shiftUpToDate(last.shiftId)
+                : null,
+          }
         : null,
     );
     setProblem(await getSyncProblem());
@@ -586,8 +606,10 @@ export default function Home() {
         <>
           {live ? (
             <>
-              <BriefRow icon="sync-outline" label={live} value="" />
-              <Small>다른 앱으로 가도 계속돼요.</Small>
+              <BriefRow icon="sync-outline" label={live.title} value={`${live.pct}%`} />
+              <GaugeBar ratio={live.pct / 100} color={t.accent} />
+              {live.detail ? <Small muted={false}>{live.detail}</Small> : null}
+              <Small>다른 앱으로 가도 계속돼요. 끝나면 알려 드려요.</Small>
               <DashedDivider />
             </>
           ) : null}
@@ -610,13 +632,20 @@ export default function Home() {
             <>
               <BriefRow
                 icon="checkmark-circle-outline"
-                label="새 전사 결과가 나왔어요"
+                label={`${dayOf(newResult.shiftId)} 근무를 다 가져왔어요`}
                 value={`${newResult.sentences}문장 · 보기`}
                 valueColor={t.accent}
                 onPress={() =>
                   router.push(`/transcript/${encodeURIComponent(newResult.shiftId)}`)
                 }
               />
+              {newResult.onServer === null ? null : (
+                <Small>
+                  {newResult.onServer
+                    ? "분석 서버로도 보냈어요. 클로드에게 물어보세요."
+                    : "서버로는 아직 안 갔어요."}
+                </Small>
+              )}
               <DashedDivider />
             </>
           ) : null}

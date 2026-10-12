@@ -77,6 +77,29 @@ export async function getDb(): Promise<SQLite.SQLiteDatabase> {
 }
 
 /**
+ * 한 덩어리로 쓴다 — 다 되거나 하나도 안 되거나.
+ *
+ * expo-sqlite 의 배타 트랜잭션은 **새 연결**을 열고, 안의 쓰기는 그 연결(tx)로만 해야
+ * 한다(문서: "queries inside the transaction must be executed on the txn object").
+ * 예전엔 안에서 db 로 써서, 트랜잭션은 빈 채로 열려 있고 줄마다 따로 저장됐다. 10시간
+ * 근무를 가져오면 문장·교정 2만 줄을 하나씩 따로 저장하느라 몇 분씩 '100%' 에 멈춰
+ * 있었고, 그사이 앱이 꺼지면 반쯤 저장된 채 남았다.
+ *
+ * 쓰기 잠금을 기다릴 시간도 준다. 안 주면 겹친 쓰기가 바로 "database is locked" 로 죽는다.
+ *
+ * 주의: 이 연결에는 외래 키 검사가 꺼져 있다(PRAGMA foreign_keys 는 연결마다 따로이고,
+ * 트랜잭션이 열린 뒤에는 못 켠다). 여기서 줄을 지우면 ON DELETE CASCADE 가 안 돈다 —
+ * 딸린 줄까지 지울 일은 이 밖에서 한다.
+ */
+async function writeTogether(task: (tx: SQLite.SQLiteDatabase) => Promise<void>): Promise<void> {
+  const db = await getDb();
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    await tx.execAsync("PRAGMA busy_timeout = 5000");
+    await task(tx);
+  });
+}
+
+/**
  * 테스트/로그아웃용. 다음 호출에서 다시 연다.
  *
  * **연결을 실제로 닫는다.** 안드로이드의 expo-sqlite 는 열려 있는 DB 를 지우려
@@ -151,10 +174,9 @@ export async function listDutyEntries(
 }
 
 export async function upsertDutyEntries(entries: DutyEntry[]): Promise<void> {
-  const db = await getDb();
-  await db.withExclusiveTransactionAsync(async () => {
+  await writeTogether(async (tx) => {
     for (const e of entries) {
-      await db.runAsync(
+      await tx.runAsync(
         `INSERT INTO duty_entries (date, code, override_start, override_end, note)
          VALUES (?, ?, ?, ?, ?)
          ON CONFLICT(date) DO UPDATE SET
@@ -324,7 +346,8 @@ export async function importedTiroNoteIds(): Promise<Set<string>> {
   const db = await getDb();
   const rows = await db.getAllAsync<{ id: string }>(
     `SELECT r.id FROM recordings r
-      WHERE r.id LIKE 'tiro-%' AND EXISTS (SELECT 1 FROM segments s WHERE s.recording_id = r.id)`,
+      WHERE r.id LIKE 'tiro-%' AND r.state <> 'recorded'
+        AND EXISTS (SELECT 1 FROM segments s WHERE s.recording_id = r.id)`,
   );
   return new Set(rows.map((r) => r.id));
 }
@@ -364,7 +387,9 @@ export async function listRecordingLog(limit = 300): Promise<RecordingLogRow[]> 
 export async function pendingTranscriptions(): Promise<RecordingRow[]> {
   const db = await getDb();
   return db.getAllAsync<RecordingRow>(
-    "SELECT * FROM recordings WHERE state = 'recorded' ORDER BY started_at",
+    // 티로에서 가져온 줄은 뺀다. 가져오는 동안(또는 끊긴 반쪽)은 'recorded' 라서
+    // '티로에 안 보낸 녹음' 에 티로에서 온 것이 끼어 보였다.
+    "SELECT * FROM recordings WHERE state = 'recorded' AND id NOT LIKE 'tiro-%' ORDER BY started_at",
   );
 }
 
@@ -574,61 +599,95 @@ export async function saveSegments(
   segments: TranscriptSegment[],
   perSegment: { edits: Edit[]; annotations: TermAnnotation[] }[],
 ): Promise<void> {
-  const db = await getDb();
-  await db.withExclusiveTransactionAsync(async () => {
-    for (let i = 0; i < segments.length; i++) {
-      const s = segments[i];
-      await db.runAsync(
-        `INSERT INTO segments
-           (id, recording_id, shift_id, start_sec, end_sec, raw_text, text, speaker_id, speaker_role, asr_confidence)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON CONFLICT(id) DO UPDATE SET
-           text = excluded.text,
-           speaker_role = excluded.speaker_role`,
-        [
-          s.id,
-          recordingId,
-          shiftId,
-          s.startSec,
-          s.endSec,
-          s.rawText,
-          s.text,
-          s.speakerId ?? null,
-          s.speakerRole ?? null,
-          s.asrConfidence ?? null,
-        ],
-      );
-
-      const extra = perSegment[i];
-      if (!extra) continue;
-      for (const [j, e] of extra.edits.entries()) {
-        await db.runAsync(
-          `INSERT OR REPLACE INTO edits
-             (id, segment_id, start_pos, end_pos, from_text, to_text, reason, entry_id, confidence, accepted)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1)`,
-          [
-            `${s.id}#e${j}`,
-            s.id,
-            e.start,
-            e.end,
-            e.from,
-            e.to,
-            e.reason,
-            e.entryId ?? null,
-            e.confidence,
-          ],
-        );
-      }
-      for (const [j, a] of extra.annotations.entries()) {
-        await db.runAsync(
-          `INSERT OR REPLACE INTO annotations
-             (id, segment_id, start_pos, end_pos, surface, entry_id, via, confidence)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-          [`${s.id}#a${j}`, s.id, a.start, a.end, a.surface, a.entryId, a.via, a.confidence],
-        );
-      }
+  const segRows: SQLite.SQLiteBindValue[][] = [];
+  const editRows: SQLite.SQLiteBindValue[][] = [];
+  const annRows: SQLite.SQLiteBindValue[][] = [];
+  for (const [i, s] of segments.entries()) {
+    segRows.push([
+      s.id,
+      recordingId,
+      shiftId,
+      s.startSec,
+      s.endSec,
+      s.rawText,
+      s.text,
+      s.speakerId ?? null,
+      s.speakerRole ?? null,
+      s.asrConfidence ?? null,
+    ]);
+    const extra = perSegment[i];
+    if (!extra) continue;
+    for (const [j, e] of extra.edits.entries()) {
+      editRows.push([
+        `${s.id}#e${j}`,
+        s.id,
+        e.start,
+        e.end,
+        e.from,
+        e.to,
+        e.reason,
+        e.entryId ?? null,
+        e.confidence,
+      ]);
     }
+    for (const [j, a] of extra.annotations.entries()) {
+      annRows.push([`${s.id}#a${j}`, s.id, a.start, a.end, a.surface, a.entryId, a.via, a.confidence]);
+    }
+  }
+  await writeTogether(async (tx) => {
+    await insertMany(
+      tx,
+      `INSERT INTO segments
+         (id, recording_id, shift_id, start_sec, end_sec, raw_text, text, speaker_id, speaker_role, asr_confidence)`,
+      "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+      `ON CONFLICT(id) DO UPDATE SET
+         text = excluded.text,
+         speaker_role = excluded.speaker_role`,
+      segRows,
+    );
+    await insertMany(
+      tx,
+      `INSERT OR REPLACE INTO edits
+         (id, segment_id, start_pos, end_pos, from_text, to_text, reason, entry_id, confidence, accepted)`,
+      "(?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+      "",
+      editRows,
+    );
+    await insertMany(
+      tx,
+      `INSERT OR REPLACE INTO annotations
+         (id, segment_id, start_pos, end_pos, surface, entry_id, via, confidence)`,
+      "(?, ?, ?, ?, ?, ?, ?, ?)",
+      "",
+      annRows,
+    );
+    // '다 들어왔다' 표시도 같은 덩어리 안에서 한다. 그래야 글자가 있는데 'recorded' 인
+    // 기록은 저장하다 끊긴 것뿐이다 — 예전 판은 한 줄씩 저장해서 앱이 꺼지면 반만 남았고,
+    // 그 반쪽이 '이미 가져온 노트' 로 막혀 다시 못 들어왔다(10월 12일).
+    await tx.runAsync("UPDATE recordings SET state = 'transcribed' WHERE id = ?", [recordingId]);
   });
+}
+
+/**
+ * 여러 줄을 한 문장으로 넣는다.
+ *
+ * 한 줄씩 넣으면 줄마다 앱과 DB 사이를 세 번 오간다(준비·실행·정리). 10시간 근무는
+ * 문장·교정·주석을 합쳐 4만 줄쯤이라 그 왕복만으로 수십 초다. 한 문장에 값을 900개까지
+ * 묶는다 — 옛 SQLite 의 한도(999)도 넘지 않는다.
+ */
+async function insertMany(
+  tx: SQLite.SQLiteDatabase,
+  head: string,
+  row: string,
+  tail: string,
+  rows: SQLite.SQLiteBindValue[][],
+): Promise<void> {
+  if (rows.length === 0) return;
+  const per = Math.max(1, Math.floor(900 / rows[0].length));
+  for (let i = 0; i < rows.length; i += per) {
+    const part = rows.slice(i, i + per);
+    await tx.runAsync(`${head} VALUES ${part.map(() => row).join(", ")} ${tail}`, part.flat());
+  }
 }
 
 /** 전사본이 있는 근무 번호. 저절로 보내기가 무엇을 보낼지 고를 때 쓴다. */
@@ -861,7 +920,7 @@ export async function applyCorrections(
   );
 
   let changed = 0;
-  await db.withExclusiveTransactionAsync(async (tx) => {
+  await writeTogether(async (tx) => {
     for (const row of rows) {
       const todo = clean.filter(
         (c) => !already.has(`${row.id}\u0000${c.from}\u0000${c.to}`),
@@ -931,11 +990,10 @@ export async function loadCorrectionMemory(minCount = 2): Promise<CorrectionMemo
 }
 
 export async function saveCorrectionMemory(memory: CorrectionMemory): Promise<void> {
-  const db = await getDb();
-  await db.withExclusiveTransactionAsync(async () => {
-    await db.runAsync("DELETE FROM correction_rules");
+  await writeTogether(async (tx) => {
+    await tx.runAsync("DELETE FROM correction_rules");
     for (const [key, rule] of Object.entries(memory.rules)) {
-      await db.runAsync(
+      await tx.runAsync(
         "INSERT INTO correction_rules (key, from_text, to_text, count, last_used_at) VALUES (?, ?, ?, ?, ?)",
         [key, rule.from, rule.to, rule.count, rule.lastUsedAt],
       );
@@ -1012,11 +1070,10 @@ function toCard(row: CardRow): Card {
 }
 
 export async function saveCards(cards: Card[], now: number): Promise<number> {
-  const db = await getDb();
   let inserted = 0;
-  await db.withExclusiveTransactionAsync(async () => {
+  await writeTogether(async (tx) => {
     for (const c of cards) {
-      const result = await db.runAsync(
+      const result = await tx.runAsync(
         `INSERT INTO cards (id, kind, front, back, entry_id, shift_id, segment_id, context, source_ids, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(id) DO UPDATE SET back = excluded.back`,
@@ -1035,7 +1092,7 @@ export async function saveCards(cards: Card[], now: number): Promise<number> {
       );
       if (result.changes > 0) {
         inserted += 1;
-        await db.runAsync(
+        await tx.runAsync(
           "INSERT OR IGNORE INTO review_states (card_id, due_at) VALUES (?, ?)",
           [c.id, now],
         );
@@ -1473,10 +1530,9 @@ export async function addPendingCorrections(
   now = Date.now(),
 ): Promise<void> {
   if (corrections.length === 0) return;
-  const db = await getDb();
-  await db.withExclusiveTransactionAsync(async () => {
+  await writeTogether(async (tx) => {
     for (const c of corrections) {
-      await db.runAsync(
+      await tx.runAsync(
         `INSERT INTO pending_corrections (key, from_text, to_text, source, count, added_at)
          VALUES (?, ?, ?, ?, ?, ?)
          ON CONFLICT(key) DO NOTHING`,

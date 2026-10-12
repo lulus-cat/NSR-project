@@ -127,7 +127,11 @@ export async function listTiroNotes(
 }
 
 /** 노트의 문단 전부. 커서로 나눠 오므로 끝까지 따라간다. */
-async function fetchParagraphs(noteGuid: string): Promise<TiroParagraph[]> {
+async function fetchParagraphs(
+  noteGuid: string,
+  /** 쪽마다 지금까지 받은 문단 수. 전체 수는 다 받아야 안다. */
+  onPage?: (received: number) => void,
+): Promise<TiroParagraph[]> {
   const headers = await tiroHeaders();
   const out: TiroParagraph[] = [];
   let cursor = "";
@@ -141,6 +145,7 @@ async function fetchParagraphs(noteGuid: string): Promise<TiroParagraph[]> {
     if (!res.ok) throw new Error(await tiroError(res, "노트 내용 가져오기"));
     const body = (await res.json()) as { content?: TiroParagraph[]; nextCursor?: string | null };
     out.push(...(body.content ?? []));
+    onPage?.(out.length);
     cursor = body.nextCursor ?? "";
     if (!cursor) break;
   }
@@ -209,14 +214,18 @@ async function importOne(input: {
     const mineHas = already.shift_id
       ? ((await segmentCountsByRecording(already.shift_id)).get(id) ?? 0)
       : 0;
-    if (mineHas > 0) {
+    // 글자가 있어도 아직 'recorded' 면 저장하다 끊긴 반쪽이다(saveSegments 주석).
+    // 그건 지우고 처음부터 다시 가져온다 — 줄을 지우면 반쪽 문장도 딸려 지워진다.
+    if (mineHas > 0 && already.state !== "recorded") {
       throw new Error("이미 가져온 노트예요. 근무 기록에서 열어 보세요.");
     }
     await deleteRecordingRow(id);
   }
 
-  input.onProgress?.(10, "티로에서 받아오는 중");
-  const paragraphs = await fetchParagraphs(input.note.guid);
+  input.onProgress?.(5, "티로에서 받아오는 중");
+  const paragraphs = await fetchParagraphs(input.note.guid, (n) =>
+    input.onProgress?.(10, `티로에서 받아오는 중 ${n}문단`),
+  );
   if (paragraphs.length === 0) {
     throw new Error("이 노트에는 아직 전사본이 없어요. 티로에서 다 되었는지 봐 주세요.");
   }
@@ -225,7 +234,7 @@ async function importOne(input: {
   const firstFrom = paragraphs.find((p) => p.timeFrom)?.timeFrom;
   const baseMs = (firstFrom ? Date.parse(firstFrom) : NaN) || input.note.startedAt;
 
-  input.onProgress?.(40, "문장으로 나누는 중");
+  input.onProgress?.(15, "문장으로 나누는 중");
   const { segments, locked } = tiroParagraphsToSegments(paragraphs, baseMs);
   if (segments.length === 0) {
     throw new Error(
@@ -267,7 +276,7 @@ async function importOne(input: {
     segments,
     onProgress: input.onProgress,
   });
-  await setRecordingState(id, "transcribed");
+  // 'transcribed' 표시는 saveSegments 가 문장과 한 덩어리로 한다.
   // 태움 다시 세기·홈 알림·서버로 보내기는 **여기서 안 한다.** 노트를 넷 고르면
   // 넷 다 돌아 값이 싸지 않고, 홈에는 마지막 한 편만 남아 "1개 들어왔다"로
   // 보인다. 묶음이 다 끝난 뒤 importTiroNotes 가 한 번만 한다.
@@ -493,6 +502,10 @@ async function autoImportOnce(): Promise<number> {
   if (byShift.size === 0) return 0;
   // 10시간 근무면 문장이 수천 개다 — 교정하고 저장하고 서버로 보내는 데 1분 안팎.
   // 사람이 다른 앱으로 가도 끝까지 가게 서비스 아래서 돌리고, 진행은 홈과 알림에 보인다.
+  // 끝나면 알림을 남긴다 — 다른 앱에 가 있던 사람은 그걸로 "다 됐다" 를 안다.
+  const brought: { shiftId: string; sentences: number }[] = [];
+  let lastError: string | null = null;
+  let notice: { title: string; body: string } | null = null;
   return longWork("tiro-auto", "티로에서 글자를 가져오는 중", async (progress) => {
     let done = 0;
     for (const [shiftId, group] of byShift) {
@@ -504,7 +517,8 @@ async function autoImportOnce(): Promise<number> {
           code: code as ShiftCode,
           separate: false,
           startAt: Object.fromEntries(group.map((p) => [p.noteGuid, startOf.get(p.recordingId)!])),
-          onProgress: (pct) => progress(pct, shiftName(shiftId)),
+          onProgress: (pct, msg) =>
+            progress(pct, msg ? `${shiftName(shiftId)} · ${msg}` : shiftName(shiftId)),
         });
         // 들어온 노트의 녹음만 짝지은 것으로 적는다 — 막힌 노트는 나중에 다시 본다.
         const got = new Set(out.recordingIds.map((id) => id.replace(/^tiro-/, "")));
@@ -521,6 +535,7 @@ async function autoImportOnce(): Promise<number> {
         }
         await setSetting(tiroAutoErrorKey(shiftId), out.failed[0]?.reason ?? null);
         await clearSyncProblem(shiftId);
+        brought.push({ shiftId, sentences: out.sentences });
         done += 1;
       } catch (e) {
         for (const p of group) await setSetting(failedKey(p.noteGuid), Date.now());
@@ -528,6 +543,7 @@ async function autoImportOnce(): Promise<number> {
         const message = e instanceof Error ? e.message : "티로에서 가져오지 못했어요. 다시 열어 주세요.";
         await setSetting(tiroAutoErrorKey(shiftId), message);
         await setSyncProblem(shiftId, "import", message);
+        lastError = message;
       }
     }
     // 서버로 보내기까지 이 서비스 안에서 기다린다. importTiroNotes 가 이미 불러 두었고
@@ -535,6 +551,34 @@ async function autoImportOnce(): Promise<number> {
     progress(100, "분석 서버로 보내는 중");
     const { autoSendPending } = await import("./nsr-server");
     await autoSendPending().catch(() => 0);
+    notice = await doneNotice(brought, lastError);
     return done;
-  });
+  }, () => notice);
+}
+
+/**
+ * 끝 알림 글. 서버로 갔는지까지 말한다 — 사람이 기다리는 건 '클로드가 볼 수 있나' 다.
+ * 한 편도 못 들어왔으면 까닭을 알린다.
+ */
+async function doneNotice(
+  got: { shiftId: string; sentences: number }[],
+  error: string | null,
+): Promise<{ title: string; body: string } | null> {
+  if (got.length === 0) return error ? { title: "티로에서 못 가져왔어요", body: error } : null;
+  const day = (id: string) => {
+    const [, m, d] = id.split(":")[0].split("-").map(Number);
+    return `${m}월 ${d}일`;
+  };
+  const title =
+    got.length === 1 ? `${day(got[0].shiftId)} 근무를 다 가져왔어요` : `근무 ${got.length}개를 다 가져왔어요`;
+  const n = got.reduce((sum, g) => sum + g.sentences, 0);
+  const { getAutoSend, serverReady, shiftUpToDate } = await import("./nsr-server");
+  if (!(await serverReady()) || !(await getAutoSend())) return { title, body: `${n}문장이 들어왔어요.` };
+  const onServer = (await Promise.all(got.map((g) => shiftUpToDate(g.shiftId)))).every(Boolean);
+  return {
+    title,
+    body: onServer
+      ? `${n}문장 · 분석 서버로도 보냈어요.`
+      : `${n}문장 · 서버로는 못 갔어요. 홈에서 까닭을 봐요.`,
+  };
 }

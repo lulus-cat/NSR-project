@@ -66,6 +66,10 @@ class NsrAudioDecodeModule : Module() {
     Function("workUpdate") { title: String, body: String ->
       NsrWorkService.instance?.updateWork(title, body)
     }
+    // 알림에 진행 막대까지. 가져오기·보내기가 몇 분 걸리는데 글자만으로는 얼마 남았는지 모른다.
+    Function("workProgress") { title: String, body: String, percent: Int ->
+      NsrWorkService.instance?.updateWork(title, body, false, percent)
+    }
     Function("workNeedsMic") {
       // 녹음이 뒤늦게 시작될 때 유형만 올린다 (알림 문구는 그대로).
       NsrWorkService.instance?.updateWork("기록 중", "화면을 꺼도 계속 기록해요", true)

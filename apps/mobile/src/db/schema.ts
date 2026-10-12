@@ -19,6 +19,7 @@ export const SCHEMA_VERSION = 4;
 
 export const SCHEMA_SQL = `
 PRAGMA journal_mode = WAL;
+PRAGMA busy_timeout = 5000;
 PRAGMA foreign_keys = ON;
 
 -- 듀티표. 날짜 하나에 근무 하나.

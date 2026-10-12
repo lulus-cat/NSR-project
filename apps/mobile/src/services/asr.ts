@@ -135,7 +135,12 @@ export async function saveImportedSegments(input: {
 
   for (let i = 0; i < sentences.length; i++) {
     if (i % CHUNK === 0) {
-      input.onProgress?.(100, `뱉어낸 글자 예쁘게 빚는 중 — ${i}/${sentences.length} 문장`);
+      // 예전엔 여기서부터 내내 100% 라고 해서, 몇 분짜리 교정·저장이 '멈춤' 으로 보였다.
+      // 교정이 이 일의 대부분이다 — 20%에서 85%까지를 문장 수로 나눠 채운다.
+      input.onProgress?.(
+        20 + Math.round((i / sentences.length) * 65),
+        `교정하는 중 ${i}/${sentences.length}문장`,
+      );
       await breathe(); // 뒤로 가도 멈추지 않는다 (progress-notify 의 breathe)
     }
     const sentence = sentences[i];
@@ -146,7 +151,7 @@ export async function saveImportedSegments(input: {
     perSegment.push({ edits: corrected.edits, annotations: corrected.annotations });
   }
 
-  input.onProgress?.(100, `폰에 저장하는 중 (${segments.length}문장)`);
+  input.onProgress?.(90, `폰에 저장하는 중 ${segments.length}문장`);
   await saveSegments(input.recordingId, input.shiftId, segments, perSegment);
   return segments.length;
 }
