@@ -87,3 +87,75 @@ export function tiroParagraphsToSegments(
   }
   return { segments, locked };
 }
+
+/** 티로 노트 목록의 한 줄 — 짝짓기에 필요한 것만. */
+export interface UploadNote {
+  guid: string;
+  title: string;
+  /** 티로 OpenAPI 의 sourceType. 파일을 올려 만든 노트는 "recording". */
+  source: string;
+  /** 노트가 생긴 시각(epoch ms). 올린 파일은 티로가 다 받아적은 뒤에 생긴다. */
+  createdAt: number;
+  durationSec: number;
+}
+
+/** 티로로 보내고 글자를 기다리는 이 앱의 녹음. */
+export interface SentRecording {
+  id: string;
+  shiftId: string;
+  /** 녹음이 끝난 시각(epoch ms). */
+  endedAt: number;
+  durationSec: number;
+  /** 파일 이름에서 확장자를 뺀 것 (2026-10-12_D__000). 티로가 제목으로 쓰면 그대로 남는다. */
+  fileStem?: string;
+}
+
+/** 시계가 어긋나도 놓치지 않게 — 노트가 녹음 끝보다 조금 일러 보여도 받는다. */
+const CLOCK_SLACK_MS = 2 * 60_000;
+
+/**
+ * 티로에 올린 파일로 만들어진 노트를 이 앱의 녹음과 짝짓는다.
+ *
+ * 녹음을 티로로 보낸 뒤 사람이 '티로 노트에서 글자 가져오기' 에서 날짜·듀티·노트를
+ * 손으로 골라야 다음(서버 → 클로드 분석)으로 갔다. 그 단계가 어디에도 안 보여서
+ * 티로에 글자가 다 있는데 근무 기록은 비어 있었다(10월 12일). 이 짝으로 저절로 데려온다.
+ *
+ * **틀리게 붙이느니 안 붙인다.** 남의 날 글이 근무에 섞이면 보고서까지 틀린다.
+ *  - 파일을 올려 만든 노트(sourceType recording)만 본다. 티로 앱으로 직접 녹음한
+ *    노트는 이 앱의 녹음이 아니다 — 그건 지금처럼 손으로 가져온다.
+ *  - 제목에 파일 이름이 남아 있으면 그것이 답이다.
+ *  - 아니면 녹음이 **끝난 뒤에** 생겼고 길이가 거의 같아야 한다(±max(10초, 1%)).
+ *  - 짝이 되는 녹음이 **한 근무 안에만** 있을 때만 붙인다. 같은 근무의 조각끼리는
+ *    어느 쪽에 붙어도 같은 근무라 괜찮지만, 두 근무에 걸리면 고를 근거가 없다.
+ * 먼저 생긴 노트부터 짝짓고, 짝지은 녹음은 다시 안 쓴다 — 같은 파일을 두 번 올려도
+ * 한 번만 들어온다.
+ */
+export function matchTiroUploads(
+  notes: UploadNote[],
+  recordings: SentRecording[],
+): { noteGuid: string; recordingId: string; shiftId: string }[] {
+  const free = new Map(recordings.map((r) => [r.id, r]));
+  const pairs: { noteGuid: string; recordingId: string; shiftId: string }[] = [];
+  const uploads = notes
+    .filter((n) => n.source === "recording")
+    .sort((a, b) => a.createdAt - b.createdAt);
+
+  for (const n of uploads) {
+    const pool = [...free.values()];
+    let hits = pool.filter((r) => r.fileStem && n.title.includes(r.fileStem));
+    if (hits.length === 0) {
+      hits = pool.filter(
+        (r) =>
+          n.createdAt >= r.endedAt - CLOCK_SLACK_MS &&
+          Math.abs(n.durationSec - r.durationSec) <= Math.max(10, r.durationSec * 0.01),
+      );
+    }
+    if (new Set(hits.map((r) => r.shiftId)).size !== 1) continue;
+    const best = hits.reduce((a, b) =>
+      Math.abs(b.durationSec - n.durationSec) < Math.abs(a.durationSec - n.durationSec) ? b : a,
+    );
+    pairs.push({ noteGuid: n.guid, recordingId: best.id, shiftId: best.shiftId });
+    free.delete(best.id);
+  }
+  return pairs;
+}

@@ -49,7 +49,7 @@ import {
   setSetting,
 } from "../db";
 import { redactForNetwork } from "./export";
-import { cardsFromReport, deidentify, taeumFromReading } from "@nsr/core";
+import { cardsFromReport, deidentify, josa, taeumFromReading } from "@nsr/core";
 import { logDebug } from "./debug";
 
 const URL_KEY = "nsr.server.url";
@@ -70,6 +70,15 @@ interface SentMark {
 }
 /** 저절로 보내기를 켰나. 서버를 이었다는 것 자체가 보내겠다는 뜻이라 기본은 켬. */
 const AUTO_KEY = "nsr.server.autoSend";
+/**
+ * 이 근무를 못 보낸 까닭. 근무 기록 화면이 '곧 저절로 보내요' 대신 이걸 보여 준다 —
+ * 예전엔 실패를 진단 기록에만 적어서, 화면은 영원히 '곧 보내요' 였다.
+ */
+const sendErrorKey = (shiftId: string) => `nsr.server.sendError.${shiftId}`;
+
+export async function shiftSendError(shiftId: string): Promise<string | null> {
+  return getSetting<string | null>(sendErrorKey(shiftId), null);
+}
 
 export interface ServerSettings {
   url: string;
@@ -308,7 +317,31 @@ export async function setAutoSend(on: boolean): Promise<void> {
  * 나가는 것은 여전히 **가린 사본뿐**이다 (`sendShift` 안에서 문장마다
  * `redactForNetwork` 를 지난다). 끄고 싶으면 설정의 '저절로 보내기' 를 끈다.
  */
-export async function autoSendPending(): Promise<number> {
+let sending: Promise<number> | null = null;
+let again = false;
+
+export function autoSendPending(): Promise<number> {
+  // 티로에서 가져오기가 끝나며 부르고, 홈도 부른다. 겹치면 같은 근무를 두 번 올린다.
+  // 그렇다고 도는 중에 온 부름을 그냥 합치면, 그 판은 방금 들어온 근무를 모른 채
+  // 이미 목록을 읽었다 — 그 근무는 다음에 앱을 열 때까지 안 간다. 한 판 더 돈다.
+  if (sending) {
+    again = true;
+    return sending;
+  }
+  sending = (async () => {
+    let sent = 0;
+    do {
+      again = false;
+      sent += await sendPendingOnce();
+    } while (again);
+    return sent;
+  })().finally(() => {
+    sending = null;
+  });
+  return sending;
+}
+
+async function sendPendingOnce(): Promise<number> {
   if (!(await getAutoSend()) || !(await serverReady())) return 0;
   let sent = 0;
   for (const shiftId of await shiftsWithSegments()) {
@@ -319,10 +352,13 @@ export async function autoSendPending(): Promise<number> {
     if (had >= 0 && had === (await countSegments(shiftId))) continue;
     try {
       await sendShift(shiftId);
+      await setSetting(sendErrorKey(shiftId), null);
       sent += 1;
     } catch (e) {
       // 하나가 막혀도 나머지는 보낸다. 다음 기회에 다시 시도한다.
-      void logDebug(`저절로 보내기 실패 ${shiftId}: ${e instanceof Error ? e.message : ""}`);
+      const message = e instanceof Error ? e.message : "보내지 못했어요. 잠시 뒤 다시 열어 주세요.";
+      await setSetting(sendErrorKey(shiftId), message);
+      void logDebug(`저절로 보내기 실패 ${shiftId}: ${message}`);
     }
   }
   return sent;
@@ -407,9 +443,18 @@ async function serverError(res: Response, doing: string): Promise<string> {
   }
   await setSetting(UNAUTH_KEY, 0);
   if (res.status === 422) {
-    // 서버가 무엇을 몇 건 잡았는지만 준다. 값은 오지 않는다.
-    const kinds = Object.keys(body.found ?? {}).join(", ");
-    return `가려지지 않은 것이 남아 있어요 (${kinds}). 병동 사전에 이름을 넣어 주세요.`;
+    // 서버가 무엇을 몇 건 잡았는지만 준다. 값은 오지 않는다. 서버는 **숫자 모양만**
+    // 본다(screen.py) — 이름은 못 잡으니 '사전에 이름을 넣으라' 는 맞는 안내가 아니었다.
+    // 이제 이 문구가 근무 기록 화면에 그대로 나간다. 영어 종류 이름도 바꿔 말한다.
+    const KO: Record<string, string> = {
+      rrn: "주민번호",
+      phone: "전화번호",
+      mrn: "등록번호",
+      mrn_labeled: "등록번호",
+      email: "이메일",
+    };
+    const kinds = [...new Set(Object.keys(body.found ?? {}).map((k) => KO[k] ?? "번호"))].join("·") || "번호";
+    return `${kinds}${josa(kinds, "이")} 남아 못 보냈어요. 전사본에서 지워 주세요.`;
   }
   if (res.status === 404) return await notFound();
   return `서버가 ${doing}에 실패했어요 (${res.status}). 잠시 뒤 다시 해 주세요.`;

@@ -17,6 +17,7 @@
  */
 import {
   DEFAULT_TEMPLATES,
+  matchTiroUploads,
   tiroParagraphsToSegments,
   type ShiftCode,
   type TiroParagraph,
@@ -26,7 +27,9 @@ import {
   deleteRecordingRow,
   finishImportedTranscript,
   getRecording,
+  getSetting,
   listRecordings,
+  listSentRecordings,
   segmentCountsByRecording,
   setRecordingState,
   setSetting,
@@ -50,6 +53,10 @@ export interface TiroNote {
   /** 녹음이 시작된 시각(epoch ms). 모르면 만든 시각. */
   startedAt: number;
   durationSec: number;
+  /** 티로 OpenAPI 의 sourceType. 파일을 올려 만든 노트는 "recording". */
+  source: string;
+  /** 노트가 생긴 시각(epoch ms). 올린 파일은 티로가 다 받아적은 뒤에 생긴다. */
+  createdAt: number;
 }
 
 async function tiroHeaders(): Promise<{ authorization: string }> {
@@ -106,6 +113,8 @@ export async function listTiroNotes(limit = 50): Promise<TiroNote[]> {
         title: (n.title || "제목 없는 노트").trim(),
         startedAt: Date.parse(n.recordingStartAt || n.createdAt || "") || Date.now(),
         durationSec: n.recordingDurationSeconds ?? 0,
+        source: n.sourceType ?? "",
+        createdAt: Date.parse(n.createdAt || "") || 0,
       }));
   }
   throw new Error(last ? await tiroError(last, "노트 목록 가져오기") : "노트를 가져오지 못했어요.");
@@ -152,6 +161,8 @@ async function importOne(input: {
   code: ShiftCode;
   /** 참이면 같은 근무의 다른 기록과 합치지 않고 따로 본다. */
   separate: boolean;
+  /** 이 노트가 된 녹음이 실제로 시작한 시각. 알면 순번 대신 이걸 쓴다. */
+  startAt?: number;
   onProgress?: (pct: number, note?: string) => void;
 }): Promise<{ shiftId: string; recordingId: string; sentences: number; locked: number }> {
   const id = `tiro-${input.note.guid}`;
@@ -210,7 +221,9 @@ async function importOne(input: {
   const existing = await listRecordings(shiftId);
   const seq = existing.reduce((max, r) => Math.max(max, r.seq), -1) + 1;
   // 시작 시각은 근무 시작 뒤 순번대로 — 목록이 가져온 차례대로 선다.
-  const startedAt = shiftStartMs(input.date, input.code) + seq * 1000;
+  // 저절로 가져올 때는 그 녹음이 실제로 시작한 시각을 안다. 그걸 쓰면 세 시간짜리
+  // 첫 조각이 짧은 끝 조각보다 늦게 받아적혀 와도 전사본이 시간 순서대로 이어진다.
+  const startedAt = input.startAt ?? shiftStartMs(input.date, input.code) + seq * 1000;
   const durationSec =
     input.note.durationSec || Math.round(segments.at(-1)?.endSec ?? 0);
 
@@ -281,10 +294,13 @@ export async function importTiroNotes(input: {
   code: ShiftCode;
   /** 참이면 같은 근무의 다른 기록과 합치지 않고 따로 본다. */
   separate: boolean;
+  /** 노트 guid → 그 노트가 된 녹음이 실제로 시작한 시각. 저절로 가져올 때만 안다. */
+  startAt?: Record<string, number>;
   onProgress?: (pct: number, note?: string) => void;
 }): Promise<ImportManyResult> {
   const shiftId = `${input.date}:${input.code}`;
-  const notes = [...input.notes].sort((a, b) => a.startedAt - b.startedAt);
+  const at = (n: TiroNote) => input.startAt?.[n.guid] ?? n.startedAt;
+  const notes = [...input.notes].sort((a, b) => at(a) - at(b));
   if (notes.length === 0) throw new Error("가져올 노트를 골라 주세요.");
 
   const recordingIds: string[] = [];
@@ -301,6 +317,7 @@ export async function importTiroNotes(input: {
         date: input.date,
         code: input.code,
         separate: input.separate,
+        startAt: input.startAt?.[note.guid],
         // 한 편의 0~100 을 묶음 전체의 제 몫으로 옮긴다.
         onProgress: (pct, msg) =>
           input.onProgress?.(
@@ -334,4 +351,121 @@ export async function importTiroNotes(input: {
   void import("./nsr-server").then((m) => m.autoSendPending()).catch(() => {});
 
   return { shiftId, recordingIds, imported, sentences, locked, failed };
+}
+
+/** 저절로 가져오다 막힌 까닭 — 근무 기록 화면이 보여 준다. 근무마다 하나. */
+export const tiroAutoErrorKey = (shiftId: string) => `tiro.auto.error.${shiftId}`;
+/** 이 녹음의 글자는 이미 데려왔다 — 다시 짝짓지 않는다. */
+const matchedKey = (recordingId: string) => `tiro.auto.matched.${recordingId}`;
+/** 이보다 오래 기다린 녹음은 사람이 손으로 가져갔다고 보고 티로에 그만 묻는다. */
+const AUTO_WINDOW_MS = 14 * 86_400_000;
+
+/**
+ * 티로로 보낸 녹음의 글자를 저절로 데려온다 — 홈과 근무 기록 화면이 열릴 때.
+ *
+ * 녹음을 티로로 보낸 뒤에는 사람이 '티로 노트에서 글자 가져오기' 에서 날짜·듀티·
+ * 노트를 손으로 골라야 서버 → 클로드 분석으로 이어졌다. 그 단계가 화면 어디에도
+ * 안 보여서, 티로에 글자가 다 있는데 근무 기록은 '먼저 티로에서 전사본을
+ * 가져오세요' 에 멈춰 있었다(10월 12일).
+ *
+ * 짝짓기 규칙은 core 의 matchTiroUploads 에 있다 — 틀리게 붙이느니 안 붙인다.
+ * 짝이 안 지어지는 노트는 지금처럼 손으로 가져온다. 들어오면 importTiroNotes 가
+ * 평소처럼 서버로 보낸다. 거기서부터는 손으로 가져온 것과 같은 길이다.
+ *
+ * @returns 글자가 들어온 근무 수.
+ */
+let autoRun: Promise<number> | null = null;
+
+export function autoImportFromTiro(): Promise<number> {
+  // 홈과 근무 기록 화면이 함께 부르면 같은 노트를 두 번 가져오려 든다. 하나만 돈다.
+  return (autoRun ??= autoImportOnce().finally(() => {
+    autoRun = null;
+  }));
+}
+
+async function autoImportOnce(): Promise<number> {
+  if (!(await getTiroKey())) return 0;
+  const rows = await listSentRecordings(Date.now() - AUTO_WINDOW_MS);
+  const waiting = [];
+  for (const r of rows) {
+    if (await getSetting<string | null>(matchedKey(r.id), null)) continue;
+    waiting.push({
+      id: r.id,
+      shiftId: r.shift_id!,
+      endedAt: r.ended_at ?? r.started_at + r.duration_sec * 1000,
+      durationSec: r.duration_sec,
+      fileStem: r.file_uri?.split("/").pop()?.replace(/\.[^.]+$/, ""),
+    });
+  }
+  // 기다리는 녹음이 없으면 티로에 묻지도 않는다.
+  if (waiting.length === 0) return 0;
+
+  const shifts = [...new Set(waiting.map((w) => w.shiftId))];
+  let notes: TiroNote[];
+  try {
+    notes = await listTiroNotes();
+  } catch (e) {
+    // 열쇠가 틀렸거나 그물이 끊겼다. 조용히 넘기면 화면은 '저절로 가져와요' 만 말한다.
+    // fetch 는 그물이 끊기면 영어로 던진다 — 그대로 내보내지 않는다.
+    const said = e instanceof Error && /[가-힣]/.test(e.message) ? e.message : "";
+    for (const id of shifts) {
+      await setSetting(tiroAutoErrorKey(id), said || "티로에 닿지 못했어요. 인터넷을 확인해 주세요.");
+    }
+    return 0;
+  }
+  for (const id of shifts) await setSetting(tiroAutoErrorKey(id), null);
+
+  const fresh: TiroNote[] = [];
+  for (const n of notes) {
+    // 이미 가져온 노트는 뺀다. 줄만 있고 글자가 없으면 가져오다 앱이 죽은 것이다 —
+    // 그건 다시 가져온다(importOne 이 그 줄을 치우고 새로 넣는다).
+    const row = await getRecording(`tiro-${n.guid}`);
+    const has = row?.shift_id ? ((await segmentCountsByRecording(row.shift_id)).get(row.id) ?? 0) : 0;
+    if (!row || has === 0) fresh.push(n);
+  }
+  const pairs = matchTiroUploads(fresh, waiting);
+  const startOf = new Map(rows.map((r) => [r.id, r.started_at]));
+
+  // 올린 파일의 노트가 있는데 짝을 못 지었으면 기다려도 안 온다. 그때는 손으로 고르게
+  // 말한다 — 안 그러면 화면은 '저절로 가져와요' 만 영원히 말한다.
+  const firstEnd = Math.min(...waiting.map((w) => w.endedAt));
+  const stranded = fresh.some(
+    (n) => n.source === "recording" && n.createdAt >= firstEnd && !pairs.some((p) => p.noteGuid === n.guid),
+  );
+  if (stranded) {
+    for (const id of shifts) {
+      if (!pairs.some((p) => p.shiftId === id)) {
+        await setSetting(tiroAutoErrorKey(id), "티로 노트와 짝을 못 지었어요. 홈에서 골라 주세요.");
+      }
+    }
+  }
+
+  const byShift = new Map<string, typeof pairs>();
+  for (const p of pairs) byShift.set(p.shiftId, [...(byShift.get(p.shiftId) ?? []), p]);
+
+  let done = 0;
+  for (const [shiftId, group] of byShift) {
+    const [date, code] = shiftId.split(":");
+    try {
+      const out = await importTiroNotes({
+        notes: group.map((p) => fresh.find((n) => n.guid === p.noteGuid)!),
+        date,
+        code: code as ShiftCode,
+        separate: false,
+        startAt: Object.fromEntries(group.map((p) => [p.noteGuid, startOf.get(p.recordingId)!])),
+      });
+      // 들어온 노트의 녹음만 짝지은 것으로 적는다 — 막힌 노트는 다음에 다시 본다.
+      const got = new Set(out.recordingIds.map((id) => id.replace(/^tiro-/, "")));
+      for (const p of group) if (got.has(p.noteGuid)) await setSetting(matchedKey(p.recordingId), p.noteGuid);
+      await setSetting(tiroAutoErrorKey(shiftId), out.failed[0]?.reason ?? null);
+      done += 1;
+    } catch (e) {
+      // 화면이 말해야 한다 — 안 그러면 '저절로 가져와요' 만 영원히 보인다.
+      await setSetting(
+        tiroAutoErrorKey(shiftId),
+        e instanceof Error ? e.message : "티로에서 가져오지 못했어요. 다시 열어 주세요.",
+      );
+    }
+  }
+  return done;
 }

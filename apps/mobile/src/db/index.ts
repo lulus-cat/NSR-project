@@ -298,6 +298,21 @@ export async function getRecording(id: string): Promise<RecordingRow | null> {
   return row ?? null;
 }
 
+/**
+ * 티로로 보내고 글자를 기다리는 녹음 — 녹음기가 만든 것만(가져온 tiro-* 줄은 빼고).
+ * 저절로 가져오기(autoImportFromTiro)가 티로 노트와 짝지을 대상이다.
+ */
+export async function listSentRecordings(since: number): Promise<RecordingRow[]> {
+  const db = await getDb();
+  return db.getAllAsync<RecordingRow>(
+    `SELECT * FROM recordings
+      WHERE state = 'sent' AND id NOT LIKE 'tiro-%' AND shift_id IS NOT NULL
+        AND duration_sec > 0 AND started_at >= ?
+      ORDER BY started_at`,
+    [since],
+  );
+}
+
 export async function listRecordings(shiftId?: string): Promise<RecordingRow[]> {
   const db = await getDb();
   return shiftId

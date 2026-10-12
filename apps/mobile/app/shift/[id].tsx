@@ -25,6 +25,7 @@ import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/the
 import {
   countSegments,
   deleteShiftRecordings,
+  getSetting,
   getShiftReportMarkdown,
   getShiftReport,
   listCardsForShift,
@@ -50,7 +51,8 @@ import {
   transcriptToText,
 } from "../../src/services/export-bundle";
 import { exportNotePdf } from "../../src/services/note-doc";
-import { serverReady, shiftSentAt } from "../../src/services/nsr-server";
+import { serverReady, shiftSendError, shiftSentAt } from "../../src/services/nsr-server";
+import { autoImportFromTiro, tiroAutoErrorKey } from "../../src/services/tiro-notes";
 
 /** epoch ms → "HH:MM 시작". 이름 없는 녹음 파일을 부를 때. */
 function startClock(ms: number): string {
@@ -132,6 +134,9 @@ export default function ShiftDetail() {
       예전에는 못 보내는 근무에서 카드가 통째로 사라져서 이유를 알 수가 없었다. */
   const [srvReady, setSrvReady] = useState(false);
   const [sentAt, setSentAt] = useState<number | null>(null);
+  /** 못 보낸 까닭, 티로에서 저절로 못 가져온 까닭 — 없으면 null. */
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [tiroError, setTiroError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
@@ -160,7 +165,7 @@ export default function ShiftDetail() {
   }, [allPending.length, showAll]);
 
   const load = useCallback(async () => {
-    const [count, recs, md, cfs, perRec, waiting, ready, sent] = await Promise.all([
+    const [count, recs, md, cfs, perRec, waiting, ready, sent, sendErr, tiroErr] = await Promise.all([
       countSegments(shiftId),
       listRecordings(shiftId),
       getShiftReportMarkdown(shiftId),
@@ -169,9 +174,13 @@ export default function ShiftDetail() {
       pendingTranscriptions(),
       serverReady(),
       shiftSentAt(shiftId),
+      shiftSendError(shiftId),
+      getSetting<string | null>(tiroAutoErrorKey(shiftId), null),
     ]);
     setSrvReady(ready);
     setSentAt(sent);
+    setSendError(sendErr);
+    setTiroError(tiroErr);
     setSentenceCount(count);
     setRecordings(recs);
     setCounts(perRec);
@@ -184,6 +193,12 @@ export default function ShiftDetail() {
   useFocusEffect(
     useCallback(() => {
       void load();
+      // 티로로 보낸 녹음의 글자가 다 됐으면 여기서도 데려온다 — 사람이 확인하러 오는 자리다.
+      void autoImportFromTiro()
+        .then((n) => {
+          if (n > 0) void load();
+        })
+        .catch(() => {});
     }, [load]),
   );
 
@@ -771,12 +786,17 @@ export default function ShiftDetail() {
           <Small>보낸 뒤 클로드·GPT 에서 분석해요.</Small>
           {/* 못 보낼 때 카드를 감추면 왜 못 보내는지 알 길이 없다. 이유를 말한다. */}
           {sentenceCount === 0 ? (
-            <Small muted={false}>먼저 티로에서 전사본을 가져오세요.</Small>
+            <Small muted={false}>
+              {tiroError ??
+                (recordings.some((r) => r.state === "sent")
+                  ? "티로가 다 받아적으면 저절로 가져와요."
+                  : "먼저 티로에서 전사본을 가져오세요.")}
+            </Small>
           ) : !srvReady ? (
             <Small muted={false}>설정에서 서버를 먼저 이어 주세요.</Small>
           ) : (
             <Small muted={false}>
-              {sentAt ? `${sentDayText(sentAt)}에 보냈어요.` : "곧 저절로 보내요."}
+              {sendError ?? (sentAt ? `${sentDayText(sentAt)}에 보냈어요.` : "곧 저절로 보내요.")}
             </Small>
           )}
           {sendNote ? <Small muted={false}>{sendNote}</Small> : null}

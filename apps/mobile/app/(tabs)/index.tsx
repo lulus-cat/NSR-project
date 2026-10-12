@@ -405,6 +405,14 @@ export default function Home() {
   useFocusEffect(
     useCallback(() => {
       void load();
+      // 티로로 보낸 녹음의 글자가 다 됐으면 저절로 데려온다. 들어오면 '새 전사본'
+      // 알림이 뜨고, 가져오기가 끝나며 서버로도 보낸다 — 클로드 분석까지 손이 안 간다.
+      void import("../../src/services/tiro-notes")
+        .then((m) => m.autoImportFromTiro())
+        .then((n) => {
+          if (n > 0) void load();
+        })
+        .catch(() => {});
       // 서버와 한 번 맞춘다 — 안 보낸 근무를 올리고, AI 가 써 둔 것을 받아 온다.
       // 누를 버튼을 두지 않는다. 예전에는 설정의 '결과 받기' 를 안 누르면 보고서도
       // 카드도 폰에 영영 안 들어왔고, 그 사실이 화면 어디에도 없었다.
