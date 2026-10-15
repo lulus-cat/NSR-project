@@ -147,6 +147,9 @@ async function keep(body: { token?: string }): Promise<void> {
  */
 const ASK_MS = 20_000;
 
+const UNREACHABLE = "서버에 닿지 못했어요. 인터넷과 서버가 켜져 있는지 봐 주세요.";
+const NO_ANSWER = "서버가 대답하지 않았어요. 잠시 뒤 다시 보내 주세요.";
+
 async function ask(path: string, init: RequestInit, timeoutMs = ASK_MS): Promise<Response> {
   const url = await getServerUrl();
   if (!url) throw new Error("서버 주소가 없어요. 설정에서 넣어 주세요.");
@@ -155,7 +158,10 @@ async function ask(path: string, init: RequestInit, timeoutMs = ASK_MS): Promise
   try {
     return await fetch(`${url}${path}`, { ...init, signal: stop.signal });
   } catch {
-    throw new Error("서버에 닿지 못했어요. 주소와 인터넷을 확인해 주세요.");
+    // 시간이 다 돼 끊은 것과 아예 못 닿은 것은 고칠 곳이 다르다. 앞은 서버가 받고도
+    // 대답을 못 하는 것(바쁘거나 멎었다)이고, 뒤는 서버가 꺼졌거나 인터넷 문제다.
+    // 예전엔 둘 다 '못 닿았다' 여서 어느 쪽인지 가릴 수 없었다.
+    throw new Error(stop.signal.aborted ? NO_ANSWER : UNREACHABLE);
   } finally {
     clearTimeout(timer);
   }
@@ -366,6 +372,7 @@ async function sendPendingOnce(): Promise<number> {
   if (!(await getAutoSend()) || !(await serverReady())) return 0;
   const due: string[] = [];
   for (const shiftId of await shiftsWithSegments()) {
+    if (shiftId === resending) continue;
     const mark = await getSetting<SentMark | number | null>(sentKey(shiftId), null);
     const had = typeof mark === "object" && mark ? mark.sentences : -1;
     // 가리기 규칙이 촘촘해진 뒤로 아직 안 갈아 끼운 최근 근무.
@@ -391,25 +398,74 @@ async function sendPendingOnce(): Promise<number> {
   return longWork("server-send", "분석 서버로 보내는 중", async (progress) => {
     let sent = 0;
     for (const [i, shiftId] of due.entries()) {
-      const [, m, d] = shiftId.split(":")[0].split("-").map(Number);
-      const day = `${m}월 ${d}일`;
-      try {
-        await sendShift(shiftId, (pct, note) =>
-          progress(((i + pct / 100) / due.length) * 100, `${day} · ${note ?? ""}`),
-        );
-        await setSetting(sendErrorKey(shiftId), null);
-        await clearSyncProblem(shiftId);
-        sent += 1;
-      } catch (e) {
-        // 하나가 막혀도 나머지는 보낸다. 다음 기회에 다시 시도한다.
-        const message = e instanceof Error ? e.message : "보내지 못했어요. 잠시 뒤 다시 열어 주세요.";
-        await setSetting(sendErrorKey(shiftId), { at: Date.now(), message } satisfies SendError);
-        await setSyncProblem(shiftId, "send", message);
-        void logDebug(`저절로 보내기 실패 ${shiftId}: ${message}`);
-      }
+      // 하나가 막혀도 나머지는 보낸다. 막힌 것은 30분 뒤에 다시 해 본다.
+      const why = await sendOne(shiftId, (pct, detail) =>
+        progress(((i + pct / 100) / due.length) * 100, detail),
+      );
+      if (why === null) sent += 1;
     }
     return sent;
   });
+}
+
+/** "2026-10-12:MANUAL" → "10월 12일" */
+function dayText(shiftId: string): string {
+  const [, m, d] = shiftId.split(":")[0].split("-").map(Number);
+  return `${m}월 ${d}일`;
+}
+
+/**
+ * 근무 하나를 보내고 결과를 적어 둔다. 보냈으면 null, 못 보냈으면 그 까닭.
+ * 못 보낸 까닭은 근무 화면과 홈이 보여 준다.
+ */
+async function sendOne(
+  shiftId: string,
+  progress: (pct: number, detail: string) => void,
+): Promise<string | null> {
+  const day = dayText(shiftId);
+  try {
+    await sendShift(shiftId, (pct, note) => progress(pct, `${day} · ${note ?? ""}`));
+    await setSetting(sendErrorKey(shiftId), null);
+    await clearSyncProblem(shiftId);
+    return null;
+  } catch (e) {
+    const message = e instanceof Error ? e.message : "보내지 못했어요. 잠시 뒤 다시 보내 주세요.";
+    await setSetting(sendErrorKey(shiftId), { at: Date.now(), message } satisfies SendError);
+    await setSyncProblem(shiftId, "send", message);
+    void logDebug(`보내기 실패 ${shiftId}: ${message}`);
+    return message;
+  }
+}
+
+/** 지금 손으로 다시 보내는 근무. 저절로 보내기는 이걸 건너뛴다 — 겹쳐 올리지 않게. */
+let resending: string | null = null;
+
+/**
+ * 이 근무를 지금 다시 보낸다 — 막혔을 때 사람이 누르는 단추. 보냈으면 null, 아니면 까닭.
+ *
+ * 저절로 보내기는 실패한 근무를 30분 쉬었다 다시 해 본다. 단추가 없어서, 서버를 고쳐
+ * 놓고도 그 30분을 그냥 기다려야 했다. 저절로 보내기를 꺼 두었어도 누르면 보낸다.
+ */
+export async function resendShift(shiftId: string): Promise<string | null> {
+  if (resending) return "다른 근무를 보내는 중이에요. 끝나면 다시 눌러 주세요.";
+  resending = shiftId;
+  try {
+    // 저절로 보내기가 돌고 있으면 끝나길 기다린다. 이 근무를 막 올리는 중일 수도 있다.
+    if (sending) await sending.catch(() => 0);
+    const day = dayText(shiftId);
+    return await longWork(
+      "server-send",
+      "분석 서버로 보내는 중",
+      (progress) => sendOne(shiftId, progress),
+      // 다른 앱에 가 있어도 결과를 안다.
+      (why) =>
+        why === null
+          ? { title: `${day} 근무를 서버로 보냈어요`, body: "클로드에게 분석해 달라고 하세요." }
+          : { title: `${day} 근무를 못 보냈어요`, body: why },
+    );
+  } finally {
+    resending = null;
+  }
 }
 
 /**
@@ -539,7 +595,7 @@ export async function checkServer(): Promise<{ ok: boolean; message: string }> {
     }
     return { ok: true, message: "연결됐어요. 이제 근무를 보낼 수 있어요." };
   } catch {
-    return { ok: false, message: "서버에 닿지 못했어요. 주소와 인터넷을 확인해 주세요." };
+    return { ok: false, message: UNREACHABLE };
   }
 }
 

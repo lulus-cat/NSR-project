@@ -19,7 +19,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Ionicons from "@expo/vector-icons/Ionicons";
 import { createAudioPlayer, type AudioPlayer } from "expo-audio";
 import { DEFAULT_TEMPLATES, reportWithoutCards, type ShiftCode } from "@nsr/core";
-import { Badge, Button, Card, Divider, Heading, Small } from "../../src/components/ui";
+import { Badge, Button, Card, Divider, GaugeBar, Heading, Small } from "../../src/components/ui";
 import { Markdown } from "../../src/components/markdown";
 import { TABULAR, TOUCH_MIN, radius, space, type, useTheme } from "../../src/theme";
 import {
@@ -51,7 +51,13 @@ import {
   transcriptToText,
 } from "../../src/services/export-bundle";
 import { exportNotePdf } from "../../src/services/note-doc";
-import { serverReady, shiftSendError, shiftSentAt } from "../../src/services/nsr-server";
+import {
+  resendShift,
+  serverReady,
+  shiftSendError,
+  shiftSentAt,
+} from "../../src/services/nsr-server";
+import { onLiveStatus, type LiveStatus } from "../../src/services/progress-notify";
 import { autoImportFromTiro, tiroAutoErrorKey } from "../../src/services/tiro-notes";
 
 /** epoch ms → "HH:MM 시작". 이름 없는 녹음 파일을 부를 때. */
@@ -128,8 +134,11 @@ export default function ShiftDetail() {
   const [counts, setCounts] = useState<Map<string, number>>(new Map());
   /** 이 근무를 돌리는 중인 러너 상태. 다른 근무 것이거나 안 돌면 null. */
   const [reportMd, setReportMd] = useState<string | null>(null);
+  /** '다시 보내기' 를 누른 뒤 도는 중. 결과 한 줄은 sendNote. */
   const [sending, setSending] = useState(false);
   const [sendNote, setSendNote] = useState<string | null>(null);
+  /** 뒤에서 도는 가져오기·보내기 — 이 화면에서도 막대로 보인다. */
+  const [live, setLive] = useState<LiveStatus | null>(null);
   /** 서버가 이어져 있나, 이 근무를 언제 보냈나. 둘 다 화면에서 말해 줘야 한다 —
       예전에는 못 보내는 근무에서 카드가 통째로 사라져서 이유를 알 수가 없었다. */
   const [srvReady, setSrvReady] = useState(false);
@@ -201,6 +210,39 @@ export default function ShiftDetail() {
         .catch(() => {});
     }, [load]),
   );
+
+  // 뒤에서 도는 일이 끝나면 다시 읽는다 — 보냈는지, 왜 못 갔는지가 바뀌었다.
+  const wasLive = useRef(false);
+  useEffect(
+    () =>
+      onLiveStatus((status) => {
+        setLive(status);
+        if (wasLive.current && !status) void load();
+        wasLive.current = !!status;
+      }),
+    [load],
+  );
+
+  /** 못 갔을 때 지금 다시 보낸다. 저절로 보내기는 30분을 쉬었다 다시 해 본다. */
+  const resend = useCallback(async () => {
+    setSending(true);
+    setSendNote(null);
+    try {
+      const why = await resendShift(shiftId);
+      // 까닭이 위 줄(적어 둔 까닭)과 같으면 '안 됐다' 만 말한다. 다르면(다른 근무를 보내는
+      // 중이라 못 했다) 그 까닭을 그대로 보인다.
+      setSendNote(
+        why === null
+          ? "보냈어요. 클로드에게 분석해 달라고 하세요."
+          : why === (await shiftSendError(shiftId))
+            ? "다시 해 봤지만 안 됐어요."
+            : why,
+      );
+    } finally {
+      setSending(false);
+      await load();
+    }
+  }, [shiftId, load]);
 
   const pending = recordings.filter((r) => r.state === "recorded");
   const durationSec = recordings.reduce((sum, r) => sum + r.duration_sec, 0);
@@ -795,10 +837,33 @@ export default function ShiftDetail() {
           ) : !srvReady ? (
             <Small muted={false}>설정에서 서버를 먼저 이어 주세요.</Small>
           ) : (
-            <Small muted={false}>
-              {sendError ?? (sentAt ? `${sentDayText(sentAt)}에 보냈어요.` : "곧 저절로 보내요.")}
-            </Small>
+            <>
+              <Small muted={false}>
+                {sending
+                  ? "다시 보내는 중이에요."
+                  : (sendError ?? (sentAt ? `${sentDayText(sentAt)}에 보냈어요.` : "곧 저절로 보내요."))}
+              </Small>
+              {/* 못 갔으면 바로 다시 보낼 수 있어야 한다. 예전엔 30분을 기다리거나
+                  앱을 다시 열어야 했다 — 서버를 고쳐 놓고도 그랬다. */}
+              {sendError || sending ? (
+                <Button
+                  label={sending ? "보내는 중" : "다시 보내기"}
+                  tone="primary"
+                  busy={sending}
+                  onPress={() => void resend()}
+                />
+              ) : null}
+            </>
           )}
+          {live ? (
+            <>
+              <Small muted={false}>
+                {live.title} {live.pct}%
+              </Small>
+              <GaugeBar ratio={live.pct / 100} color={t.accent} />
+              {live.detail ? <Small>{live.detail}</Small> : null}
+            </>
+          ) : null}
           {sendNote ? <Small muted={false}>{sendNote}</Small> : null}
         </Card>
       ) : null}
